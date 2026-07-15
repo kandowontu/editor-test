@@ -58,8 +58,9 @@ if (currplayer_mini != 0)
                     ClearOrbBuffer();
             }
             
-            // tmp1 = dashing (we don't have dashing, assume 0)
-            int tmp1 = 0;
+            // tmp1 = dashing[currplayer]. Wave uses the NES six-way dash
+            // switch; horizontal mode 1 freezes Y and leaves vel_y at 1.
+            int tmp1 = dashing[currplayer];
             
             switch (tmp1) {
                 case 0:
@@ -176,9 +177,6 @@ if (currplayer_mini != 0)
         {
             bool isMini = (miniMode);
             bool gravityInverted = gravityFlipped;
-
-            // Update slope counters each frame
-            UpdateSlopeCounters();
 
             // Check slopes BEFORE wave collision
             // NES: bg_coll_U/bg_coll_D each have a slope section that runs

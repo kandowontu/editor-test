@@ -64,28 +64,6 @@ if (currplayer_mini != 0)
             // Apply gravity (applies simTimeScale internally)
             CommonGravityRoutine_Fresh();
             
-            // Ceiling proximity check (same as cube — needed for flipped gravity).
-            // After gravity, if gravity is flipped and player is moving toward ceiling,
-            // check collision at Y-1 to detect boundary hits that CubeEject would miss
-            // (CheckCeiling uses strict < comparison, so playerTop == ceilBottom misses).
-            if (currplayer_gravity != 0)
-            {
-                bool isMini_check = (currplayer_mini != 0);
-                int hitboxW_check = isMini_check ? 8 : 15;
-                int hitboxH_check = isMini_check ? 7 : 15;
-                int hitboxOffsetY_check = SharedPhysics.GetMiniCenterOffsetY(isMini_check);
-                int collisionX_check = (playerX_fixed >> 8);
-                int testY_check = (playerY_fixed >> 8) + hitboxOffsetY_check - 1;
-                var (collided_check, collisionBottomY_check) = CheckCollisionUp(collisionX_check, testY_check, hitboxW_check, hitboxH_check);
-                
-                if (collided_check && playerVelY_fixed < 0)
-                {
-                    int newY_prox = collisionBottomY_check - hitboxOffsetY_check - 1;
-                    playerY_fixed = newY_prox << 8;
-                    playerVelY_fixed = 0;
-                }
-            }
-            
             // Collision
             byte gravityAtFrameStart = currplayer_gravity;
             CubeEject_Fresh();
@@ -95,17 +73,17 @@ if (currplayer_mini != 0)
             int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);
             bool pressJump = pressCount > 0;
             
-            // Reset triple jump when grounded and not pressing jump
-            if (onGround && !pressJump)
+            // Reset after cube_eject from the resulting zero velocity.
+            if (playerVelY_fixed == 0)
             {
                 ninjajumps[currplayer] = 3;
                 AppendSimDebug($"[NINJA] Grounded - reset jumps to 3");
             }
-            
-            // Ninja can jump if:
-            // 1. Grounded (vel_y == 0), OR
-            // 2. In air with jumps remaining and not already jumped this frame
-            if (pressJump && ninjajumps[currplayer] > 0 && !ninjaJumpedThisFrame && !orbed[currplayer] && dashing[currplayer] == 0) {
+
+            // Match the current NES build: landing resets the counter, but a held
+            // input alone does not auto-jump; ninja jumps require a fresh press.
+            if (pressJump && ninjajumps[currplayer] > 0 && !ninjaJumpedThisFrame &&
+                !orbed[currplayer] && dashing[currplayer] == 0) {
                 int baseJumpIdx = (currplayer_mini != 0 ? 4 : 0);
                 bool jumpGravityInverted = (currplayer_gravity != 0);
                 int jumpGravityMultiplier = jumpGravityInverted ? -1 : 1;

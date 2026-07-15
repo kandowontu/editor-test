@@ -46,12 +46,25 @@ namespace FamidashEditor
                         playerY_px, playerBottom_px))
                         continue;
 
-                    int destinationWorldY_px =
-                        (cameraY_fixed >> 8) + (simulatorTeleportOutputY_px & 0xFF);
+                    if (sid == TELEPORT_PORTAL_SQUARE_ENTER)
+                    {
+                        bool freshPress = System.Threading.Interlocked.CompareExchange(
+                            ref keyXPressedCount, 0, 0) > 0;
+                        bool squareGate = freshPress || orbBufferActive[currplayer];
+                        if (!squareGate)
+                            continue;
+
+                        playerVelY_fixed = 0;
+                        orbed[currplayer] = true;
+                        orbBufferActive[currplayer] = false;
+                        ballInputBufferCountdown[currplayer] = 0;
+                    }
+
+                    int destinationScreenY_px = simulatorTeleportOutputY_px & 0xFF;
                     playerY_fixed =
-                        (destinationWorldY_px << 8) | (playerY_fixed & 0xFF);
+                        cameraY_fixed + (destinationScreenY_px << 8) + (playerY_fixed & 0xFF);
                     AppendSimDebug(
-                        $"[TELEPORT_PORTAL] NES slot idx={idx} sid=0x{sid:X2} output=0x{simulatorTeleportOutputY_px & 0xFF:X2} Y={destinationWorldY_px}");
+                        $"[TELEPORT_PORTAL] NES slot idx={idx} sid=0x{sid:X2} output=0x{simulatorTeleportOutputY_px & 0xFF:X2} screenY={destinationScreenY_px} worldY={playerY_fixed >> 8}");
                     break;
                 }
             }

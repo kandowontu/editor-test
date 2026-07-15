@@ -92,6 +92,11 @@ public class PathfinderEngine
 
 		public int VelX_fixed;
 
+		// NES speed is a global selector loaded by x_movement after each
+		// player's Y movement. It is distinct from the saved per-player X
+		// velocity, which is observable for one frame after a P2 speed hit.
+		public int GlobalSpeed_fixed;
+
 		public int GameMode;
 
 		public bool GravFlipped;
@@ -180,6 +185,16 @@ public class PathfinderEngine
 
 		public int LastSlopeType;
 
+		// Persistent NES collision globals. Spider orb/pad handlers intentionally
+		// consume the last values written by bg_coll_U/bg_coll_D.
+		public byte EjectU;
+
+		public byte EjectD;
+
+		// NES reset_level sets this to 8. While non-zero, runthecolls skips
+		// x_movement_coll and bg_coll_death, then decrements it after P1.
+		public byte InvincibleCounter;
+
 		public byte DeathType;
 
 		public int CameraY_fixed;
@@ -201,6 +216,8 @@ public class PathfinderEngine
 		public bool DualActive;
 
 		public int P2_Y_fixed;
+
+		public int P2_VelX_fixed;
 
 		public int P2_VelY_fixed;
 
@@ -263,6 +280,19 @@ public class PathfinderEngine
 		public int P2_PendingOrbExtra2Index;
 
 		public int P2_PendingOrbExtra2SpriteId;
+
+		// Transient snapshot made by the NES single-player portal handler while
+		// currplayer is P2.  The handler copies P2's state to player[0] at its
+		// exact sprite slot, before the remainder of P2's movement runs.
+		public bool P2_SingleExitCaptured;
+
+		public int P2_SingleExitY_fixed;
+
+		public int P2_SingleExitVelY_fixed;
+
+		public bool P2_SingleExitGravFlipped;
+
+		public int P2_SingleExitGravMul;
 
 		// NES 16-slot sprite table (runtime, per-frame updated)
 		public int[] NesSlots;       // [16] index into _nesSpritesArr, or -1
@@ -886,6 +916,8 @@ public class PathfinderEngine
 
 	public int? ConfigSpawnYLo { get; set; }
 
+	public bool UseNesSpawnScrollDefaults { get; set; }
+
 	private int SpawnYSubpx => ConfigSpawnYLo.GetValueOrDefault() & 0xFF;
 
 	public string FrameTracePath
@@ -971,7 +1003,13 @@ public class PathfinderEngine
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private static int NesPlayerY_px(int yFixed, int camYFixed)
 	{
-		return yFixed >> 8;
+		return SharedPhysics.NesPlayerY_px(yFixed, camYFixed);
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static int NesPlayerBgCollisionY_px(int yFixed, int camYFixed)
+	{
+		return SharedPhysics.NesPlayerBgCollisionY_px(yFixed, camYFixed);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -994,6 +1032,25 @@ public class PathfinderEngine
 
 		int secondEnd = second + secondSize;
 		if (secondEnd <= 0xFF && secondEnd < first)
+			return false;
+
+		return true;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static bool NesAxisOverlapsPositive(int first, int firstSize, int second, int secondSize)
+	{
+		first &= 0xFF;
+		second &= 0xFF;
+		firstSize &= 0xFF;
+		secondSize &= 0xFF;
+
+		int firstEnd = first + firstSize;
+		if (firstEnd <= 0xFF && firstEnd <= second)
+			return false;
+
+		int secondEnd = second + secondSize;
+		if (secondEnd <= 0xFF && secondEnd <= first)
 			return false;
 
 		return true;
@@ -1072,6 +1129,14 @@ public class PathfinderEngine
 	private static bool IsGravityPortal(int sid)
 	{
 		return SharedPhysics.IsGravityPortal(sid);
+	}
+
+	private static int NesGravityPortalHalfVelocity(int velY)
+	{
+		// NES/cc65 lowers this portal halve to an arithmetic shift in the
+		// replayed path.  Odd negative velocities round down: -725 -> -363,
+		// then ball gravity adds +71 to produce the Mesen-observed -292.
+		return velY >> 1;
 	}
 
 	private static bool IsReverseGravity(int sid)
@@ -1295,7 +1360,13 @@ public class PathfinderEngine
 
 	private void ApplyNesIntroFreezePrestep(ref SimState s)
 	{
-		if ((s.GameMode == 0 || s.GameMode == 4) && !s.DualActive)
+		// Fresh non-practice starts receive eight protected gameplay ticks.
+		s.InvincibleCounter = 8;
+		if (s.DualActive)
+		{
+			return;
+		}
+		if (s.GameMode == 0 || s.GameMode == 4)
 		{
 			int num = SharedPhysics.GetCubeGravity(s.Mini);
 			if (s.GravFlipped)
@@ -1305,17 +1376,189 @@ public class PathfinderEngine
 			s.VelY_fixed += num;
 			s.Y_fixed += s.VelY_fixed;
 			s.X_fixed += s.VelX_fixed;
+			ApplyNesCubeRobotYScroll(ref s);
+			// The verified cube/robot intro-freeze pre-step is a complete
+			// everything_else tick, including the NES counter decrement.
+			s.InvincibleCounter--;
+		}
+		else if (s.GameMode == 3)
+		{
+			// The NES first recorded UFO tick advances X at the reset/default
+			// speed (0x02C4), then uses the level's configured speed thereafter.
+			// PF applies the configured start portal before its first tick, so keep
+			// the logical frame count unchanged and restore the missing X phase.
+			// Chromatic Expedition proves this directly: NES X is PF X + 0x89
+			// for speed 0x023B, which changes the first RD45 probe by one pixel.
+			int nesResetSpeed = SharedPhysics.SpeedUiIndexToFixed(1);
+			s.X_fixed += nesResetSpeed - s.VelX_fixed;
+		}
+	}
+
+	private void ApplyNesCubeRobotYScroll(ref SimState s)
+	{
+		int num28 = NesNoCamTrackingScreenY_fixed(in s);
+		int num29 = (s.CameraY_fixed >> 8) + _nesCoordOffset;
+		int num30 = _minScrollYLin - _nesCoordOffset << 8;
+		int num31 = NesMaxCamY_px() << 8;
+		if (num28 < 16384)
+		{
+			if (num29 > _minScrollYLin || (num29 == _minScrollYLin && s.ScrollYSubpx != 0))
+			{
+				int num32 = 16384 - num28;
+				if (s.ExitPortalTimer != 0)
+				{
+					int num33 = 11 - s.ExitPortalTimer;
+					if (num32 >> 8 >= num33)
+					{
+						num32 = num33 << 8;
+					}
+				}
+				int num34 = num32 & 0xFF;
+				int num35 = (num32 >> 8) & 0xFF;
+				int num36 = s.ScrollYSubpx - num34;
+				int num37 = 0;
+				if (num36 < 0)
+				{
+					num36 += 256;
+					num37 = 1;
+				}
+				s.ScrollYSubpx = num36;
+				int num38 = -(num35 + num37 << 8);
+				int num39 = num32 + num38;
+				s.CameraY_fixed += num38;
+				s.Y_fixed += num39;
+				if (s.CameraY_fixed < num30)
+				{
+					// cap_scroll_y_at_top moves NES currplayer_y by the integer
+					// overshoot while moving scroll_y by the same amount. PF stores
+					// world Y, so only the separate scroll subpixel fold belongs in Y.
+					s.Y_fixed -= s.ScrollYSubpx;
+					s.ScrollYSubpx = 0;
+					s.CameraY_fixed = num30;
+				}
+			}
+		}
+		else if (num28 >> 8 >= 160 && num29 < 719)
+		{
+			int num41 = num28 - 40960;
+			if (s.ExitPortalTimer != 0)
+			{
+				int num42 = 11 - s.ExitPortalTimer;
+				if (num41 >> 8 >= num42)
+				{
+					num41 = num42 << 8;
+				}
+			}
+			int num43 = num41 & 0xFF;
+			int num44 = (num41 >> 8) & 0xFF;
+			int num45 = s.ScrollYSubpx + num43;
+			int num46 = 0;
+			if (num45 > 255)
+			{
+				num45 -= 256;
+				num46 = 1;
+			}
+			s.ScrollYSubpx = num45;
+			int num47 = num44 + num46 << 8;
+			int num48 = -num41 + num47;
+			s.CameraY_fixed += num47;
+			s.Y_fixed += num48;
+			if (s.CameraY_fixed > num31)
+			{
+				// NES cap_scroll_y_at_bottom() compares against $02F0; an exact
+				// $02EF scroll with a non-zero scroll_y_subpx does not cap. Only
+				// fold the pending fractional byte when the integer scroll really
+				// exceeded the bottom cap.
+				s.Y_fixed += s.ScrollYSubpx;
+				s.ScrollYSubpx = 0;
+				s.CameraY_fixed = num31;
+			}
+		}
+	}
+
+	private static int NesNoCamTrackingScreenY_fixed(in SimState s)
+	{
+		return s.Y_fixed - s.CameraY_fixed;
+	}
+
+	private void ApplyNesProcessYScrollDuringSpiderWait(ref SimState s)
+	{
+		if (_dualP2Guard)
+		{
+			return;
+		}
+		if (!s.DualActive && (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 9 || s.NoCamLockForced))
+		{
+			if (s.ExitPortalTimer != 0)
+			{
+				s.ExitPortalTimer--;
+			}
+			ApplyNesCubeRobotYScroll(ref s);
+			return;
+		}
+		int num = s.CameraY_fixed >> 8;
+		int num2 = s.TargetCameraY_fixed >> 8;
+		int num3 = NesMaxCamY_px() << 8;
+		if (num2 > num)
+		{
+			s.CameraY_fixed += SHIP_SCROLL_SPEED_UP_FIXED;
+			// PF stores world Y. NES screen currplayer_y moves -2px here while
+			// scroll_y moves +2px, so the world-space player Y is unchanged.
+		}
+		if (s.CameraY_fixed <= num3 && num2 < (s.CameraY_fixed >> 8))
+		{
+			s.CameraY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED;
+			// NES process_y_scroll target_scroll_y < scroll_y branch:
+			// currplayer_y += SHIP_SCROLL_SPEED($0200 at NTSC), while scroll_y
+			// moves -3px because subtracting a zero low byte leaves carry set.
+			// World Y therefore moves by -1px.
+			s.Y_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED - SHIP_SCROLL_SPEED_UP_FIXED;
+			if (s.DualActive)
+			{
+				s.P2_Y_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED - SHIP_SCROLL_SPEED_UP_FIXED;
+			}
+		}
+		// cap_scroll_y_at_top clamps to the NES min_scroll_y metadata, not to
+		// the number of editor ground rows.  Those differ in short maps (Demon
+		// Park is -40px versus the old -48px approximation).
+		int num4 = (_minScrollYLin - _nesCoordOffset) << 8;
+		if (s.CameraY_fixed < num4)
+		{
+			// The integer clamp changes screen Y and scroll equally on NES;
+			// it does not change PF's world-space Y.
+			s.Y_fixed -= s.ScrollYSubpx;
+			if (s.DualActive)
+			{
+				s.P2_Y_fixed -= s.ScrollYSubpx;
+			}
+			s.CameraY_fixed = num4;
+			s.ScrollYSubpx = 0;
+		}
+		if (s.CameraY_fixed > num3)
+		{
+			// NES cap_scroll_y_at_bottom() only fires once the integer scroll has
+			// reached/passed $02F0. $02EF with a non-zero subpixel byte is left
+			// alone, which matters for ship/spider screen-space low-byte parity.
+			s.Y_fixed += s.ScrollYSubpx;
+			if (s.DualActive)
+			{
+				s.P2_Y_fixed += s.ScrollYSubpx;
+			}
+			s.CameraY_fixed = num3;
+			s.ScrollYSubpx = 0;
 		}
 	}
 
 	private int ComputeInitCameraY(int startY_px)
 	{
 		int val = NesMaxCamY_px() << 8;
-		int val2 = -(groundRowsToReserve * 16) << 8;
-		if (ConfigScrollYHi.HasValue)
+		int val2 = (_minScrollYLin - _nesCoordOffset) << 8;
+		if (UseNesSpawnScrollDefaults || ConfigScrollYHi.HasValue || ConfigScrollYLo.HasValue)
 		{
-			int num = ConfigScrollYHi.Value & 0xFF;
-			int num2 = (ConfigScrollYLo.HasValue ? ConfigScrollYLo.Value : 0) & 0xFF;
+			// NES export defaults missing scroll bytes to $02EF. Respect that
+			// even when only spawn metadata is present (for example Birdbrain).
+			int num = (ConfigScrollYHi.HasValue ? ConfigScrollYHi.Value : 0x02) & 0xFF;
+			int num2 = (ConfigScrollYLo.HasValue ? ConfigScrollYLo.Value : 0xEF) & 0xFF;
 			int num3 = num * 240 + num2;
 			int num4 = 719 - num3;
 			int num5 = (mapHeight - 15) * 16;
@@ -1346,12 +1589,16 @@ public class PathfinderEngine
 		int num2 = (num >> 8) & 0xFF;
 		int num3 = num & 0xFF;
 		int num4 = num2 * 240 + num3 - _nesCoordOffset;
-		int num5 = NesMaxCamY_px();
-		if (num4 > num5)
-		{
-			num4 = num5;
-		}
-		return Math.Max(0, num4) << 8;
+		// NES stores target_scroll_y in its encoded scroll space and does not clamp
+		// that target to the physical bottom cap.  process_y_scroll can therefore
+		// keep trying to scroll downward/upward past $02EF, then
+		// cap_scroll_y_at_bottom() folds scroll_y_subpx into currplayer_y and clears
+		// it.  Clamping the target here made PF skip that final cap/fraction fold.
+		// A perfectly valid NES target can be above editor-world Y=0 because
+		// target_scroll_y is stored in NES nametable space.  Preserve that
+		// negative PF-space value; clamping it to zero changes every subsequent
+		// ship-style camera step.
+		return num4 << 8;
 	}
 
 #if !DISABLE_DEBUG_LOGGING
@@ -1532,13 +1779,13 @@ public class PathfinderEngine
 		try
 		{
 			int num = (s.X_fixed >> 8) + 8;
-			int num2 = (s.CameraY_fixed >> 8) + ((s.Y_fixed - s.CameraY_fixed) >> 8) + 8;
+			int num2 = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed) + 8;
 			_traceWriter.WriteLine($"{frame},0x{s.X_fixed:X},0x{s.Y_fixed:X},0x{s.VelY_fixed:X},{(input ? 1 : 0)},{(alive ? 1 : 0)},{num},{num2},{(s.OnGround ? 1 : 0)},{s.CameraY_fixed >> 8},{s.TargetCameraY_fixed >> 8},{s.GameMode},{(s.GravFlipped ? 1 : 0)},{(s.ShipDbgCeilSlopeHit ? 1 : 0)},{(s.ShipDbgCeilTileHit ? 1 : 0)},{(s.ShipDbgCeilSpike ? 1 : 0)},{(s.ShipDbgFloorSlopeHit ? 1 : 0)},{(s.ShipDbgFloorTileHit ? 1 : 0)},{(s.ShipDbgFloorSpike ? 1 : 0)},0x{s.CameraY_fixed:X},{s.Y_fixed & 0xFF},{s.CameraY_fixed & 0xFF},{s.ScrollYSubpx},{(s.Mini ? 1 : 0)},0x{s.VelX_fixed:X},{s.SlopeType},{s.LastSlopeType},{s.SlopeFrames},{s.SlopeWasOnCounter}");
 			if (s.DualActive)
 			{
 				int p2Xpx = (s.X_fixed >> 8) + 8;
-				int p2Ypx = (s.CameraY_fixed >> 8) + ((s.P2_Y_fixed - s.CameraY_fixed) >> 8) + 8;
-				_traceWriter.WriteLine($"p2,{frame},0x{s.P2_Y_fixed:X},0x{s.P2_VelY_fixed:X},{(input ? 1 : 0)},{(alive ? 1 : 0)},{p2Xpx},{p2Ypx},{(s.P2_OnGround ? 1 : 0)},{s.CameraY_fixed >> 8},{s.TargetCameraY_fixed >> 8},{s.GameMode},{(s.P2_GravFlipped ? 1 : 0)},0,0,0,0,0,0,0x{s.CameraY_fixed:X},{s.P2_Y_fixed & 0xFF},{s.CameraY_fixed & 0xFF},{s.ScrollYSubpx},{(s.P2_Mini ? 1 : 0)},0x{s.VelX_fixed:X},{s.P2_SlopeType},{s.P2_LastSlopeType},{s.P2_SlopeFrames},{s.P2_SlopeWasOnCounter}");
+				int p2Ypx = NesPlayerY_px(s.P2_Y_fixed, s.CameraY_fixed) + 8;
+				_traceWriter.WriteLine($"p2,{frame},0x{s.P2_Y_fixed:X},0x{s.P2_VelY_fixed:X},{(input ? 1 : 0)},{(alive ? 1 : 0)},{p2Xpx},{p2Ypx},{(s.P2_OnGround ? 1 : 0)},{s.CameraY_fixed >> 8},{s.TargetCameraY_fixed >> 8},{s.GameMode},{(s.P2_GravFlipped ? 1 : 0)},0,0,0,0,0,0,0x{s.CameraY_fixed:X},{s.P2_Y_fixed & 0xFF},{s.CameraY_fixed & 0xFF},{s.ScrollYSubpx},{(s.P2_Mini ? 1 : 0)},0x{s.P2_VelX_fixed:X},{s.P2_SlopeType},{s.P2_LastSlopeType},{s.P2_SlopeFrames},{s.P2_SlopeWasOnCounter}");
 			}
 		}
 		catch
@@ -2051,6 +2298,7 @@ public class PathfinderEngine
 		simState.X_fixed = startX_px << 8;
 		simState.Y_fixed = (startY_px << 8) | SpawnYSubpx;
 		simState.VelX_fixed = SpeedUiIndexToFixed(startSpeedUiIndex);
+		simState.GlobalSpeed_fixed = simState.VelX_fixed;
 		simState.VelY_fixed = 0;
 		simState.GameMode = startGameMode;
 		simState.GravFlipped = startGravFlipped;
@@ -2482,6 +2730,7 @@ public class PathfinderEngine
 		simState.X_fixed = startX_px << 8;
 		simState.Y_fixed = (startY_px << 8) | SpawnYSubpx;
 		simState.VelX_fixed = SpeedUiIndexToFixed(startSpeedUiIndex);
+		simState.GlobalSpeed_fixed = simState.VelX_fixed;
 		simState.VelY_fixed = 0;
 		simState.GameMode = startGameMode;
 		simState.GravFlipped = startGravFlipped;
@@ -2677,6 +2926,7 @@ public class PathfinderEngine
 		simState.X_fixed = startX_px << 8;
 		simState.Y_fixed = (startY_px << 8) | SpawnYSubpx;
 		simState.VelX_fixed = SpeedUiIndexToFixed(startSpeedUiIndex);
+		simState.GlobalSpeed_fixed = simState.VelX_fixed;
 		simState.VelY_fixed = 0;
 		simState.GameMode = startGameMode;
 		simState.GravFlipped = startGravFlipped;
@@ -3271,6 +3521,10 @@ public class PathfinderEngine
 			_ => 7, 
 		}) & 7) << 8) | (int)((s.PrevInputHeld ? 1u : 0u) << 11) | (int)((s.BallFlipCooldown != 0 ? 1u : 0u) << 12);
 		int num4 = s.ProcessedSprites.GetBitsHash();
+		// A P2 speed portal can change the global selector while both saved
+		// player velocities still have their old value. Those states must not
+		// deduplicate before the delayed speed load becomes observable.
+		num4 = num4 * 397 + s.GlobalSpeed_fixed;
 		if (s.RobotJumpTime > 0)
 		{
 			num4 = num4 * 31 + s.RobotJumpTime;
@@ -3281,6 +3535,18 @@ public class PathfinderEngine
 		{
 			num4 = 0;
 		}
+		// eject_U/eject_D are observable future state: spider orb/pad handlers
+		// consume these persistent globals without performing a fresh collision.
+		num4 = num4 * 397 + s.EjectU;
+		num4 = num4 * 397 + s.EjectD;
+		num4 = num4 * 397 + s.InvincibleCounter;
+		// These P2 values survive while dual is off and become observable at
+		// the next dual portal, so inactive states must not merge across them.
+		num4 = num4 * 397 + s.P2_VelX_fixed;
+		num4 = num4 * 397 + s.P2_SlopeWasOnCounter;
+		num4 = num4 * 397 + s.P2_SlopeFrames;
+		num4 = num4 * 397 + s.P2_SlopeType;
+		num4 = num4 * 397 + s.P2_LastSlopeType;
 		if (s.DualActive)
 		{
 			int num5 = (flag ? ((s.P2_Y_fixed >> 11) & 0x1FF) : ((s.P2_Y_fixed >> 9) & 0x1FF));
@@ -3333,6 +3599,7 @@ public class PathfinderEngine
 			simState.X_fixed = startX_px << 8;
 			simState.Y_fixed = (startY_px << 8) | SpawnYSubpx;
 			simState.VelX_fixed = SpeedUiIndexToFixed(startSpeedUiIndex);
+			simState.GlobalSpeed_fixed = simState.VelX_fixed;
 			simState.VelY_fixed = 0;
 			simState.GameMode = startGameMode;
 			simState.GravFlipped = startGravFlipped;
@@ -3503,8 +3770,8 @@ public class PathfinderEngine
 				int num16 = 0;
 				int num17 = 0;
 				int[] array = new int[13];
-				bool trackDeathTypes = (frame >= 2000 && frame <= 2070) || (frame >= 3550 && frame <= 3850);
-				bool trackAscending = frame >= 4467 && frame <= 4470;
+				bool trackDeathTypes = Verbose && ((frame >= 2000 && frame <= 2070) || (frame >= 3550 && frame <= 3850));
+				bool trackAscending = Verbose && frame >= 4467 && frame <= 4470;
 				int[]? frameDtCounts = (trackDeathTypes ? new int[13] : null);
 				int num18 = 0;
 				int workerCount = Math.Min(Environment.ProcessorCount, Math.Max(1, expandCount / 256));
@@ -3528,7 +3795,7 @@ public class PathfinderEngine
 				int[][]? partFrameDtCounts = ((frameDtCounts != null) ? new int[workerCount][] : null);
 				int[] partCoinRangeDeaths = new int[workerCount];
 				List<string>[]? partAscDeathLogs = (trackAscending ? new List<string>[workerCount] : null);
-				List<string>[]? partGravDeathLogs = ((frame >= 1890) ? new List<string>[workerCount] : null);
+				List<string>[]? partGravDeathLogs = ((Verbose && frame >= 1890) ? new List<string>[workerCount] : null);
 				bool[] partHasWin = new bool[workerCount];
 				int[] partWinCoins = new int[workerCount];
 				int[] partWinParent = new int[workerCount];
@@ -3551,7 +3818,7 @@ public class PathfinderEngine
 					int[]? array11 = ((frameDtCounts != null) ? new int[13] : null);
 					int num157 = 0;
 					List<string>? list31 = (trackAscending ? new List<string>() : null);
-					List<string>? list32 = ((frame >= 1890) ? new List<string>(3) : null);
+					List<string>? list32 = ((Verbose && frame >= 1890) ? new List<string>(3) : null);
 					bool flag11 = false;
 					int num158 = 0;
 					int num159 = -1;
@@ -3738,11 +4005,11 @@ public class PathfinderEngine
 					}
 					_gravFDeathFrame = frame;
 				}
-				if (num16 > 0)
+				if (Verbose && num16 > 0)
 				{
 					Console.Error.WriteLine($"[S8B] f={frame} step8b={num16} total={num15} front={frontier.Count} cand={list3.Count} mode={frontier[0].GameMode}");
 				}
-				if (list3.Count > 0 && list3[0].DualActive)
+				if (Verbose && list3.Count > 0 && list3[0].DualActive)
 				{
 					int num23 = list3[0].X_fixed >> 8;
 					bool flag = num23 >= 3500 && num23 <= 3560;
@@ -3996,11 +4263,11 @@ public class PathfinderEngine
 						dictionary[key] = num62;
 					}
 				}
-				if (list3.Count > 0 && list3.Count != dictionary.Count)
+				if (Verbose && list3.Count > 0 && list3.Count != dictionary.Count)
 				{
 					Console.Error.WriteLine($"[DEDUP] f={frame} cand={list3.Count} deduped={dictionary.Count} (lost {list3.Count - dictionary.Count})");
 				}
-				if (frame >= 4400 && frame <= 4600 && dictionary.Count > 0)
+				if (Verbose && frame >= 4400 && frame <= 4600 && dictionary.Count > 0)
 				{
 					foreach (SimState item6 in list3)
 					{
@@ -4026,73 +4293,77 @@ public class PathfinderEngine
 						}
 					}
 				}
-				int num66 = 0;
-				int num67 = 0;
-				for (int num68 = 0; num68 < list3.Count; num68++)
+				if (Verbose)
 				{
-					if (list3[num68].GravFlipped)
+					int num66 = 0;
+					int num67 = 0;
+					for (int num68 = 0; num68 < list3.Count; num68++)
 					{
-						num66++;
-					}
-				}
-				foreach (int value14 in dictionary.Values)
-				{
-					if (list3[value14].GravFlipped)
-					{
-						num67++;
-					}
-				}
-				int num69 = 0;
-				foreach (SimState item7 in frontier)
-				{
-					if (item7.GravFlipped)
-					{
-						num69++;
-					}
-				}
-				if (num69 > 0 || num66 > 0)
-				{
-					int num70 = int.MaxValue;
-					int num71 = int.MinValue;
-					for (int num72 = 0; num72 < list3.Count; num72++)
-					{
-						if (list3[num72].GravFlipped)
+						if (list3[num68].GravFlipped)
 						{
-							int num73 = list3[num72].Y_fixed >> 8;
-							if (num73 < num70)
-							{
-								num70 = num73;
-							}
-							if (num73 > num71)
-							{
-								num71 = num73;
-							}
+							num66++;
 						}
 					}
-					string text = "";
-					if (num17 > 0)
+					foreach (int value14 in dictionary.Values)
 					{
-						string[] array6 = new string[13]
+						if (list3[value14].GravFlipped)
 						{
-							"UNK", "CEIL", "EJT", "CTR", "BPR", "BVZ", "BEJ", "FLR", "FWD", "DCL",
-							"BND", "OOT", "OOB"
-						};
-						for (int num74 = 0; num74 < array.Length; num74++)
-						{
-							if (array[num74] > 0)
-							{
-								text += $" {((num74 < array6.Length) ? array6[num74] : $"d{num74}")}={array[num74]}";
-							}
+							num67++;
 						}
 					}
-					_log.WriteLine($"[GF_PIPE] f={frame} frontGF={num69} gfDied={num17}{text} candGF={num66} dedupGF={num67} gfY=[{((num70 == int.MaxValue) ? "N/A" : num70.ToString())}..{((num71 == int.MinValue) ? "N/A" : num71.ToString())}]");
+					int num69 = 0;
+					foreach (SimState item7 in frontier)
+					{
+						if (item7.GravFlipped)
+						{
+							num69++;
+						}
+					}
+					if (num69 > 0 || num66 > 0)
+					{
+						int num70 = int.MaxValue;
+						int num71 = int.MinValue;
+						for (int num72 = 0; num72 < list3.Count; num72++)
+						{
+							if (list3[num72].GravFlipped)
+							{
+								int num73 = list3[num72].Y_fixed >> 8;
+								if (num73 < num70)
+								{
+									num70 = num73;
+								}
+								if (num73 > num71)
+								{
+									num71 = num73;
+								}
+							}
+						}
+						string text = "";
+						if (num17 > 0)
+						{
+							string[] array6 = new string[13]
+							{
+								"UNK", "CEIL", "EJT", "CTR", "BPR", "BVZ", "BEJ", "FLR", "FWD", "DCL",
+								"BND", "OOT", "OOB"
+							};
+							for (int num74 = 0; num74 < array.Length; num74++)
+							{
+								if (array[num74] > 0)
+								{
+									text += $" {((num74 < array6.Length) ? array6[num74] : $"d{num74}")}={array[num74]}";
+								}
+							}
+						}
+						_log.WriteLine($"[GF_PIPE] f={frame} frontGF={num69} gfDied={num17}{text} candGF={num66} dedupGF={num67} gfY=[{((num70 == int.MaxValue) ? "N/A" : num70.ToString())}..{((num71 == int.MinValue) ? "N/A" : num71.ToString())}]");
+					}
 				}
 				List<int> list15 = new List<int>(dictionary.Values);
 				list15.Sort((int a, int b) => candScore[a].CompareTo(candScore[b]));
-				List<SimState> list16 = new List<SimState>();
-				List<int> list17 = new List<int>();
-				List<bool> list18 = new List<bool>();
 				int num75 = (PreferCoins ? 120000 : 1073741823);
+				int selectedCapacity = Math.Min(dictionary.Count, num75);
+				List<SimState> list16 = new List<SimState>(selectedCapacity);
+				List<int> list17 = new List<int>(selectedCapacity);
+				List<bool> list18 = new List<bool>(selectedCapacity);
 				int num76 = Math.Min(PreferCoins ? (num75 * 3 / 4) : list15.Count, list15.Count);
 				for (int num77 = 0; num77 < num76; num77++)
 				{
@@ -4202,36 +4473,42 @@ public class PathfinderEngine
 						}
 					}
 				}
-				int num87 = 0;
-				foreach (SimState item12 in list16)
+				if (Verbose)
 				{
-					if (item12.GravFlipped)
+					int num87 = 0;
+					foreach (SimState item12 in list16)
 					{
-						num87++;
+						if (item12.GravFlipped)
+						{
+							num87++;
+						}
+					}
+					int num88 = 0;
+					foreach (int value15 in dictionary.Values)
+					{
+						if (list3[value15].GravFlipped)
+						{
+							num88++;
+						}
+					}
+					if (num88 > 0 && num87 != num88)
+					{
+						_log.WriteLine($"[GF_SELECT] f={frame} dedupGF={num88} selectedGF={num87} totalNext={list16.Count}");
 					}
 				}
-				int num88 = 0;
-				foreach (int value15 in dictionary.Values)
+				if (list16.Count != list3.Count)
 				{
-					if (list3[value15].GravFlipped)
+					HashSet<SpriteSet> hashSet = new HashSet<SpriteSet>(list16.Count);
+					foreach (SimState item13 in list16)
 					{
-						num88++;
+						hashSet.Add(item13.ProcessedSprites);
 					}
-				}
-				if (num88 > 0 && num87 != num88)
-				{
-					_log.WriteLine($"[GF_SELECT] f={frame} dedupGF={num88} selectedGF={num87} totalNext={list16.Count}");
-				}
-				HashSet<object> hashSet = new HashSet<object>(list16.Count);
-				foreach (SimState item13 in list16)
-				{
-					hashSet.Add(item13.ProcessedSprites);
-				}
-				for (int num89 = 0; num89 < list3.Count; num89++)
-				{
-					if (!hashSet.Contains(list3[num89].ProcessedSprites))
+					for (int num89 = 0; num89 < list3.Count; num89++)
 					{
-						list3[num89].ReturnAllSpriteResources();
+						if (!hashSet.Contains(list3[num89].ProcessedSprites))
+						{
+							list3[num89].ReturnAllSpriteResources();
+						}
 					}
 				}
 				list.Add(list17.ToArray());
@@ -4683,6 +4960,7 @@ public class PathfinderEngine
 		simState.X_fixed = startX_px << 8;
 		simState.Y_fixed = (startY_px << 8) | SpawnYSubpx;
 		simState.VelX_fixed = SpeedUiIndexToFixed(startSpeedUiIndex);
+		simState.GlobalSpeed_fixed = simState.VelX_fixed;
 		simState.VelY_fixed = 0;
 		simState.GameMode = startGameMode;
 		simState.GravFlipped = startGravFlipped;
@@ -4784,6 +5062,7 @@ public class PathfinderEngine
 		simState.X_fixed = startX_px << 8;
 		simState.Y_fixed = (startY_px << 8) | SpawnYSubpx;
 		simState.VelX_fixed = SpeedUiIndexToFixed(startSpeedUiIndex);
+		simState.GlobalSpeed_fixed = simState.VelX_fixed;
 		simState.VelY_fixed = 0;
 		simState.GameMode = startGameMode;
 		simState.GravFlipped = startGravFlipped;
@@ -8488,7 +8767,11 @@ public class PathfinderEngine
 	{
 		_stepFrameInputHeld = input;
 		endLevel = false;
-		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=frame.in X={s.X_fixed >> 8}.{(s.X_fixed & 0xFF):X2} Y={s.Y_fixed >> 8}.{(s.Y_fixed & 0xFF):X2} Ypx={((s.Y_fixed - s.CameraY_fixed) >> 8) + (s.CameraY_fixed >> 8)} Vx={s.VelX_fixed} Vy={s.VelY_fixed} sFr={s.SlopeFrames} swOn={s.SlopeWasOnCounter} sT={s.SlopeType} lst={s.LastSlopeType} inp={(input ? 1 : 0)} grav={(s.GravFlipped ? 1 : 0)} mini={(s.Mini ? 1 : 0)} gm={s.GameMode} onG={(s.OnGround ? 1 : 0)} dash={s.Dashing} camY={s.CameraY_fixed >> 8}.{(s.CameraY_fixed & 0xFF):X2}");
+		// A PF frame is one replay/sim_cursor tick, not one rendered NES frame.
+		// Slow mode inserts rendered frames on which X does not move; the Mesen
+		// replay clock deliberately holds the same input and cursor across them.
+		// Therefore those waits must not consume a PF input or publish a PF row.
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=frame.in X={s.X_fixed >> 8}.{(s.X_fixed & 0xFF):X2} Y={s.Y_fixed >> 8}.{(s.Y_fixed & 0xFF):X2} Ypx={NesPlayerY_px(s.Y_fixed, s.CameraY_fixed)} Vx={s.VelX_fixed} Vy={s.VelY_fixed} sFr={s.SlopeFrames} swOn={s.SlopeWasOnCounter} sT={s.SlopeType} lst={s.LastSlopeType} inp={(input ? 1 : 0)} grav={(s.GravFlipped ? 1 : 0)} mini={(s.Mini ? 1 : 0)} gm={s.GameMode} onG={(s.OnGround ? 1 : 0)} dash={s.Dashing} inv={s.InvincibleCounter} camY={s.CameraY_fixed >> 8}.{(s.CameraY_fixed & 0xFF):X2}");
 		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=StepFrame.in input={(input ? 1 : 0)} prevHeld={(s.PrevInputHeld ? 1 : 0)} dash={s.Dashing} orbed={(s.Orbed ? 1 : 0)} dual={(s.DualActive ? 1 : 0)}");
 		s.Step2Ejected = false;
 		s.ShipDbgCeilSlopeHit = false;
@@ -8501,6 +8784,11 @@ public class PathfinderEngine
 		int x_fixed = s.X_fixed;
 		int num = x_fixed >> 8;
 		bool flag = input && !s.PrevInputHeld;
+		bool queuedPressAtFrameStart = s.AirPressLatch;
+		// NES state_game runs decrement_was_on_slope before cube-data latching
+		// and sprite_collide. The old mode/gravity must therefore own any
+		// slope-exit impulse when a portal changes mode later in this frame.
+		PfUpdateSlopeCountersPreGravity(ref s);
 		if (!input)
 		{
 			s.AirPressLatch = false;
@@ -8511,7 +8799,7 @@ public class PathfinderEngine
 			s.AirPressLatch = true;
 		}
 		int velX_fixed = s.VelX_fixed;
-		int value = (s.CameraY_fixed >> 8) + (s.Y_fixed - s.CameraY_fixed >> 8);
+		int value = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed);
 		OrbDbg($"ENTER mode={s.GameMode} mini={s.Mini} gravF={s.GravFlipped} dashing={s.Dashing} X_fixed=0x{s.X_fixed:X} Y_fixed=0x{s.Y_fixed:X} VelY_fixed=0x{s.VelY_fixed:X} oldX_px={num} playerY_px={value} CamY_px={s.CameraY_fixed >> 8} input={input} prevHeld={s.PrevInputHeld} pressEdge={flag} orbed={s.Orbed} jblock={s.JBlocked} fblock={s.FBlocked} hblock={s.HBlocked} orbHistCount={_hitOrbHistory.Count}");
 		if (s.Dashing != 0 && !input)
 		{
@@ -8523,7 +8811,7 @@ public class PathfinderEngine
 			s.Orbed = false;
 		}
 		bool orbHitThisFrame = false;
-		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=ProcessSprites.in X={num} Y={(s.Y_fixed >> 8)} mode={s.GameMode}");
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=ProcessSprites.in X={num} Y={NesPlayerY_px(s.Y_fixed, s.CameraY_fixed)} mode={s.GameMode}");
 		if (!_dualP2Guard)
 		{
 			if (_p1OrbIndicesThisFrame == null)
@@ -8532,7 +8820,11 @@ public class PathfinderEngine
 		}
 		int _dbgVelXBefore = s.VelX_fixed;
 		int _dbgYBeforePS = s.Y_fixed;
-		endLevel = ProcessSpritesNesOrder(ref s, num, input, flag, out orbHitThisFrame);
+		endLevel = ProcessSpritesNesOrder(ref s, num, input, flag, queuedPressAtFrameStart, out orbHitThisFrame);
+		// NES tests orbed[] after sprite_collide and after cube_eject. Preserve the
+		// sprite-pass latch explicitly: collision/ejection bookkeeping must never
+		// make a held input auto-jump after a spider orb/pad teleport.
+		bool orbedAtMovementStart = s.Orbed;
 		if (s.Y_fixed != _dbgYBeforePS)
 		{
 			SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=ProcessSprites.Ychanged oldY=0x{_dbgYBeforePS:X} newY=0x{s.Y_fixed:X} delta={s.Y_fixed - _dbgYBeforePS}");
@@ -8549,10 +8841,14 @@ public class PathfinderEngine
 		{
 			return true;
 		}
-		int x_fixed2 = s.X_fixed + s.VelX_fixed;
+		// x_movement reloads currplayer_vel_x from the global speed selector
+		// after gamemode Y movement. A P2 speed portal therefore changes this
+		// frame's P2 X advance and the next frame's P1 speed without changing
+		// either player's wave Y velocity early.
+		int movementVelX_fixed = s.GlobalSpeed_fixed > 0 ? s.GlobalSpeed_fixed : s.VelX_fixed;
+		int x_fixed2 = s.X_fixed + movementVelX_fixed;
 		if (s.GameMode == 0)
 		{
-			PfUpdateSlopeCountersPreGravity(ref s);
 			PfSlopeDiag(ref s, "cube/pre-grav");
 			CubeGravity(ref s);
 			PfSlopeDiag(ref s, "cube/post-grav");
@@ -8586,8 +8882,15 @@ public class PathfinderEngine
 			}
 			if (s.VelY_fixed == 0)
 			{
+				// NES cube_movement clears cube_data bit 1 as soon as a cube is
+				// grounded, before testing the held-input/orbed jump gate.  A
+				// spider pad may preserve that bit through sprite_collide, but it
+				// must not survive this movement and activate an orb next frame.
+				bool queuedPressBeforeGroundClear = s.AirPressLatch;
+				s.AirPressLatch = false;
+				SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=CubeJumpGate input={(input ? 1 : 0)} orbedNow={(s.Orbed ? 1 : 0)} orbedAfterSprites={(orbedAtMovementStart ? 1 : 0)} queuedBeforeClear={(queuedPressBeforeGroundClear ? 1 : 0)} j={(s.JBlocked ? 1 : 0)} f={(s.FBlocked ? 1 : 0)}");
 				bool flag5 = false;
-				if (input && !s.JBlocked && !s.FBlocked && !s.Orbed)
+				if (input && !s.JBlocked && !s.FBlocked && !orbedAtMovementStart)
 				{
 					flag5 = true;
 				}
@@ -8640,7 +8943,6 @@ public class PathfinderEngine
 		}
 		else if (s.GameMode == 2)
 		{
-			PfUpdateSlopeCountersPreGravity(ref s);
 			int _dbgYBeforeGrav = s.Y_fixed;
 			int _dbgVelBeforeGrav = s.VelY_fixed;
 			BallGravityStep(ref s);
@@ -8678,7 +8980,6 @@ public class PathfinderEngine
 		}
 		else if (s.GameMode == 3)
 		{
-			PfUpdateSlopeCountersPreGravity(ref s);
 			UfoGravityStep(ref s);
 			ShipEject(ref s, input, out var died5);
 			if (died5)
@@ -8727,7 +9028,8 @@ public class PathfinderEngine
 				s.DeathType = 3;
 				return false;
 			}
-			if ((flag || s.AirPressLatch) && input && s.VelY_fixed == 0 && !s.Orbed)
+			if ((flag || s.AirPressLatch) && input && s.VelY_fixed == 0 &&
+				!orbedAtMovementStart && !s.Orbed)
 			{
 				s.VelY_fixed = -688 * s.GravMul;
 				s.RobotJumpTime = 19;
@@ -8751,24 +9053,45 @@ public class PathfinderEngine
 		else if (s.GameMode == 6)
 		{
 			int num9 = velX_fixed;
-			int num10 = (s.Mini ? (num9 << 1) : num9);
-			if (s.GravFlipped)
-			{
-				num10 = -num10;
-			}
-			s.VelY_fixed = num10;
 			s.WasZeroedByCollision = false;
-			if (input)
+			switch (s.Dashing)
 			{
-				s.VelY_fixed = -s.VelY_fixed;
-			}
-			if ((s.SlopeFrames | s.SlopeWasOnCounter) == 0)
-			{
+			case 0:
+				int num10 = (s.Mini ? (num9 << 1) : num9);
+				if (s.GravFlipped)
+				{
+					num10 = -num10;
+				}
+				s.VelY_fixed = input ? -num10 : num10;
+				if ((s.SlopeFrames | s.SlopeWasOnCounter) == 0)
+				{
+					s.Y_fixed += s.VelY_fixed;
+				}
+				else
+				{
+					s.VelY_fixed = 0;
+				}
+				break;
+			case 1:
+				// Horizontal dash: NES sets vel_y to 1 and returns without Y motion.
+				s.VelY_fixed = 1;
+				break;
+			case 2:
+				s.VelY_fixed = -num9;
 				s.Y_fixed += s.VelY_fixed;
-			}
-			else
-			{
-				s.VelY_fixed = 0;
+				break;
+			case 3:
+				s.VelY_fixed = num9;
+				s.Y_fixed += s.VelY_fixed;
+				break;
+			case 4:
+				s.VelY_fixed = num9;
+				s.Y_fixed -= s.VelY_fixed;
+				break;
+			case 5:
+				s.VelY_fixed = num9;
+				s.Y_fixed += s.VelY_fixed;
+				break;
 			}
 			bool died7 = false;
 			WaveEject(ref s, input, out died7);
@@ -8797,7 +9120,7 @@ public class PathfinderEngine
 			int tileX = num14 / 16;
 			int tileY = num15 / 16;
 			MetatileCollision tileCollision = GetTileCollision(tileX, tileY);
-			if (tileCollision >= MetatileCollision.COL_SLOPE_RD45 && tileCollision <= MetatileCollision.COL_SLOPE_LU66_TOP && (s.Mini || tileCollision != MetatileCollision.COL_SLOPE_LU45) && (!s.Mini || (tileCollision != MetatileCollision.COL_SLOPE_LU66_TOP && tileCollision != MetatileCollision.COL_SLOPE_LU66_BOT)) && PfSlopeCalc(num14, num15, tileCollision).hit)
+			if (s.InvincibleCounter == 0 && tileCollision >= MetatileCollision.COL_SLOPE_RD45 && tileCollision <= MetatileCollision.COL_SLOPE_LU66_TOP && (s.Mini || tileCollision != MetatileCollision.COL_SLOPE_LU45) && (!s.Mini || (tileCollision != MetatileCollision.COL_SLOPE_LU66_TOP && tileCollision != MetatileCollision.COL_SLOPE_LU66_BOT)) && PfSlopeCalc(num14, num15, tileCollision).hit)
 			{
 				s.DeathType = 3;
 				return false;
@@ -8809,7 +9132,7 @@ public class PathfinderEngine
 				int tileX2 = num16 / 16;
 				int tileY2 = num17 / 16;
 				MetatileCollision tileCollision2 = GetTileCollision(tileX2, tileY2);
-				if (tileCollision2 >= MetatileCollision.COL_SLOPE_RD45 && tileCollision2 <= MetatileCollision.COL_SLOPE_LU66_TOP && (s.Mini || tileCollision2 != MetatileCollision.COL_SLOPE_LU45) && (!s.Mini || (tileCollision2 != MetatileCollision.COL_SLOPE_LU66_TOP && tileCollision2 != MetatileCollision.COL_SLOPE_LU66_BOT)) && PfSlopeCalc(num16, num17, tileCollision2).hit)
+				if (s.InvincibleCounter == 0 && tileCollision2 >= MetatileCollision.COL_SLOPE_RD45 && tileCollision2 <= MetatileCollision.COL_SLOPE_LU66_TOP && (s.Mini || tileCollision2 != MetatileCollision.COL_SLOPE_LU45) && (!s.Mini || (tileCollision2 != MetatileCollision.COL_SLOPE_LU66_TOP && tileCollision2 != MetatileCollision.COL_SLOPE_LU66_BOT)) && PfSlopeCalc(num16, num17, tileCollision2).hit)
 				{
 					s.SlopeFrames = 1;
 					s.SlopeWasOnCounter = 3;
@@ -8832,10 +9155,15 @@ public class PathfinderEngine
 				s.DeathType = 2;
 				return false;
 			}
-			PfUpdateSlopeCounters_Fresh(ref s, velX_fixed);
 			s.OnGround = s.VelY_fixed == 0;
-			bool flag6 = s.VelY_fixed == 0 && (!s.Orbed || s.BlackOrbed);
-			if (input && flag6)
+			bool canSpiderTeleport = s.VelY_fixed == 0 && !s.Orbed && s.Dashing == 0;
+			// NES spider_movement() tests cube_data&2 after spider_eject(), while
+			// x_movement clears that bit only later on a released input.  Preserve
+			// the frame-start queued press for this movement gate so a press held
+			// through the landing frame can still teleport even if A is released
+			// on that same frame.
+			bool spiderTeleportGate = flag || s.AirPressLatch || queuedPressAtFrameStart || (input && s.BlackOrbed);
+			if (canSpiderTeleport && spiderTeleportGate)
 			{
 				if (!s.GravFlipped)
 				{
@@ -8852,14 +9180,18 @@ public class PathfinderEngine
 					s.VelY_fixed = 0;
 				}
 				s.BlackOrbed = false;
-				s.Orbed = true;
-				SnapCameraToPlayerY(ref s);
+				s.AirPressLatch = false;
 			}
 			else if (!input)
 			{
 				s.BlackOrbed = false;
-				s.Orbed = false;
 			}
+			// NES consumes currplayer_slope_frames in x_movement_coll(), after
+			// spider_movement() has already run its grounded teleport gate. If we
+			// apply slope velocity before this gate, a slope landing that zeroed
+			// velocity can wrongly become airborne and miss the same-frame flip.
+			PfUpdateSlopeCounters_Fresh(ref s, velX_fixed);
+			s.OnGround = s.VelY_fixed == 0;
 			if (CheckDeathCollision(ref s))
 			{
 				s.DeathType = 3;
@@ -8870,7 +9202,11 @@ public class PathfinderEngine
 		{
 			SwingGravityStep(ref s);
 			bool died9 = false;
-			ShipEject(ref s, input, out died9);
+			// NES gamemode_ball.h handles GAMEMODE_SWING through ball_eject(),
+			// not ship/ufo eject.  Swing still uses swing gravity and a
+			// press-to-flip after ejection, but its ceiling/floor probes must
+			// match ball_eject ordering and offsets exactly.
+			BallEject(ref s, input, out died9);
 			if (died9)
 			{
 				s.DeathType = 6;
@@ -8879,8 +9215,24 @@ public class PathfinderEngine
 			PfUpdateSlopeCounters_Fresh(ref s, velX_fixed);
 			if (flag && !s.UfoOrbed && !s.Orbed)
 			{
+				bool gravityBeforeFlip = s.GravFlipped;
 				s.GravFlipped = !s.GravFlipped;
 				s.GravMul = ((!s.GravFlipped) ? 1 : (-1));
+				// gamemode_ball calls bg_coll_floor_spikes immediately after the
+				// swing flip. Generic.y still has the one-pixel ball_eject offset
+				// selected using the PRE-flip gravity; x_movement_coll's later raw-Y
+				// spike pass is not equivalent at tile-half boundaries.
+				if (CheckFloorSpikes(ref s, gravityBeforeFlip ? -1 : 1))
+				{
+					s.DeathType = 7;
+					if (_speculativeDepth == 0)
+					{
+						_lastDeathReason = "SWING_FLIP_SPIKE";
+						_lastDeathX = s.X_fixed >> 8;
+						_lastDeathY = s.Y_fixed >> 8;
+					}
+					return false;
+				}
 			}
 			s.Orbed = false;
 			s.UfoOrbed = false;
@@ -8892,28 +9244,7 @@ public class PathfinderEngine
 		}
 		else if (s.GameMode == 8)
 		{
-			if (s.OnGround && !flag)
-			{
-				s.NinjaJumps = 3;
-			}
 			CubeGravity(ref s);
-			if (s.GravFlipped)
-			{
-				int hitboxW2 = GetHitboxW(s.Mini);
-				int hitboxH2 = GetHitboxH(s.Mini);
-				int miniCenterOffsetY2 = SharedPhysics.GetMiniCenterOffsetY(s.Mini);
-				int collX = s.X_fixed >> 8;
-				int collY = (s.Y_fixed >> 8) + miniCenterOffsetY2 - 1;
-				var (flag7, num19, _, _) = CheckCeiling(collX, collY, hitboxW2, hitboxH2);
-				if (flag7 && s.VelY_fixed < 0)
-				{
-					int num20 = num19 - miniCenterOffsetY2 - 1;
-					s.Y_fixed = (num20 << 8) | (s.Y_fixed & 0xFF);
-					s.VelY_fixed = 0;
-					s.OnGround = true;
-					s.WasZeroedByCollision = true;
-				}
-			}
 			bool died10 = false;
 			CubeEject(ref s, input, out died10);
 			if (died10)
@@ -8938,7 +9269,14 @@ public class PathfinderEngine
 				s.DeathType = 3;
 				return false;
 			}
-			if (flag && s.NinjaJumps > 0 && !orbHitThisFrame && !s.HBlocked && s.Dashing == 0)
+			// The current NES build resets the counter on landing, but a held input
+			// does not auto-jump. A new press is required (Azuronxolax/Birdbrain).
+			if (s.VelY_fixed == 0)
+			{
+				s.NinjaJumps = 3;
+			}
+			if (flag && s.NinjaJumps > 0 && !orbHitThisFrame && !s.Orbed &&
+				!s.HBlocked && s.Dashing == 0)
 			{
 				s.VelY_fixed = GetJumpVel(s.Mini) * s.GravMul;
 				s.NinjaJumps--;
@@ -9006,11 +9344,14 @@ public class PathfinderEngine
 				return false;
 			}
 		}
+		// x_movement has now run: publish the global speed as this player's
+		// saved velocity before x_movement_coll/runthecolls.
+		s.VelX_fixed = movementVelX_fixed;
 		if (_dualP2Guard)
 		{
 			s.X_fixed = x_fixed2;
 		}
-		if (CheckFloorSpikes(ref s))
+		if (s.InvincibleCounter == 0 && CheckFloorSpikes(ref s))
 		{
 			// NES x_movement_coll only sets cube_data here. runthecolls still
 			// calls x_movement before the frame is reported as dead.
@@ -9024,7 +9365,7 @@ public class PathfinderEngine
 			s.DeathType = 7;
 			return false;
 		}
-		if (s.GameMode == 0 || s.GameMode == 1 || s.GameMode == 2 || s.GameMode == 3 || s.GameMode == 4 || s.GameMode == 5 || s.GameMode == 6 || s.GameMode == 7 || s.GameMode == 8 || s.GameMode == 9 || s.GameMode == 10)
+		if (s.InvincibleCounter == 0 && (s.GameMode == 0 || s.GameMode == 1 || s.GameMode == 2 || s.GameMode == 3 || s.GameMode == 4 || s.GameMode == 5 || s.GameMode == 6 || s.GameMode == 7 || s.GameMode == 8 || s.GameMode == 9 || s.GameMode == 10))
 		{
 			bool num25 = _frameCounter >= 4467 && _frameCounter <= 4470 && s.VelY_fixed < 0 && s.Y_fixed >> 8 < 720;
 			bool flag8 = CheckForwardCollision(ref s);
@@ -9051,7 +9392,7 @@ public class PathfinderEngine
 				int hbW = ((s.GameMode == 6 || s.GameMode == 10) ? 8 : GetHitboxW(s.Mini));
 				int hbH = ((s.GameMode == 6 || s.GameMode == 10) ? 8 : GetHitboxH(s.Mini));
 				int hbOffY = ((s.GameMode != 6 && s.GameMode != 10) ? GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped) : 0);
-				var (num26, num27) = SharedPhysics.GetForwardSlopeNudge(in _collisionMap, s.X_fixed >> 8, s.Y_fixed >> 8, hbW, hbH, hbOffY, s.GameMode, s.Mini, s.GravFlipped, s.SlopeType);
+				var (num26, num27) = SharedPhysics.GetForwardSlopeNudge(in _collisionMap, s.X_fixed >> 8, NesPlayerBgCollisionY_px(s.Y_fixed, s.CameraY_fixed), hbW, hbH, hbOffY, s.GameMode, s.Mini, s.GravFlipped, s.SlopeType);
 				if (num26 != 0)
 				{
 					s.Y_fixed += num26 << 8;
@@ -9059,7 +9400,10 @@ public class PathfinderEngine
 				if (num27 != 0)
 				{
 					s.SlopeType = num27;
-					s.LastSlopeType = num27;
+					// NES's forward bg_coll_R slope probe writes current slope
+					// state, but does not promote it to last_slope_type. A later
+					// directional slope rejection must still restore the previous
+					// value (often zero), as seen in Blast Processing.
 					if ((s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8) && input)
 					{
 						s.SlopeJumpHigher = true;
@@ -9079,7 +9423,7 @@ public class PathfinderEngine
 			{
 				s.ExitPortalTimer--;
 			}
-			int num28 = s.Y_fixed - s.CameraY_fixed;
+			int num28 = NesNoCamTrackingScreenY_fixed(in s);
 			int num29 = (s.CameraY_fixed >> 8) + _nesCoordOffset;
 			int num30 = _minScrollYLin - _nesCoordOffset << 8;
 			int num31 = NesMaxCamY_px() << 8;
@@ -9112,8 +9456,8 @@ public class PathfinderEngine
 					s.Y_fixed += num39;
 					if (s.CameraY_fixed < num30)
 					{
-						int num40 = num30 - s.CameraY_fixed;
-						s.Y_fixed -= num40;
+						// PF Y is world-space; NES's integer top-cap compensation
+						// changes screen Y and scroll by equal amounts.
 						s.Y_fixed -= s.ScrollYSubpx;
 						s.ScrollYSubpx = 0;
 						s.CameraY_fixed = num30;
@@ -9147,6 +9491,9 @@ public class PathfinderEngine
 				s.Y_fixed += num48;
 				if (s.CameraY_fixed > num31)
 				{
+					// NES cap_scroll_y_at_bottom() compares against $02F0, so an
+					// exact bottom-cap integer scroll with non-zero subpx is not
+					// clamped/cleared.
 					s.Y_fixed += s.ScrollYSubpx;
 					s.ScrollYSubpx = 0;
 					s.CameraY_fixed = num31;
@@ -9160,7 +9507,9 @@ public class PathfinderEngine
 			int num51 = NesMaxCamY_px() << 8;
 			if (num50 > num49)
 			{
-				s.CameraY_fixed += 512;
+				s.CameraY_fixed += SHIP_SCROLL_SPEED_UP_FIXED;
+				// PF stores world Y. NES screen currplayer_y moves -2px here while
+				// scroll_y moves +2px, so the world-space player Y is unchanged.
 			}
 			// NES process_y_scroll uses a second independent comparison after
 			// the upward step, so a +2 overshoot can immediately take the -3 path.
@@ -9168,19 +9517,40 @@ public class PathfinderEngine
 			// the still-higher encoded target_scroll_y before cap_scroll_y_at_bottom.
 			if (s.CameraY_fixed <= num51 && num50 < (s.CameraY_fixed >> 8))
 			{
-				s.CameraY_fixed -= 768;
-				s.Y_fixed -= 256;
+				s.CameraY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED;
+				// NES adds SHIP_SCROLL_SPEED to screen currplayer_y on this branch,
+				// while scroll_y moves -3px on NTSC due the carry after subtracting
+				// the zero low byte.  PF world Y therefore moves by -1px.
+				s.Y_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED - SHIP_SCROLL_SPEED_UP_FIXED;
+				if (s.DualActive)
+				{
+					s.P2_Y_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED - SHIP_SCROLL_SPEED_UP_FIXED;
+				}
 			}
-			int num52 = -(groundRowsToReserve * 16) << 8;
+			int num52 = (_minScrollYLin - _nesCoordOffset) << 8;
 			if (s.CameraY_fixed < num52)
 			{
+				// PF Y is world-space; only the fractional scroll fold changes
+				// its decomposition at the NES top cap.
 				s.Y_fixed -= s.ScrollYSubpx;
+				if (s.DualActive)
+				{
+					s.P2_Y_fixed -= s.ScrollYSubpx;
+				}
 				s.CameraY_fixed = num52;
 				s.ScrollYSubpx = 0;
 			}
-			if (s.CameraY_fixed >= num51)
+			if (s.CameraY_fixed > num51)
 			{
+				// NES cap_scroll_y_at_bottom() does not fire for $02EF plus a
+				// fractional subpixel byte; it only caps/clears after integer
+				// scroll passes into $02F0.  Keeping the subbyte here preserves
+				// the NES low-byte behavior seen in ship mode.
 				s.Y_fixed += s.ScrollYSubpx;
+				if (s.DualActive)
+				{
+					s.P2_Y_fixed += s.ScrollYSubpx;
+				}
 				s.CameraY_fixed = num51;
 				s.ScrollYSubpx = 0;
 			}
@@ -9251,11 +9621,27 @@ public class PathfinderEngine
 		s.X_fixed = x_fixed2;
 		if (s.X_fixed != x_fixed3)
 		{
-			if (CheckDeathCollision(ref s))
+			if (CheckDeathCollision(ref s, polluteSlopeState: false))
 			{
 				if (_speculativeDepth == 0)
 				{
 					_lastDeathReason = "DEATH_COLL_NEWX";
+					_lastDeathX = s.X_fixed >> 8;
+					_lastDeathY = s.Y_fixed >> 8;
+				}
+				s.DeathType = 9;
+				return false;
+			}
+			// P2 does not run x_movement, but the NES synchronizes currplayer_x to
+			// P1's already-advanced X before x_movement_coll. That routine reloads
+			// Generic.x, so P2's later bg_coll_death slope probe uses the synced X.
+			// The ordinary shared death helper intentionally excludes slopes; apply
+			// the missing slope part here, only for that dual-P2 synchronization.
+			if (_dualP2Guard && CheckSlopePenetrationDeath(ref s))
+			{
+				if (_speculativeDepth == 0)
+				{
+					_lastDeathReason = "SLOPE_DEATH_NEWX_P2";
 					_lastDeathX = s.X_fixed >> 8;
 					_lastDeathY = s.Y_fixed >> 8;
 				}
@@ -9286,6 +9672,12 @@ public class PathfinderEngine
 		s.FBlocked = false;
 		s.HBlocked = false;
 		s.Dblocked = false;
+		// NES decrements the global counter once after P1 runthecolls and before
+		// P2. The recursive P2 step must observe the newly decremented value.
+		if (!_dualP2Guard && s.InvincibleCounter > 0)
+		{
+			s.InvincibleCounter--;
+		}
 		s.PrevInputHeld = input;
 		// NES runs check_spr_objects once, after P1 movement/scroll and before
 		// switching to P2. P2 reuses that exact 16-slot ordering/active state.
@@ -9299,6 +9691,9 @@ public class PathfinderEngine
 		}
 		if (s.DualActive && !_dualP2Guard)
 		{
+			// spcl_dual_pt does not initialize player_vel_x[1]; dormant P2 speed
+			// survives single sections and is synchronized after each P2 step.
+			int p1VelX_fixed = s.VelX_fixed;
 			int y_fixed = s.Y_fixed;
 			int num57 = s.VelY_fixed;
 			bool flag9 = s.GravFlipped;
@@ -9313,6 +9708,7 @@ public class PathfinderEngine
 			int slopeWasOnCounter = s.SlopeWasOnCounter;
 			int slopeFrames = s.SlopeFrames;
 			int slopeType = s.SlopeType;
+			int lastSlopeType = s.LastSlopeType;
 			bool orbed = s.Orbed;
 			bool ufoOrbed = s.UfoOrbed;
 			bool blackOrbed = s.BlackOrbed;
@@ -9341,6 +9737,7 @@ public class PathfinderEngine
 			s.SlopeWasOnCounter = s.P2_SlopeWasOnCounter;
 			s.SlopeFrames = s.P2_SlopeFrames;
 			s.SlopeType = s.P2_SlopeType;
+			s.LastSlopeType = s.P2_LastSlopeType;
 			s.Orbed = s.P2_Orbed;
 			s.UfoOrbed = s.P2_UfoOrbed;
 			s.BlackOrbed = s.P2_BlackOrbed;
@@ -9358,6 +9755,9 @@ public class PathfinderEngine
 			s.PendingOrbExtra1SpriteId = s.P2_PendingOrbExtra1SpriteId;
 			s.PendingOrbExtra2Index = s.P2_PendingOrbExtra2Index;
 			s.PendingOrbExtra2SpriteId = s.P2_PendingOrbExtra2SpriteId;
+			// spcl_dual_pt does not initialize player_vel_x[1]. The first
+			// dual uses zero; later dual sections reuse the dormant saved speed.
+			s.VelX_fixed = s.P2_VelX_fixed;
 			bool flag11 = false;
 			if (s.GameMode == 2 && ballCooldownFrames > 0)
 			{
@@ -9372,12 +9772,14 @@ public class PathfinderEngine
 				s.ProcessedSprites.Remove(item);
 			}
 			_p2OrbFlippedOtherGrav = false;
+			s.P2_SingleExitCaptured = false;
 			_dualP2Guard = true;
 			_dualP2ScrollXValid = true;
 			bool endLevel2;
 			bool flag12 = StepFrame(ref s, input2, out endLevel2);
 			_dualP2ScrollXValid = false;
 			_dualP2Guard = false;
+			s.VelX_fixed = p1VelX_fixed;
 			foreach (int item2 in _p1OrbIndicesThisFrame ?? Enumerable.Empty<int>())
 			{
 				s.ProcessedSprites.Add(item2);
@@ -9390,6 +9792,9 @@ public class PathfinderEngine
 				_p2OrbFlippedOtherGrav = false;
 			}
 			s.P2_Y_fixed = s.Y_fixed;
+			// NES synchronizes P2 X velocity to P1 after P2 movement, before
+			// saving player_vel_x[1].
+			s.P2_VelX_fixed = p1VelX_fixed;
 			s.P2_VelY_fixed = s.VelY_fixed;
 			s.P2_GravFlipped = s.GravFlipped;
 			s.P2_GravMul = s.GravMul;
@@ -9403,6 +9808,7 @@ public class PathfinderEngine
 			s.P2_SlopeWasOnCounter = s.SlopeWasOnCounter;
 			s.P2_SlopeFrames = s.SlopeFrames;
 			s.P2_SlopeType = s.SlopeType;
+			s.P2_LastSlopeType = s.LastSlopeType;
 			s.P2_Orbed = s.Orbed;
 			s.P2_UfoOrbed = s.UfoOrbed;
 			s.P2_BlackOrbed = s.BlackOrbed;
@@ -9427,10 +9833,15 @@ public class PathfinderEngine
 			if (!s.DualActive)
 			{
 				s.X_fixed = x_fixed2;
-				s.Y_fixed = y_fixed2;
-				s.VelY_fixed = velY_fixed5;
-				s.GravFlipped = gravFlipped2;
-				s.GravMul = ((!gravFlipped2) ? 1 : (-1));
+				// spcl_sngl_pt copies currplayer_y/gravity/vel_y into
+				// player[0] immediately at the portal's sprite slot.  Later P2
+				// movement must not be included, while earlier same-pass portals
+				// (for example wave -> swing) must be included.
+				s.Y_fixed = s.P2_SingleExitCaptured ? s.P2_SingleExitY_fixed : y_fixed2;
+				s.VelY_fixed = s.P2_SingleExitCaptured ? s.P2_SingleExitVelY_fixed : velY_fixed5;
+				s.GravFlipped = s.P2_SingleExitCaptured ? s.P2_SingleExitGravFlipped : gravFlipped2;
+				s.GravMul = s.P2_SingleExitCaptured ? s.P2_SingleExitGravMul : ((!gravFlipped2) ? 1 : (-1));
+				s.P2_SingleExitCaptured = false;
 				s.Mini = flag10;
 				s.WasZeroedByCollision = wasZeroedByCollision;
 				s.OnGround = onGround;
@@ -9441,6 +9852,7 @@ public class PathfinderEngine
 				s.SlopeWasOnCounter = slopeWasOnCounter;
 				s.SlopeFrames = slopeFrames;
 				s.SlopeType = slopeType;
+				s.LastSlopeType = lastSlopeType;
 				s.Orbed = orbed;
 				s.UfoOrbed = ufoOrbed;
 				s.BlackOrbed = blackOrbed;
@@ -9478,6 +9890,7 @@ public class PathfinderEngine
 			s.SlopeWasOnCounter = slopeWasOnCounter;
 			s.SlopeFrames = slopeFrames;
 			s.SlopeType = slopeType;
+			s.LastSlopeType = lastSlopeType;
 			s.Orbed = orbed;
 			s.UfoOrbed = ufoOrbed;
 			s.BlackOrbed = blackOrbed;
@@ -9557,7 +9970,7 @@ public class PathfinderEngine
 	private void CubeEject(ref SimState s, bool input, out bool died)
 	{
 		died = false;
-		SharedPhysics.EjectResult ejectResult = SharedPhysics.CubeEject(in _collisionMap, s.X_fixed, s.Y_fixed, s.VelY_fixed, s.VelX_fixed, s.GravFlipped, s.Mini, s.GameMode, input, s.SlopeWasOnCounter, s.SlopeFrames, s.SlopeType, s.SlopeJumpHigher, s.LastSlopeType, s.CameraY_fixed, updateSlopeCounters: s.GameMode != 0);
+		SharedPhysics.EjectResult ejectResult = SharedPhysics.CubeEject(in _collisionMap, s.X_fixed, s.Y_fixed, s.VelY_fixed, s.VelX_fixed, s.GravFlipped, s.Mini, s.GameMode, input, s.SlopeWasOnCounter, s.SlopeFrames, s.SlopeType, s.SlopeJumpHigher, s.LastSlopeType, s.CameraY_fixed, updateSlopeCounters: false, hBlocked: s.HBlocked, fBlocked: s.FBlocked);
 		s.Y_fixed = ejectResult.NewY_fixed;
 		s.VelY_fixed = ejectResult.NewVelY_fixed;
 		s.OnGround = ejectResult.OnGround;
@@ -9567,91 +9980,20 @@ public class PathfinderEngine
 		s.SlopeWasOnCounter = ejectResult.SlopeWasOnCounter;
 		s.SlopeJumpHigher = ejectResult.SlopeJumpHigher;
 		s.LastSlopeType = ejectResult.LastSlopeType;
+		s.GravFlipped = ejectResult.NewGravFlipped;
+		s.GravMul = s.GravFlipped ? -1 : 1;
+		if (ejectResult.EjectUWritten)
+		{
+			s.EjectU = ejectResult.EjectU;
+		}
+		if (ejectResult.EjectDWritten)
+		{
+			s.EjectD = ejectResult.EjectD;
+		}
 		if (ejectResult.Died)
 		{
 			died = true;
 			s.DeathType = 6;
-		}
-		if ((s.GameMode != 0 && s.GameMode != 4 && s.GameMode != 8 && s.GameMode != 11) || (!s.HBlocked && !s.FBlocked))
-		{
-			return;
-		}
-		if (s.HBlocked && ejectResult.WasZeroed)
-		{
-			if (_speculativeDepth == 0)
-			{
-				_step1FireCount++;
-			}
-			if (!s.GravFlipped)
-			{
-				s.VelY_fixed = -1;
-			}
-			else
-			{
-				s.VelY_fixed = 1;
-			}
-		}
-		int collX = s.X_fixed >> 8;
-		int cubeHitboxW = SharedPhysics.GetCubeHitboxW(s.Mini);
-		int cubeHitboxH = SharedPhysics.GetCubeHitboxH(s.Mini);
-		int hitboxOffsetY = SharedPhysics.GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
-		if (!s.GravFlipped)
-		{
-			if ((short)(s.VelY_fixed & 0xFFFF) >= 0)
-			{
-				return;
-			}
-			int collY = (s.Y_fixed >> 8) + hitboxOffsetY;
-			var (flag, num, _, _) = CheckCeiling(collX, collY, cubeHitboxW, cubeHitboxH);
-			if (flag)
-			{
-				int num2 = num - hitboxOffsetY;
-				s.Y_fixed = (num2 << 8) | (s.Y_fixed & 0xFF);
-				s.VelY_fixed = (s.HBlocked ? 1 : 0);
-				s.OnGround = !s.HBlocked;
-				s.WasZeroedByCollision = !s.HBlocked;
-				s.Orbed = false;
-				if (s.FBlocked)
-				{
-					s.GravFlipped = true;
-					s.GravMul = -1;
-				}
-				s.Step2Ejected = true;
-				s.Step2Ever = true;
-				if (_speculativeDepth == 0)
-				{
-					_step2FireCount++;
-				}
-			}
-		}
-		else
-		{
-			if ((short)(s.VelY_fixed & 0xFFFF) < 0)
-			{
-				return;
-			}
-			int collY2 = (s.Y_fixed >> 8) + hitboxOffsetY;
-			var (flag2, num3, _) = CheckFloor(collX, collY2, cubeHitboxW, cubeHitboxH);
-			if (flag2)
-			{
-				int num4 = num3 - cubeHitboxH - hitboxOffsetY;
-				s.Y_fixed = (num4 << 8) | (s.Y_fixed & 0xFF);
-				s.VelY_fixed = (s.HBlocked ? (-1) : 0);
-				s.OnGround = !s.HBlocked;
-				s.WasZeroedByCollision = !s.HBlocked;
-				s.Orbed = false;
-				if (s.FBlocked)
-				{
-					s.GravFlipped = false;
-					s.GravMul = 1;
-				}
-				s.Step2Ejected = true;
-				s.Step2Ever = true;
-				if (_speculativeDepth == 0)
-				{
-					_step2FireCount++;
-				}
-			}
 		}
 	}
 
@@ -9712,7 +10054,7 @@ public class PathfinderEngine
 	{
 		died = false;
 		s.OnGround = false;
-		SharedPhysics.EjectResult ejectResult = SharedPhysics.BallEject(in _collisionMap, s.X_fixed, s.Y_fixed, s.VelY_fixed, s.VelX_fixed, s.GravFlipped, s.Mini, s.GameMode, input, s.SlopeWasOnCounter, s.SlopeFrames, s.SlopeType, s.SlopeJumpHigher, s.LastSlopeType, s.CameraY_fixed, updateSlopeCounters: s.GameMode != 2);
+		SharedPhysics.EjectResult ejectResult = SharedPhysics.BallEject(in _collisionMap, s.X_fixed, s.Y_fixed, s.VelY_fixed, s.VelX_fixed, s.GravFlipped, s.Mini, s.GameMode, input, s.SlopeWasOnCounter, s.SlopeFrames, s.SlopeType, s.SlopeJumpHigher, s.LastSlopeType, s.CameraY_fixed, updateSlopeCounters: false);
 		s.Y_fixed = ejectResult.NewY_fixed;
 		s.VelY_fixed = ejectResult.NewVelY_fixed;
 		s.OnGround = ejectResult.OnGround;
@@ -9731,7 +10073,7 @@ public class PathfinderEngine
 	private bool BallGroundedProbeSpikeDeath(ref SimState s)
 	{
 		int playerX_px = s.X_fixed >> 8;
-		int playerY_px = s.Y_fixed >> 8;
+		int playerY_px = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed);
 		int hitboxW = GetHitboxW(s.Mini);
 		int hitboxH = GetHitboxH(s.Mini);
 		int hitboxOffsetY = GetHitboxOffsetY(2, s.Mini, s.GravFlipped);
@@ -9740,7 +10082,7 @@ public class PathfinderEngine
 
 	private bool BallIsGrounded(ref SimState s)
 	{
-		return SharedPhysics.BallIsGrounded(in _collisionMap, s.X_fixed >> 8, s.Y_fixed >> 8, GetHitboxW(s.Mini), GetHitboxH(s.Mini), GetHitboxOffsetY(2, s.Mini, s.GravFlipped), s.GravFlipped);
+		return SharedPhysics.BallIsGrounded(in _collisionMap, s.X_fixed >> 8, NesPlayerY_px(s.Y_fixed, s.CameraY_fixed), GetHitboxW(s.Mini), GetHitboxH(s.Mini), GetHitboxOffsetY(2, s.Mini, s.GravFlipped), s.GravFlipped);
 	}
 
 	private bool DecideDashHold(SimState state)
@@ -11119,12 +11461,9 @@ public class PathfinderEngine
 				MetatileCollision tileCollision4 = GetTileCollision(tileX4, tileY4);
 				int localX2 = (num27 % 16 + 16) % 16;
 				int localY2 = (num28 % 16 + 16) % 16;
-				if (tileCollision4 == MetatileCollision.COL_DEATH_TOP || tileCollision4 == MetatileCollision.COL_DEATH_BOTTOM)
+				if (MetatileCollisionTable.TileKillsAtPixel(tileCollision4, localX2, localY2))
 				{
-					if (MetatileCollisionTable.TileKillsAtPixel(tileCollision4, localX2, localY2))
-					{
-						flag6 = true;
-					}
+					flag6 = true;
 				}
 				else if (tileCollision4 == MetatileCollision.COL_FLOOR_CEIL)
 				{
@@ -11191,15 +11530,12 @@ public class PathfinderEngine
 				int tileX6 = num36 / 16;
 				int tileY6 = num35 / 16;
 				MetatileCollision tileCollision5 = GetTileCollision(tileX6, tileY6);
-				if (tileCollision5 == MetatileCollision.COL_DEATH_TOP || tileCollision5 == MetatileCollision.COL_DEATH_BOTTOM)
+				int localX3 = (num36 % 16 + 16) % 16;
+				int localY3 = (num35 % 16 + 16) % 16;
+				if (MetatileCollisionTable.TileKillsAtPixel(tileCollision5, localX3, localY3))
 				{
-					int localX3 = (num36 % 16 + 16) % 16;
-					int localY3 = (num35 % 16 + 16) % 16;
-					if (MetatileCollisionTable.TileKillsAtPixel(tileCollision5, localX3, localY3))
-					{
-						flag9 = true;
-						break;
-					}
+					flag9 = true;
+					break;
 				}
 				var (flag11, num37, flag12, _, metatileCollision3) = SharedPhysics.CheckFloorDetailed(in _collisionMap, num36, num34, 0, 8, s.VelY_fixed);
 				if (flag12)
@@ -11284,24 +11620,34 @@ public class PathfinderEngine
 		int num = (s.Mini ? 7 : 15);
 		int num2 = (s.Mini ? (16 - num >> 1) : 0);
 		int playerX_px = s.X_fixed >> 8;
+		int currplayerScreenX_px = playerX_px - Math.Max(0, playerX_px - NES_PLAYER_SCREEN_X_PX);
 		int num3 = offsetY + num2;
-		PfUpdateSlopeCounters(ref s);
 		if (!s.GravFlipped)
 		{
-			var (flag, num4, slopeType) = PfCheckSlopes(ref s, input);
+			var (flag, num4, slopeType) = PfCheckSlopes(ref s, input, offsetY);
 			if (flag)
 			{
+				s.EjectD = unchecked((byte)num4);
 				s.Y_fixed = ((s.Y_fixed >> 8) - num4 << 8) | (s.Y_fixed & 0xFF);
 				s.VelY_fixed = 0;
 				s.WasZeroedByCollision = true;
-				s.SlopeFrames = 1;
-				s.SlopeWasOnCounter = 3;
-				s.SlopeType = slopeType;
+				if (slopeType != 0)
+				{
+					s.SlopeFrames = 1;
+					s.SlopeWasOnCounter = 3;
+					s.SlopeType = slopeType;
+				}
 				return;
 			}
-			var (flag2, num5) = BgCollD_Spider(playerX_px, num3, width, num, useEjectProbes: true);
+			int velYBeforeEject = s.VelY_fixed;
+			// NES bg_coll_D always checks slopes, but its ordinary bottom probes
+			// only run while velocity is downward/non-negative.
+			var (flag2, num5) = velYBeforeEject >= 0
+				? BgCollD_Spider(playerX_px, num3, width, num, currplayerScreenX_px, useEjectProbes: true)
+				: (false, 0);
 			if (flag2)
 			{
+				s.EjectD = unchecked((byte)num5);
 				s.Y_fixed = ((s.Y_fixed >> 8) - num5 << 8) | (s.Y_fixed & 0xFF);
 				s.VelY_fixed = 0;
 				s.WasZeroedByCollision = true;
@@ -11310,13 +11656,45 @@ public class PathfinderEngine
 			{
 				s.WasZeroedByCollision = false;
 			}
+			if (!flag2 && velYBeforeEject >= 0 && CheckEjectDeathSideEffect(playerX_px, num3, width, num, true))
+				died = true;
 		}
 		else
 		{
-			var (flag3, num6) = BgCollU_Spider(playerX_px, num3, width, num, useEjectProbes: true);
+			var (slopeHitUp, slopeEjectUp, slopeTypeUp) = PfCheckSlopesUp(ref s, input, offsetY);
+			if (slopeHitUp)
+			{
+				s.EjectU = unchecked((byte)(-slopeEjectUp));
+				// NES spider_eject calls bg_coll_U with Generic.y = high_byte(y)-2
+				// and applies high_byte(currplayer_y) -= eject_U + 1.  Shared
+				// slope-U returns tmp8 as a positive ejection, so this is +tmp8-1.
+				s.Y_fixed = (((s.Y_fixed >> 8) + slopeEjectUp - 1) << 8) | (s.Y_fixed & 0xFF);
+				s.VelY_fixed = 0;
+				s.WasZeroedByCollision = true;
+				if (slopeTypeUp != 0)
+				{
+					s.SlopeFrames = 1;
+					s.SlopeWasOnCounter = 3;
+					s.SlopeType = slopeTypeUp;
+				}
+				return;
+			}
+			int velYBeforeEject = s.VelY_fixed;
+			// NES bg_coll_U always checks slopes, but its ordinary top probes
+			// only run while velocity is upward/negative.
+			var (flag3, num6) = velYBeforeEject < 0
+				? BgCollU_Spider(playerX_px, num3, width, num, currplayerScreenX_px, useEjectProbes: true)
+				: (false, 0);
 			if (flag3)
 			{
-				s.Y_fixed = (num3 + num6 << 8) | (s.Y_fixed & 0xFF);
+				// The helper returns the resulting move-down amount. NES applies
+				// -(eject_U + 1), so preserve the corresponding persistent byte.
+				s.EjectU = unchecked((byte)(-num6 - 1));
+				// NES spider_eject probes bg_coll_U with Generic.y offset/mini
+				// centering, but applies eject_U + 1 back to currplayer_y itself.
+				// The mini probe offset is detection-only and must not remain in
+				// the final player coordinate.
+				s.Y_fixed = (num3 + num6 - num2 << 8) | (s.Y_fixed & 0xFF);
 				s.VelY_fixed = 0;
 				s.WasZeroedByCollision = true;
 			}
@@ -11324,60 +11702,84 @@ public class PathfinderEngine
 			{
 				s.WasZeroedByCollision = false;
 			}
+			if (!flag3 && velYBeforeEject < 0 && CheckEjectDeathSideEffect(playerX_px, num3, width, num, false))
+				died = true;
 		}
 	}
 
-	private void SpiderScanUp(ref SimState s)
+	private void SpiderScanUp(ref SimState s, int playerXBias = 0)
 	{
 		int width = (s.Mini ? 8 : 15);
-		int height = (s.Mini ? 8 : 15);
-		int playerX_px = s.X_fixed >> 8;
-		int num = s.Y_fixed >> 8;
+		int height = (s.Mini ? 7 : 15);
+		int hitboxOffsetY = (s.Mini ? (16 - height >> 1) : 0);
+		int currplayerWorldX_px = s.X_fixed >> 8;
+		int playerX_px = currplayerWorldX_px + playerXBias;
+		int currplayerScreenX_px = currplayerWorldX_px - Math.Max(0, currplayerWorldX_px - NES_PLAYER_SCREEN_X_PX);
+		int screenY_fixed = s.Y_fixed - s.CameraY_fixed;
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=SpiderScanUp.in X={playerX_px} Ywld={s.Y_fixed >> 8} Yscr={screenY_fixed >> 8} w={width} h={height} offY={hitboxOffsetY} camY={s.CameraY_fixed >> 8}");
 		for (int i = 0; i < 200; i++)
 		{
-			num -= 8;
-			if (num <= -(groundRowsToReserve * 16))
+			screenY_fixed = ((((screenY_fixed >> 8) - 8) << 8) | (screenY_fixed & 0xFF));
+			s.Y_fixed = s.CameraY_fixed + screenY_fixed;
+			ApplyNesProcessYScrollDuringSpiderWait(ref s);
+			screenY_fixed = s.Y_fixed - s.CameraY_fixed;
+			int screenY_px = screenY_fixed >> 8;
+			int worldY_px = s.Y_fixed >> 8;
+			if (screenY_px <= 0x07)
 			{
-				num = 0;
+				SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=SpiderScanUp.top i={i} Yscr={screenY_px}");
 				break;
 			}
-			var (flag, num2) = BgCollU_Spider(playerX_px, num, width, height);
+			var (flag, num2) = BgCollU_Spider(playerX_px, worldY_px + hitboxOffsetY, width, height, currplayerScreenX_px);
+			SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=SpiderScanUp.step i={i} Ywld={worldY_px} Yscr={screenY_px} probeY={worldY_px + hitboxOffsetY} hit={(flag ? 1 : 0)} ej={num2}");
 			if (flag)
 			{
-				num += num2;
+				s.EjectU = unchecked((byte)(-num2));
+				screenY_fixed = ((((screenY_fixed >> 8) + num2) << 8) | (screenY_fixed & 0xFF));
+				s.Y_fixed = s.CameraY_fixed + screenY_fixed;
 				break;
 			}
 		}
-		s.Y_fixed = (num << 8) | (s.Y_fixed & 0xFF);
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=SpiderScanUp.out Ywld={s.Y_fixed >> 8}");
 	}
 
-	private void SpiderScanDown(ref SimState s)
+	private void SpiderScanDown(ref SimState s, int playerXBias = 0)
 	{
 		int width = (s.Mini ? 8 : 15);
 		int num = (s.Mini ? 7 : 15);
 		int num2 = (s.Mini ? (16 - num >> 1) : 0);
-		int playerX_px = s.X_fixed >> 8;
-		int num3 = s.Y_fixed >> 8;
-		int num4 = (mapHeight - groundRowsToReserve) * 16 - num;
+		int currplayerWorldX_px = s.X_fixed >> 8;
+		int playerX_px = currplayerWorldX_px + playerXBias;
+		int currplayerScreenX_px = currplayerWorldX_px - Math.Max(0, currplayerWorldX_px - NES_PLAYER_SCREEN_X_PX);
+		int screenY_fixed = s.Y_fixed - s.CameraY_fixed;
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=SpiderScanDown.in X={playerX_px} Ywld={s.Y_fixed >> 8} Yscr={screenY_fixed >> 8} w={width} h={num} offY={num2} camY={s.CameraY_fixed >> 8}");
 		for (int i = 0; i < 200; i++)
 		{
-			num3 += 8;
-			if (num3 >= num4)
+			screenY_fixed = ((((screenY_fixed >> 8) + 8) << 8) | (screenY_fixed & 0xFF));
+			s.Y_fixed = s.CameraY_fixed + screenY_fixed;
+			ApplyNesProcessYScrollDuringSpiderWait(ref s);
+			screenY_fixed = s.Y_fixed - s.CameraY_fixed;
+			int screenY_px = screenY_fixed >> 8;
+			int worldY_px = s.Y_fixed >> 8;
+			if (screenY_px >= 0xF8)
 			{
-				num3 = num4;
+				SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=SpiderScanDown.bottom i={i} Yscr={screenY_px}");
 				break;
 			}
-			var (flag, num5) = BgCollD_Spider(playerX_px, num3 + num2, width, num);
+			var (flag, num5) = BgCollD_Spider(playerX_px, worldY_px + num2, width, num, currplayerScreenX_px);
+			SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=SpiderScanDown.step i={i} Ywld={worldY_px} Yscr={screenY_px} probeY={worldY_px + num2 + num} hit={(flag ? 1 : 0)} ej={num5}");
 			if (flag)
 			{
-				num3 -= num5;
+				s.EjectD = unchecked((byte)num5);
+				screenY_fixed = ((((screenY_fixed >> 8) - num5) << 8) | (screenY_fixed & 0xFF));
+				s.Y_fixed = s.CameraY_fixed + screenY_fixed;
 				break;
 			}
 		}
-		s.Y_fixed = (num3 << 8) | (s.Y_fixed & 0xFF);
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=SpiderScanDown.out Ywld={s.Y_fixed >> 8}");
 	}
 
-	private (bool hit, int ejectAmount) BgCollD_Spider(int playerX_px, int playerY_px, int width, int height, bool useEjectProbes = false)
+	private (bool hit, int ejectAmount) BgCollD_Spider(int playerX_px, int playerY_px, int width, int height, int currplayerScreenX_px, bool useEjectProbes = false)
 	{
 		int num = playerY_px + height;
 		int num2 = num / 16 + _collisionMap.GroundRowsToReserve;
@@ -11414,7 +11816,7 @@ public class PathfinderEngine
 				continue;
 			}
 			MetatileCollision collision = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(_collisionMap.Tiles[num5]));
-			if (IsSolidForSpider(collision))
+			if (IsSolidForSpider(collision, currplayerScreenX_px, array2[i], num))
 			{
 				int item = SharedPhysics.GetCollisionBounds(collision).top;
 				int num6 = (num2 - _collisionMap.GroundRowsToReserve) * 16 + item;
@@ -11427,9 +11829,13 @@ public class PathfinderEngine
 		return (hit: false, ejectAmount: 0);
 	}
 
-	private (bool hit, int ejectAmount) BgCollU_Spider(int playerX_px, int playerY_px, int width, int height, bool useEjectProbes = false)
+	private (bool hit, int ejectAmount) BgCollU_Spider(int playerX_px, int playerY_px, int width, int height, int currplayerScreenX_px, bool useEjectProbes = false)
 	{
-		int num = playerY_px / 16 + _collisionMap.GroundRowsToReserve;
+		// NES bg_coll_U's solid-top path probes Generic.y + 1. spider_eject
+		// supplies the three edge/center probes but still receives that +1 Y
+		// bias; using Generic.y directly grounds inverted spider one frame early.
+		int collisionProbeY = playerY_px + (useEjectProbes ? 1 : 0);
+		int num = collisionProbeY / 16 + _collisionMap.GroundRowsToReserve;
 		if (num < 0)
 		{
 			return (hit: true, ejectAmount: -playerY_px);
@@ -11460,7 +11866,7 @@ public class PathfinderEngine
 			if (num3 >= 0 && num3 < _collisionMap.Tiles.Length)
 			{
 				MetatileCollision collision = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(_collisionMap.Tiles[num3]));
-				if (IsSolidForSpider(collision))
+				if (IsSolidForSpider(collision, currplayerScreenX_px, array2[i], collisionProbeY))
 				{
 					int item = SharedPhysics.GetCollisionBounds(collision).bottom;
 					int num4 = (num - _collisionMap.GroundRowsToReserve) * 16 + item;
@@ -11471,12 +11877,109 @@ public class PathfinderEngine
 		return (hit: false, ejectAmount: 0);
 	}
 
-	private static bool IsSolidForSpider(MetatileCollision col)
+	private bool CheckEjectDeathSideEffect(int playerX_px, int playerY_px, int width, int height, bool isBottom)
 	{
-		if (col != 0)
+		int probeY = isBottom ? (playerY_px + height) : playerY_px;
+		int tileRow = probeY / 16 + _collisionMap.GroundRowsToReserve;
+		if (tileRow < 0 || tileRow >= _collisionMap.MapHeight) return false;
+
+		int localY = probeY & 0x0F;
+		int[] probeXs = { playerX_px, playerX_px + (width >> 1), playerX_px + width };
+
+		foreach (int probeX in probeXs)
 		{
-			return !SharedPhysics.IsDeathCollision(col);
+			int tileCol = probeX / 16;
+			if (tileCol < 0 || tileCol >= _collisionMap.MapWidth) continue;
+
+			int tileIdx = tileRow * _collisionMap.MapWidth + tileCol;
+			if (tileIdx < 0 || tileIdx >= _collisionMap.Tiles.Length) continue;
+
+			var collision = MetatileCollisionTable.GetCollision(
+				(byte)SharedPhysics.MapTileForCollision(_collisionMap.Tiles[tileIdx]));
+
+			int localX = probeX & 0x0F;
+			if (collision == MetatileCollision.COL_DEATH_BOTTOM && localY > 0x0A && localX >= 0x05 && localX <= 0x07)
+				return true;
+			if (collision == MetatileCollision.COL_DEATH_TOP && localY < 0x06 && localX >= 0x05 && localX <= 0x07)
+				return true;
 		}
+
+		return false;
+	}
+
+	// Replicates NES bg_coll_return_D/U chain: bg_coll_U_D_checks || bg_coll_mini_blocks || bg_coll_top_bottom_slabs
+	private static bool IsSolidForSpider(MetatileCollision col, int currplayerScreenX, int probeX, int probeY)
+	{
+		if (col == MetatileCollision.COL_NONE || SharedPhysics.IsDeathCollision(col) || SharedPhysics.IsSlopeTile(col))
+			return false;
+
+		// bg_coll_U_D_checks. COL_ALL has an NES left-edge exception based on
+		// high_byte(currplayer_x), not on the world-space probe coordinate.
+		switch (col)
+		{
+			case MetatileCollision.COL_NO_SIDE:
+			case MetatileCollision.COL_FLOOR_CEIL:
+				return true;
+			case MetatileCollision.COL_ALL:
+				return currplayerScreenX >= 0x10;
+		}
+
+		int localX = probeX & 0x0F;
+		int localY = probeY & 0x0F;
+
+		// bg_coll_mini_blocks returns immediately in the same left-edge zone
+		// (except COL_FLOOR_CEIL, already handled above). Slabs are evaluated
+		// afterward and intentionally remain active there.
+		if (currplayerScreenX >= 0x10)
+		{
+			switch (col)
+			{
+				case MetatileCollision.COL_UP_LEFT:
+					return localY < 8 && localX < 8;
+				case MetatileCollision.COL_UP_RIGHT:
+					return localY < 8 && localX >= 8;
+				case MetatileCollision.COL_DOWN_LEFT:
+				case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
+					return localY >= 8 && localX < 8;
+				case MetatileCollision.COL_DOWN_RIGHT:
+				case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
+					return localY >= 8 && localX >= 8;
+				case MetatileCollision.COL_BOTTOM_LEFT_SPIKE:
+				case MetatileCollision.COL_BOTTOM_RIGHT_SPIKE:
+				case MetatileCollision.COL_BOTTOM_CENTER_SPIKE:
+				case MetatileCollision.COL_BOTTOM_SPIKES:
+					return localY >= 8;
+				case MetatileCollision.COL_TOP_CENTER_SPIKE:
+					return localY < 8;
+				case MetatileCollision.COL_LEFT:
+					return localX < 8;
+				case MetatileCollision.COL_RIGHT:
+					return localX >= 8;
+				case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
+					return (localX < 8 && localY < 8) || (localX >= 8 && localY >= 8);
+				case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
+					return (localX < 8 && localY >= 8) || (localX >= 8 && localY < 8);
+				case MetatileCollision.COL_TOP_RIGHT_STAIRS:
+					return !(localY >= 8 && localX < 8);
+				case MetatileCollision.COL_TOP_LEFT_STAIRS:
+					return !(localY >= 8 && localX >= 8);
+				case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
+					return !(localY < 8 && localX < 8);
+				case MetatileCollision.COL_BOTTOM_LEFT_STAIRS:
+					return !(localY < 8 && localX >= 8);
+			}
+		}
+
+		// bg_coll_top_bottom_slabs
+		switch (col)
+		{
+			case MetatileCollision.COL_BOTTOM:
+				return localY >= 8;
+			case MetatileCollision.COL_TOP:
+				return localY < 8;
+		}
+
+		// Not matched by any NES check in the spider chain → not solid
 		return false;
 	}
 
@@ -11548,7 +12051,7 @@ public class PathfinderEngine
 	private void ShipEject(ref SimState s, bool input, out bool died)
 	{
 		died = false;
-		SharedPhysics.EjectResult ejectResult = SharedPhysics.ShipUfoEject(in _collisionMap, s.X_fixed, s.Y_fixed, s.VelY_fixed, s.VelX_fixed, s.GravFlipped, s.Mini, s.GameMode, input, s.SlopeWasOnCounter, s.SlopeFrames, s.SlopeType, s.SlopeJumpHigher, s.LastSlopeType, s.CameraY_fixed, updateSlopeCounters: s.GameMode != 3);
+		SharedPhysics.EjectResult ejectResult = SharedPhysics.ShipUfoEject(in _collisionMap, s.X_fixed, s.Y_fixed, s.VelY_fixed, s.VelX_fixed, s.GravFlipped, s.Mini, s.GameMode, input, s.SlopeWasOnCounter, s.SlopeFrames, s.SlopeType, s.SlopeJumpHigher, s.LastSlopeType, s.CameraY_fixed, updateSlopeCounters: false);
 		s.Y_fixed = ejectResult.NewY_fixed;
 		s.VelY_fixed = ejectResult.NewVelY_fixed;
 		s.SlopeType = ejectResult.SlopeType;
@@ -11570,7 +12073,7 @@ public class PathfinderEngine
 
 	private bool VerifyGroundSupport(ref SimState s)
 	{
-		return SharedPhysics.VerifyGroundSupport(in _collisionMap, s.X_fixed >> 8, s.Y_fixed >> 8, s.GameMode, s.Mini, s.GravFlipped);
+		return SharedPhysics.VerifyGroundSupport(in _collisionMap, s.X_fixed >> 8, NesPlayerY_px(s.Y_fixed, s.CameraY_fixed), s.GameMode, s.Mini, s.GravFlipped);
 	}
 
 	private void ApplyPortalsUpTo(ref SimState s, int targetX_px)
@@ -11679,10 +12182,6 @@ public class PathfinderEngine
 			if (num17 >= 0)
 			{
 				s.GameMode = num17;
-				if (num17 == 8)
-				{
-					s.NinjaJumps = 3;
-				}
 			}
 		}
 		if (num3.HasValue)
@@ -11812,15 +12311,17 @@ public class PathfinderEngine
 		s.PendingOrbExtra2SpriteId = -1;
 	}
 
-	private bool ProcessSpritesNesOrder(ref SimState s, int currentX_px, bool inputHeld, bool pressEdge, out bool orbHitThisFrame)
+	private bool ProcessSpritesNesOrder(ref SimState s, int currentX_px, bool inputHeld, bool pressEdge,
+		bool queuedPressAtFrameStart, out bool orbHitThisFrame)
 	{
 		orbHitThisFrame = false;
 		_dualActivatedThisProcessSprites = false;
 		s.GravFlippedAtFrameStart = s.GravFlipped;
 		s.OrbUseFrameStartGravitySign = false;
 		int cameraY_px = s.CameraY_fixed >> 8;
-		// Pathfinder Y already matches NES currplayer_y: the top of the 16x16 player container.
-		int playerY_px = (s.Y_fixed >> 8) - cameraY_px;
+		// NES sprite collision uses high_byte(currplayer_y), including its fixed
+		// screen-space fractional bias relative to PF's camera-relative Y.
+		int playerY_px = SharedPhysics.NesPlayerScreenY_px(s.Y_fixed, s.CameraY_fixed);
 		bool isWaveOrSnake = s.GameMode == 6 || s.GameMode == 10;
 		int hitboxW = isWaveOrSnake ? 8 : GetHitboxW(s.Mini);
 		int hitboxH = isWaveOrSnake ? 8 : GetHitboxH(s.Mini);
@@ -11839,12 +12340,22 @@ public class PathfinderEngine
 		int plRight = plLeft + hitboxW;
 		bool dualActive = s.DualActive;
 		int miniCenterOffY = SharedPhysics.GetMiniCenterOffsetY(s.Mini);
-		int orbPlTop = playerY_px + miniCenterOffY;
+		// sprite_collide centers the 8px wave box inside the 16px player cell.
+		// Using only the mini-cube offset made wave orbs/pads collide four pixels
+		// too early vertically (Off to Mars' spider orb is the edge case).
+		int orbPlTop = playerY_px + (s.GameMode == 6 ? 4 : miniCenterOffY);
 		int orbPlBot = orbPlTop + hitboxH;
 
 		for (int slot = 0; slot < 16; slot++)
 		{
 			int sprIdx = s.NesSlots[slot];
+			// Per-slot iteration trace: lets us see exactly which slots PF visits,
+			// which sids they hold, and whether they're active. Logs EMPTY/DEAD/INACTIVE
+			// rows too so a missing handler fire is always attributable.
+			int _diagSid = (sprIdx >= 0) ? (_nesSpritesArr[sprIdx].SpriteId & 0xFF) : -1;
+			int _diagWorldX = (sprIdx >= 0) ? _nesSpriteWorldX[sprIdx] : 0;
+			SharedPhysics.FullTraceLog?.Invoke(
+				$"cur=0 gm={s.GameMode} tag=NesSlotIter slot={slot} sprIdx={sprIdx} sid={_diagSid} active={(s.NesSlotActive[slot] ? 1 : 0)} dead={(s.NesSlotDead[slot] ? 1 : 0)} relX={s.NesSlotRealX[slot]} relY={s.NesSlotRealY[slot]} wY={s.NesSlotWorldY[slot]} wX={_diagWorldX}");
 			if (sprIdx < 0 || s.NesSlotDead[slot] || !s.NesSlotActive[slot]) continue;
 			ref SpriteEntry spr = ref _nesSpritesArr[sprIdx];
 			int processKey = spr.ProcessKey;
@@ -11927,8 +12438,12 @@ public class PathfinderEngine
 						case 0xF1:
 						case 0xF2:
 						case 0xF3:
+							break;
 						case 0xF4:
 						case 0xF5:
+							// Slow mode changes rendered-frame cadence only. The replay
+							// cursor advances on NES physics movement, so PF has no
+							// persistent simulation state to apply for these triggers.
 							break;
 						default:
 							// Unrecognized SPBH records remain resident and
@@ -11948,12 +12463,12 @@ public class PathfinderEngine
 				sid < sprite_y_offset.Length ? sprite_y_offset[sid] : 0);
 			bool xOv = NesAxisOverlaps(plLeft, hitboxW, sprLeft, sprWidth);
 
-			// Coins bypass the normal height table: SPBH returns a 16x16
-			// collision box after running the mutable slot animation above.
-			// Mini coins are killed immediately; full coins remain until their
-			// 40-tick animation changes the live slot type to $FF.
+			// Full coins are SPBH records: sprite_load_special_behavior() returns
+			// a raw 16x16 collision box after running the mutable slot animation.
+			// Mini coins are normal table-sized sprites (8x8,+4,+4 on NES), then
+			// spcl_minicoi kills the live slot immediately on collision.
 			int nesCoinKind = GetNesCoinKind(sid);
-			if (nesCoinKind >= 0 || IsMiniCoinSprite(sid))
+			if (nesCoinKind >= 0)
 			{
 				int coinLeft = s.NesSlotRealX[slot];
 				int coinTop = s.NesSlotRealY[slot];
@@ -11962,16 +12477,22 @@ public class PathfinderEngine
 				if (coinXOv && coinYOv && !s.ProcessedSprites.Contains(processKey))
 				{
 					s.ProcessedSprites.Add(processKey);
-					if (IsMiniCoinSprite(sid))
-					{
-						s.NesSlotDead[slot] = true;
-					}
-					else if (s.CoinTimer[nesCoinKind] == 0)
+					if (s.CoinTimer[nesCoinKind] == 0)
 					{
 						s.CoinTimer[nesCoinKind] = 1;
 						s.CoinSpeed[nesCoinKind] = 0x0200;
 						s.CoinAnimating = true;
 					}
+				}
+				continue;
+			}
+			if (IsMiniCoinSprite(sid))
+			{
+				bool coinYOv = NesAxisOverlaps(plTop, hitboxH, sprTop, sprHeight);
+				if (xOv && coinYOv && !s.ProcessedSprites.Contains(processKey))
+				{
+					s.ProcessedSprites.Add(processKey);
+					s.NesSlotDead[slot] = true;
 				}
 				continue;
 			}
@@ -11985,8 +12506,8 @@ public class PathfinderEngine
 					int spd = SpriteIdToSpeedFixed(sid);
 					if (spd > 0)
 					{
-						SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm=-1 tag=NesSlotSpeed sid={sid} idx={spr.Index} slot={slot} oldVelX={s.VelX_fixed} newVelX={spd}");
-						s.VelX_fixed = spd;
+						SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm=-1 tag=NesSlotSpeed sid={sid} idx={spr.Index} slot={slot} oldGlobalSpeed={s.GlobalSpeed_fixed} newGlobalSpeed={spd}");
+						s.GlobalSpeed_fixed = spd;
 					}
 				}
 				// NES spcl_spd_* only writes global speed. It never increments
@@ -11995,7 +12516,12 @@ public class PathfinderEngine
 				continue;
 			}
 
-			if (s.ProcessedSprites.Contains(processKey)) continue;
+			bool processedSprite = s.ProcessedSprites.Contains(processKey);
+			// NES sprite_collide_lookup only skips activesprites_activated when
+			// dual is off. In dual every activated handler remains eligible;
+			// each handler decides whether it still has an effect for this player.
+			bool nesDualAllowsActivatedReplay = s.DualActive;
+			if (processedSprite && !nesDualAllowsActivatedReplay) continue;
 
 			// Dual/single portals
 			if (sid == 34 || sid == 35)
@@ -12004,7 +12530,10 @@ public class PathfinderEngine
 				SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=DualSinglePortal f={_frameCounter} sid={sid} slot={slot} p2={(_dualP2Guard ? 1 : 0)} gravF={(s.GravFlipped ? 1 : 0)} dualActive={(s.DualActive ? 1 : 0)} plLeft={plLeft} plTop={plTop} hbW={hitboxW} hbH={hitboxH} sprLeft={sprLeft} sprTop={sprTop} sprW={sprWidth} sprH={sprHeight} xOv={(xOv ? 1 : 0)} yOv={(yOv ? 1 : 0)}");
 				if (xOv && yOv)
 				{
-					if (sid == 34 && !s.DualActive)
+					// spcl_dual_pt gates on this portal's activation byte, not on
+					// the global dual flag. A second dual portal while already dual
+					// must reset P2 and the camera target exactly once.
+					if (sid == 34 && !processedSprite)
 					{
 						s.DualActive = true;
 						_dualActivatedThisProcessSprites = true;
@@ -12014,25 +12543,9 @@ public class PathfinderEngine
 						s.P2_GravFlipped = !s.GravFlipped;
 						s.P2_GravMul = -s.GravMul;
 						s.P2_Mini = s.Mini;
-						s.P2_WasZeroedByCollision = false;
-						s.P2_OnGround = false;
-						s.P2_BallFlipCooldown = 0;
-						s.P2_BallInputBuffer = 0;
-						s.P2_BallCooldownFrames = 0;
-						s.P2_RobotJumpTime = 0;
-						s.P2_SlopeWasOnCounter = 0;
-						s.P2_SlopeFrames = 0;
-						s.P2_SlopeType = 0;
-						s.P2_Orbed = false;
-						s.P2_UfoOrbed = false;
-						s.P2_BlackOrbed = false;
+						// NES spcl_dual_pt preserves dormant P2 X velocity,
+						// slope state, and mode-specific per-player flags.
 						s.P2_PrevInputHeld = s.PrevInputHeld;
-						s.P2_Dashing = 0;
-						s.P2_JBlocked = false;
-						s.P2_FBlocked = false;
-						s.P2_HBlocked = false;
-						s.P2_Dblocked = false;
-						s.P2_NinjaJumps = 0;
 						s.P2_PendingOrbIndex = -1;
 						s.P2_PendingOrbSpriteId = -1;
 						s.P2_PendingOrbExtra2Index = -1;
@@ -12040,8 +12553,16 @@ public class PathfinderEngine
 						s.P2_PendingOrbExtra1Index = -1;
 						s.P2_PendingOrbExtra1SpriteId = -1;
 					}
-					else if (sid == 35 && s.DualActive)
+					else if (sid == 35 && !processedSprite)
 					{
+						if (_dualP2Guard)
+						{
+							s.P2_SingleExitCaptured = true;
+							s.P2_SingleExitY_fixed = s.Y_fixed;
+							s.P2_SingleExitVelY_fixed = s.VelY_fixed;
+							s.P2_SingleExitGravFlipped = s.GravFlipped;
+							s.P2_SingleExitGravMul = s.GravMul;
+						}
 						s.DualActive = false;
 						s.ExitPortalTimer = 10;
 					}
@@ -12133,7 +12654,9 @@ public class PathfinderEngine
 			// Gamemode portals
 			if (IsGameModePortal(sid))
 			{
-				if (_dualP2Guard) continue;
+				// NES runs sprite_collide for both players and gamemode is global.
+				// If only P2 overlaps a portal, its new mode applies immediately to
+				// P2 physics and remains active when control returns to P1.
 				bool yOv = NesAxisOverlaps(plTop, hitboxH, sprTop, sprHeight);
 				if (xOv && yOv)
 				{
@@ -12141,7 +12664,10 @@ public class PathfinderEngine
 					if (applied)
 					{
 						s.ProcessedSprites.Add(processKey);
-						if (s.GameMode != 0 && s.GameMode != 4 && s.GameMode != 8 && s.GameMode != 9 && !dualActive)
+						// gamemode_stuff tests the live dual flag. A dual portal in an
+						// earlier slot therefore suppresses this later portal's target
+						// write during the same sprite_collide pass.
+						if (s.GameMode != 0 && s.GameMode != 4 && s.GameMode != 8 && s.GameMode != 9 && !s.DualActive)
 							s.TargetCameraY_fixed = NesNtCameraTarget_fixed(spr.AnchorY_px - 8);
 					}
 				}
@@ -12151,12 +12677,32 @@ public class PathfinderEngine
 			// Gravity portals
 			if (IsGravityPortal(sid))
 			{
+				// NES sprite_collide() uses the same inclusive edge-touch
+				// check_collision() path for gravity portals as for normal
+				// portals.  Requiring positive X overlap delays edge contacts
+				// by one frame (Fingerdash gravity-up portal at sim 1231).
+				bool xOvGravity = NesAxisOverlaps(plLeft, hitboxW, sprLeft, sprWidth);
 				bool yOv = NesAxisOverlaps(plTop, hitboxH, sprTop, sprHeight);
-				if (xOv && yOv)
+				if (xOvGravity || yOv)
 				{
+					SharedPhysics.FullTraceLog?.Invoke(
+						$"cur=0 gm={s.GameMode} tag=NesSlotGravCheck sid={sid} idx={spr.Index} slot={slot} pl=({plLeft},{plTop},{hitboxW}x{hitboxH}) spr=({sprLeft},{sprTop},{sprWidth}x{sprHeight}) xOv={(xOvGravity ? 1 : 0)} yOv={(yOv ? 1 : 0)} cam={s.CameraY_fixed >> 8} yFixed=0x{s.Y_fixed:X}");
+				}
+				if (xOvGravity && yOv)
+				{
+					int velocityBeforePortal = s.VelY_fixed;
+					bool gravityBeforePortal = s.GravFlipped;
 					SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=NesSlotGravPortal sid={sid} idx={spr.Index} slot={slot} gravBefore={s.GravFlipped} velBefore={s.VelY_fixed}");
 					if (ApplyPortalSprite(ref s, sid))
+					{
+						// spcl_gvity_portal_common halves currplayer_vel_y in this
+						// exact slot, before a later gamemode portal can run. Keep the
+						// conversion explicit here so no portal-order path can retain
+						// the pre-flip ship velocity (Hexagon Force, sim 2471).
+						if (s.GravFlipped != gravityBeforePortal)
+							s.VelY_fixed = NesGravityPortalHalfVelocity(velocityBeforePortal);
 						s.ProcessedSprites.Add(processKey);
+					}
 				}
 				continue;
 			}
@@ -12204,7 +12750,19 @@ public class PathfinderEngine
 				bool yOvO = NesAxisOverlaps(orbPlTop, hitboxH, sprTop, sprHeight);
 				if (xOvO && yOvO)
 				{
-					ApplySpiderTeleport(ref s, sid == 86);
+					bool goUp = sid == 86;
+					ApplySpiderTeleport(ref s, goUp);
+					// spider_*_wait rewrites Generic.y on every 8-pixel scan
+					// step.  sprite_collide does not restore it before visiting
+					// the remaining slots, so those slots collide against the
+					// teleport destination rather than the frame-start player Y.
+					// The final handler eject changes currplayer_y only; recover
+					// the Generic.y left by the scan from that persistent eject.
+					plTop = (SharedPhysics.NesPlayerScreenY_px(s.Y_fixed, s.CameraY_fixed) +
+						(goUp ? s.EjectU : s.EjectD)) & 0xFF;
+					plBot = plTop + hitboxH;
+					orbPlTop = plTop;
+					orbPlBot = orbPlTop + hitboxH;
 					orbHitThisFrame = true;
 				}
 				continue;
@@ -12226,17 +12784,20 @@ public class PathfinderEngine
 					bool isCubeGroup = s.GameMode == 0 || s.GameMode == 2 || s.GameMode == 4 || s.GameMode == 5 || s.GameMode == 7 || s.GameMode == 8 || s.GameMode == 9 || s.GameMode >= 10;
 					bool orbGate;
 					if (isCubeGroup)
-						orbGate = inputHeld && (s.Orbed || pressEdge || s.AirPressLatch);
+						orbGate = inputHeld && (pressEdge || s.AirPressLatch);
 					else
 						orbGate = pressEdge;
 					bool isMultiOrb = sid == 123 || sid == 124;
-					if (isMultiOrb)
-						orbGate = pressEdge;
 					OrbDbg($"NES_SLOT_ORB slot={slot} sid=0x{sid:X2} idx={spr.Index} gate={orbGate} press={pressEdge} hold={inputHeld} orbed={s.Orbed} latch={s.AirPressLatch} cubeGrp={isCubeGroup} gm={s.GameMode}");
 					if (orbGate)
 					{
 						if (_speculativeDepth == 0)
 							_hitOrbHistory.Add(spr.Index);
+						// sprite_gamemode_main sets orbed for robot before applying
+						// every regular orb effect. This suppresses the robot's own
+						// press-triggered jump later in the same movement pass.
+						if (s.GameMode == 4)
+							s.Orbed = true;
 						ApplyOrbSprite(ref s, sid);
 						if (IsBlackOrb(sid) && s.GameMode == 5) s.BlackOrbed = true;
 						if (!isMultiOrb)
@@ -12268,10 +12829,12 @@ public class PathfinderEngine
 					if (s.GameMode == 2 && inputHeld)
 						s.BallFlipCooldown = 1;
 					bool isCubeGroup = s.GameMode == 0 || s.GameMode == 2 || s.GameMode == 4 || s.GameMode == 5 || s.GameMode == 7 || s.GameMode == 8 || s.GameMode == 9 || s.GameMode >= 10;
-					bool orbGate = isCubeGroup ? (inputHeld && (s.Orbed || pressEdge || s.AirPressLatch)) : pressEdge;
+					bool orbGate = isCubeGroup ? (inputHeld && (pressEdge || s.AirPressLatch)) : pressEdge;
 					if (orbGate)
 					{
 						if (_speculativeDepth == 0) _hitOrbHistory.Add(spr.Index);
+						if (s.GameMode == 4)
+							s.Orbed = true;
 						ApplyDashOrb(ref s, sid);
 						s.ProcessedSprites.Add(processKey);
 						if (!_dualP2Guard && _p1OrbIndicesThisFrame != null)
@@ -12291,12 +12854,24 @@ public class PathfinderEngine
 				bool yOvO = NesAxisOverlaps(orbPlTop, hitboxH, sprTop, sprHeight);
 				if (xOvO && yOvO)
 				{
-					bool isCubeGroup = s.GameMode == 0 || s.GameMode == 2 || s.GameMode == 4 || s.GameMode == 5 || s.GameMode == 7 || s.GameMode == 8 || s.GameMode == 9 || s.GameMode >= 10;
-					bool orbGate = isCubeGroup ? (inputHeld && (s.Orbed || pressEdge || s.AirPressLatch)) : pressEdge;
+					// NES tests cube_data&2 before x_movement clears it on release.
+					// Spider-orb handlers do this directly for every game mode; unlike
+					// ordinary orb dispatch, ship/UFO/wave are not press-only here. A
+					// queued airborne press therefore remains valid until x_movement
+					// consumes it, even when A is no longer newly pressed.
+					bool orbGate = pressEdge || queuedPressAtFrameStart || s.AirPressLatch;
 					if (orbGate)
 					{
 						if (_speculativeDepth == 0) _hitOrbHistory.Add(spr.Index);
-						ApplySpiderTeleport(ref s, sid == 84);
+						bool goUp = sid == 84;
+						ApplySpiderTeleport(ref s, goUp);
+						// The NES scan leaves Generic.y at its last probe Y for all
+						// later sprite slots in this same ordered pass.
+						plTop = (SharedPhysics.NesPlayerScreenY_px(s.Y_fixed, s.CameraY_fixed) +
+							(goUp ? s.EjectU : s.EjectD)) & 0xFF;
+						plBot = plTop + hitboxH;
+						orbPlTop = plTop;
+						orbPlBot = orbPlTop + hitboxH;
 						s.Orbed = true;
 						s.ProcessedSprites.Add(processKey);
 						if (!_dualP2Guard && _p1OrbIndicesThisFrame != null)
@@ -12315,12 +12890,22 @@ public class PathfinderEngine
 				bool yOv = NesAxisOverlaps(plTop, hitboxH, sprTop, sprHeight);
 				if (xOv && yOv)
 				{
+					if (sid == 0x59)
+					{
+						// spcl_tlpt_sq requires controller press or cube_data bit 1.
+						// It clears that bit, zeroes velocity, and sets orbed before
+						// writing the shared teleport output byte to currplayer_y.
+						bool squareGate = pressEdge || queuedPressAtFrameStart || s.AirPressLatch;
+						if (!squareGate)
+							continue;
+						s.VelY_fixed = 0;
+						s.Orbed = true;
+						s.AirPressLatch = false;
+					}
 					ApplyTeleportPortal(ref s, spr, sid, currentX_px);
-					playerY_px = (s.Y_fixed >> 8) - cameraY_px;
-					plTop = playerY_px + hitboxOffY;
-					plBot = plTop + hitboxH;
-					orbPlTop = playerY_px + miniCenterOffY;
-					orbPlBot = orbPlTop + hitboxH;
+					// sprite_collide initializes Generic.y once before entering its
+					// slot loop. Teleporting currplayer_y does not rebuild Generic,
+					// so every later slot this frame still tests the pre-teleport box.
 				}
 				continue;
 			}
@@ -12334,14 +12919,42 @@ public class PathfinderEngine
 			}
 
 			// J/F/H/D blocks
-			if (sid == 247) { bool yOv = NesAxisOverlaps(plTop, hitboxH, sprTop, sprHeight); if (xOv && yOv) s.JBlocked = true; continue; }
-			if (sid == 246) { bool yOv = NesAxisOverlaps(plTop, hitboxH, sprTop, sprHeight); if (xOv && yOv) s.FBlocked = true; continue; }
-			if (sid == 248) { bool yOv = NesAxisOverlaps(plTop, hitboxH, sprTop, sprHeight); if (xOv && yOv) s.HBlocked = true; continue; }
+			if (sid == 247)
+			{
+				bool yOv = NesAxisOverlaps(plTop, hitboxH, sprTop, sprHeight);
+				if (xOv && yOv)
+				{
+					s.JBlocked = true;
+					// NES spcl_j_block sets both jblocked and orbed; the orbed
+					// latch is what prevents a held cube jump from firing on the
+					// same landing frame.
+					s.Orbed = true;
+					SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=NesSlotJBlock sid={sid} idx={spr.Index} slot={slot} pl=({plLeft},{plTop},{hitboxW}x{hitboxH}) spr=({sprLeft},{sprTop},{sprWidth}x{sprHeight})");
+				}
+				continue;
+			}
+			if (sid == 246)
+			{
+				bool yOv = NesAxisOverlaps(plTop, hitboxH, sprTop, sprHeight);
+				if (xOv && yOv)
+				{
+					s.FBlocked = true;
+					SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=NesSlotFBlock sid={sid} idx={spr.Index} slot={slot} pl=({plLeft},{plTop},{hitboxW}x{hitboxH}) spr=({sprLeft},{sprTop},{sprWidth}x{sprHeight})");
+				}
+				continue;
+			}
+			if (sid == 248)
+			{
+				bool yOv = NesAxisOverlaps(plTop, hitboxH, sprTop, sprHeight);
+				if (xOv && yOv)
+				{
+					s.HBlocked = true;
+					SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=NesSlotHBlock sid={sid} idx={spr.Index} slot={slot} pl=({plLeft},{plTop},{hitboxW}x{hitboxH}) spr=({sprLeft},{sprTop},{sprWidth}x{sprHeight})");
+				}
+				continue;
+			}
 			if (sid == 250) { bool yOv = NesAxisOverlaps(plTop, hitboxH, sprTop, sprHeight); if (xOv && yOv) s.Dblocked = true; continue; }
 		}
-
-		if (_dualActivatedThisProcessSprites && s.DualActive)
-			s.P2_VelY_fixed = -s.VelY_fixed;
 
 		return false;
 	}
@@ -12773,10 +13386,6 @@ public class PathfinderEngine
 				continue;
 			}
 			}
-			if (IsGameModePortal(spriteId4) && _dualP2Guard)
-			{
-				continue;
-			}
 			if (IsGameModePortal(spriteId4) || IsGravityPortal(spriteId4) || IsMiniGrowthPortal(spriteId4) || IsEndLevel(spriteId4))
 			{
 				if (IsGravityPortal(spriteId4))
@@ -12995,6 +13604,7 @@ public class PathfinderEngine
 				if (num60 && flag24)
 				{
 					s.JBlocked = true;
+					s.Orbed = true;
 				}
 				continue;
 			}
@@ -13368,8 +13978,14 @@ public class PathfinderEngine
 					s.ExitPortalTimer = 10;
 				}
 				s.RainbowMaxMode = 0;
-				bool flag = gameMode == 6 || gameMode == 7;
-				// cc65 compiles /= 2 as ASR (rounds toward -∞); C# /= 2 rounds toward 0
+				bool prevWaveSnake = gameMode == 6 || gameMode == 10;
+				// NES sprite_loading.h gamemode portal velocity rules:
+				//   ship/ball/UFO halve on mode change;
+				//   robot halves only when leaving wave/snake;
+				//   cube/spider/swing/ninja/pogo zero only when leaving wave/snake;
+				//   wave/snake/football leave velocity unchanged.
+				// NES/cc65 compiles signed /= 2 here as ASR, so odd negative
+				// velocities round down: -545 / 2 becomes -273.
 				switch (num)
 				{
 				case 1:
@@ -13378,17 +13994,17 @@ public class PathfinderEngine
 					s.VelY_fixed >>= 1;
 					break;
 				case 4:
-					if (flag)
+					if (prevWaveSnake)
 					{
 						s.VelY_fixed >>= 1;
 					}
 					break;
 				case 0:
 				case 5:
+				case 7:
 				case 8:
 				case 9:
-				case 10:
-					if (flag)
+					if (prevWaveSnake)
 					{
 						s.VelY_fixed = 0;
 					}
@@ -13397,7 +14013,6 @@ public class PathfinderEngine
 				switch (num)
 				{
 				case 8:
-					s.NinjaJumps = 3;
 					s.RobotJumpTime = 0;
 					if (_speculativeDepth == 0)
 					{
@@ -13444,7 +14059,7 @@ public class PathfinderEngine
 			int num5 = SpriteIdToSpeedFixed(sid);
 			if (num5 > 0)
 			{
-				s.VelX_fixed = num5;
+				s.GlobalSpeed_fixed = num5;
 			}
 			return true;
 		}
@@ -13455,7 +14070,7 @@ public class PathfinderEngine
 			{
 				s.GravFlipped = true;
 				s.GravMul = -1;
-				s.VelY_fixed >>= 1;
+				s.VelY_fixed = NesGravityPortalHalfVelocity(s.VelY_fixed);
 				s.RobotJumpTime = 0;
 				s.WasZeroedByCollision = false;
 				return true;
@@ -13464,7 +14079,7 @@ public class PathfinderEngine
 			{
 				s.GravFlipped = false;
 				s.GravMul = 1;
-				s.VelY_fixed >>= 1;
+				s.VelY_fixed = NesGravityPortalHalfVelocity(s.VelY_fixed);
 				s.RobotJumpTime = 0;
 				s.WasZeroedByCollision = false;
 				return true;
@@ -13617,6 +14232,8 @@ public class PathfinderEngine
 			s.GravFlipped = !s.GravFlipped;
 			s.GravMul = ((!s.GravFlipped) ? 1 : (-1));
 		}
+		int dashVelX = s.VelX_fixed;
+		bool controllerOnlyMode = s.GameMode == 1 || s.GameMode == 3 || s.GameMode == 6;
 		switch (s.Dashing = DashOrbMode(sid))
 		{
 		case 1:
@@ -13629,10 +14246,14 @@ public class PathfinderEngine
 			s.VelY_fixed = s.VelX_fixed;
 			break;
 		case 4:
-			s.VelY_fixed = s.VelX_fixed * 4;
+			s.VelY_fixed = controllerOnlyMode ? dashVelX : dashVelX * 4;
+			if (controllerOnlyMode)
+				s.VelX_fixed = 0;
 			break;
 		case 5:
-			s.VelY_fixed = -s.VelX_fixed * 4;
+			s.VelY_fixed = controllerOnlyMode ? -dashVelX : -dashVelX * 4;
+			if (controllerOnlyMode)
+				s.VelX_fixed = 0;
 			break;
 		}
 		s.OnGround = false;
@@ -13640,46 +14261,49 @@ public class PathfinderEngine
 
 	private void ApplySpiderTeleport(ref SimState s, bool goUp)
 	{
-		int playerX_px = (s.X_fixed >> 8) + 1;
+		// sprite_collide leaves Generic.x at high_byte(currplayer_x) + 1.
+		// Spider orb/pad handlers call spider_*_wait without restoring it, unlike
+		// ordinary spider movement, so only these teleport scans inherit +1 X.
+		int playerX_px = s.X_fixed >> 8;
 		int num = s.Y_fixed >> 8;
 		int hitboxW = GetHitboxW(s.Mini);
 		int hitboxH = GetHitboxH(s.Mini);
 		int num2 = (s.Mini ? (16 - hitboxH >> 1) : 0);
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=ApplySpiderTeleport.in goUp={(goUp ? 1 : 0)} X={playerX_px} Ywld={num} hbW={hitboxW} hbH={hitboxH} offY={num2} grav={(s.GravFlipped ? 1 : 0)}");
 		if (goUp)
 		{
-			var (flag, num3) = BgCollD_Spider(playerX_px, num + num2, hitboxW, hitboxH);
-			if (flag)
-			{
-				s.Y_fixed -= num3 << 8;
-			}
+			// spcl_sporbup/spcl_sppadup unconditionally consume the persistent
+			// eject_D global; they do not run a fresh floor collision here.
+			SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=ApplySpiderTeleport.preEjD raw=0x{s.EjectD:X2}");
+			s.Y_fixed = (((s.Y_fixed >> 8) - s.EjectD) << 8) | (s.Y_fixed & 0xFF);
 			s.VelY_fixed = 0;
 			s.GravFlipped = true;
 			s.GravMul = -1;
-			SpiderScanUp(ref s);
+			SpiderScanUp(ref s, playerXBias: 1);
 			s.VelY_fixed = 0;
 		}
 		else
 		{
-			var (flag2, num4) = BgCollU_Spider(playerX_px, num, hitboxW, hitboxH);
-			if (flag2)
-			{
-				s.Y_fixed += num4 + 1 << 8;
-			}
+			// The down handlers likewise use the stale byte from the last
+			// bg_coll_U write. Preserve 8-bit addition before signed subtraction.
+			byte ejectPlusOne = unchecked((byte)(s.EjectU + 1));
+			int signedEjectPlusOne = (sbyte)ejectPlusOne;
+			SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=ApplySpiderTeleport.preEjU raw=0x{s.EjectU:X2} plus1=0x{ejectPlusOne:X2} signed={signedEjectPlusOne}");
+			s.Y_fixed = (((s.Y_fixed >> 8) - signedEjectPlusOne) << 8) | (s.Y_fixed & 0xFF);
 			s.VelY_fixed = 0;
 			s.GravFlipped = false;
 			s.GravMul = 1;
-			SpiderScanDown(ref s);
+			SpiderScanDown(ref s, playerXBias: 1);
 			s.VelY_fixed = 0;
 		}
 		s.Orbed = true;
 		s.SlopeFrames = 0;
 		s.SlopeWasOnCounter = 0;
-		SnapCameraToPlayerY(ref s);
 	}
 
 	private void SnapCameraToPlayerY(ref SimState s)
 	{
-		int num = -(groundRowsToReserve * 16) << 8;
+		int num = (_minScrollYLin - _nesCoordOffset) << 8;
 		int num2 = NesMaxCamY_px() << 8;
 		int num3 = s.Y_fixed - s.CameraY_fixed;
 		if (num3 < 16384)
@@ -13745,8 +14369,11 @@ public class PathfinderEngine
 
 	private void ApplyTeleportPortal(ref SimState s, SpriteEntry entrance, int entranceSid, int currentX_px)
 	{
-		int destinationWorldY_px = (s.CameraY_fixed >> 8) + (s.TeleportOutputY_px & 0xFF);
-		s.Y_fixed = (destinationWorldY_px << 8) | (s.Y_fixed & 0xFF);
+		int destinationScreenY_px = s.TeleportOutputY_px & 0xFF;
+		// NES writes this byte to currplayer_y, which is screen-space. PF
+		// stores world-space Y, so preserve the subpixel byte and solve for the
+		// world coordinate that gives the same NES screen-space high byte.
+		s.Y_fixed = s.CameraY_fixed + (destinationScreenY_px << 8) + (s.Y_fixed & 0xFF);
 	}
 
 	private MetatileCollision GetTileCollision(int tileX, int tileY)
@@ -13811,8 +14438,13 @@ public class PathfinderEngine
 
 	private bool CheckCenterPointDeath(ref SimState s)
 	{
+		// state_game.runthecolls skips bg_coll_death during spawn protection.
+		if (s.InvincibleCounter != 0)
+		{
+			return false;
+		}
 		int playerX_px = s.X_fixed >> 8;
-		int playerY_px = s.Y_fixed >> 8;
+		int playerY_px = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed);
 		return SharedPhysics.CheckCenterPointDeath(in _collisionMap, playerX_px, playerY_px, GetHitboxW(s.Mini), GetHitboxH(s.Mini), GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped));
 	}
 
@@ -13821,10 +14453,10 @@ public class PathfinderEngine
 		return SharedPhysics.PointKillsPlayer(in _collisionMap, px, py);
 	}
 
-	private bool CheckFloorSpikes(ref SimState s)
+	private bool CheckFloorSpikes(ref SimState s, int playerYBias = 0)
 	{
 		int num = s.X_fixed >> 8;
-		int num2 = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed);
+		int num2 = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed) + playerYBias;
 		int hbW;
 		int hbH;
 		if (s.GameMode == 6 || s.GameMode == 10)
@@ -13853,8 +14485,12 @@ public class PathfinderEngine
 		return num3;
 	}
 
-	private bool CheckDeathCollision(ref SimState s)
+	private bool CheckDeathCollision(ref SimState s, bool polluteSlopeState = true)
 	{
+		if (s.InvincibleCounter != 0)
+		{
+			return false;
+		}
 		int playerX_px = s.X_fixed >> 8;
 		int playerY_px = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed);
 		int hbW;
@@ -13883,7 +14519,15 @@ public class PathfinderEngine
 		int probeX = playerX_px + (hbW >> 1) - 1;
 		int probeY = playerY_px + hbH / 2 + hbOffY;
 		MetatileCollision probeCol = GetTileCollision(probeX / 16, probeY / 16);
-		if (probeCol >= MetatileCollision.COL_SLOPE_RD45 && probeCol <= MetatileCollision.COL_SLOPE_LU66_TOP)
+		// polluteSlopeState is false for the extra post-x-movement probe: NES runs
+		// bg_coll_death exactly once per frame at the pre-move Generic.x, so only
+		// that call may replicate the bg_coll_slope side effects.
+		// Wave/snake center probes do run bg_coll_slope, but the NES does not
+		// publish that temporary result into the persistent slope counters. Doing
+		// so pins a dual wave in place on harmless LU45 geometry (Blast Processing).
+		bool mayPollutePersistentSlope = s.GameMode != 6 && s.GameMode != 10;
+		if (polluteSlopeState && mayPollutePersistentSlope &&
+			probeCol >= MetatileCollision.COL_SLOPE_RD45 && probeCol <= MetatileCollision.COL_SLOPE_LU66_TOP)
 		{
 			var (slpHit, _, polluteSlope) = PfSlopeCalc(probeX, probeY, probeCol);
 			if (slpHit)
@@ -13904,9 +14548,27 @@ public class PathfinderEngine
 
 	private bool CheckSlopePenetrationDeath(ref SimState s)
 	{
-		int hitboxW = GetHitboxW(s.Mini);
-		int hitboxH = GetHitboxH(s.Mini);
-		int hitboxOffsetY = GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
+		if (s.InvincibleCounter != 0)
+		{
+			return false;
+		}
+		int hitboxW;
+		int hitboxH;
+		int hitboxOffsetY;
+		if (s.GameMode == 6 || s.GameMode == 10)
+		{
+			// x_movement leaves Generic at the fixed wave/snake dimensions;
+			// bg_coll_death still applies the mini centering adjustment.
+			hitboxW = 8;
+			hitboxH = 8;
+			hitboxOffsetY = s.Mini ? 4 : 0;
+		}
+		else
+		{
+			hitboxW = GetHitboxW(s.Mini);
+			hitboxH = GetHitboxH(s.Mini);
+			hitboxOffsetY = GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
+		}
 		int num = (s.X_fixed >> 8) + (hitboxW >> 1) - 1;
 		int num2 = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed) + hitboxH / 2 + hitboxOffsetY;
 		int tileX = num / 16;
@@ -13921,12 +14583,18 @@ public class PathfinderEngine
 
 	private bool CheckForwardCollision(ref SimState s)
 	{
+		// This helper models bg_coll_R inside x_movement_coll, which is gated by
+		// the same NES startup counter as the floor-spike pass.
+		if (s.InvincibleCounter != 0)
+		{
+			return false;
+		}
 		if ((s.SlopeWasOnCounter | s.SlopeFrames) != 0)
 		{
 			return false;
 		}
 		int num = s.X_fixed >> 8;
-		int num2 = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed);
+		int num2 = NesPlayerBgCollisionY_px(s.Y_fixed, s.CameraY_fixed);
 		int num3;
 		int num4;
 		int hbOffY;
@@ -13942,7 +14610,7 @@ public class PathfinderEngine
 			num4 = GetHitboxH(s.Mini);
 			hbOffY = GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
 		}
-		return SharedPhysics.CheckForwardCollision(in _collisionMap, num, num2, num3, num4, hbOffY, s.GameMode, s.Mini, s.GravFlipped, skipSlopeCheck: true);
+		return SharedPhysics.CheckForwardCollision(in _collisionMap, num, num2, num3, num4, hbOffY, s.GameMode, s.Mini, s.GravFlipped, skipSlopeCheck: true, dblocked: s.Dblocked);
 	}
 
 	private static (bool hit, int ejection, int slopeType) PfSlopeCalc(int temp_x, int temp_y, MetatileCollision collision)
@@ -13981,24 +14649,25 @@ public class PathfinderEngine
 		SharedPhysics.SlopeJumpCheck(ref s.VelY_fixed, ref s.SlopeJumpHigher, s.SlopeType, s.Mini, s.GravFlipped);
 	}
 
-	private (bool hit, int ejection, int slopeType) PfCheckSlopes(ref SimState s, bool input)
+	private (bool hit, int ejection, int slopeType) PfCheckSlopes(ref SimState s, bool input, int? genericY_px = null)
 	{
 		int num = s.X_fixed >> 8;
 		int hitboxW = GetHitboxW(s.Mini);
 		int hitboxH = GetHitboxH(s.Mini);
 		int num2 = (s.Mini ? (16 - hitboxH >> 1) : 0);
-		int checkBaseY = (s.Y_fixed >> 8) + num2 + hitboxH - 2;
-		return SharedPhysics.CheckSlopesDown(in _collisionMap, num, num, checkBaseY, hitboxW, input, s.GameMode, s.GravFlipped, s.VelX_fixed, ref s.LastSlopeType, ref s.SlopeJumpHigher, ref s.SlopeFrames, ref s.SlopeWasOnCounter);
+		int checkBaseY = (genericY_px ?? NesPlayerY_px(s.Y_fixed, s.CameraY_fixed)) + num2 + hitboxH - 2;
+		var (hit, ejection, slopeType, _) = SharedPhysics.CheckSlopesDown(in _collisionMap, num, num, checkBaseY, hitboxW, input, s.GameMode, s.GravFlipped, s.VelX_fixed, s.SlopeType, ref s.LastSlopeType, ref s.SlopeJumpHigher, ref s.SlopeFrames, ref s.SlopeWasOnCounter);
+		return (hit, ejection, slopeType);
 	}
 
-	private (bool hit, int ejection, int slopeType) PfCheckSlopesUp(ref SimState s, bool input)
+	private (bool hit, int ejection, int slopeType) PfCheckSlopesUp(ref SimState s, bool input, int? genericY_px = null)
 	{
 		int num = s.X_fixed >> 8;
 		int hitboxW = GetHitboxW(s.Mini);
 		int hitboxH = GetHitboxH(s.Mini);
 		int num2 = (s.Mini ? (16 - hitboxH >> 1) : 0);
-		int checkBaseY = (s.Y_fixed >> 8) + num2 + (s.Mini ? 1 : 2) + ((s.GameMode == 1) ? 1 : 0);
-		return SharedPhysics.CheckSlopesUp(in _collisionMap, num, num, checkBaseY, hitboxW, input, s.GameMode, s.GravFlipped, s.VelX_fixed, ref s.LastSlopeType, ref s.SlopeJumpHigher, ref s.SlopeFrames, ref s.SlopeWasOnCounter);
+		int checkBaseY = (genericY_px ?? NesPlayerY_px(s.Y_fixed, s.CameraY_fixed)) + num2 + (s.Mini ? 1 : 2) + ((s.GameMode == 1) ? 1 : 0);
+		return SharedPhysics.CheckSlopesUp(in _collisionMap, num, num, checkBaseY, hitboxW, input, s.GameMode, s.GravFlipped, s.VelX_fixed, s.SlopeType, ref s.LastSlopeType, ref s.SlopeJumpHigher, ref s.SlopeFrames, ref s.SlopeWasOnCounter);
 	}
 }
 

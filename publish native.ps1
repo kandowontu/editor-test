@@ -14,14 +14,14 @@ if (Test-Path $mapScript -PathType Leaf) {
 }
 
 # Publish
-dotnet publish "c:\Editor Test\native-windows\FamidashEditor.csproj" -c Release -r win-x64 -o "c:\Editor Test\native-windows\published" --self-contained true -p:PublishSingleFile=false
+$project = Join-Path $scriptDir 'native-windows\FamidashEditor.csproj'
+$dest = Join-Path $scriptDir 'native-windows\published'
+dotnet publish $project -c Release -r win-x64 -o $dest --self-contained true -p:PublishSingleFile=false
 # Ensure mapping and album files are embedded in the published output so indexes align at runtime
 $mapFile = Join-Path $scriptDir 'native-windows\fami-song-index-map.json'
 $parsedFile = Join-Path $scriptDir 'native-windows\fami-album-parsed.json'
 $albumFms = Join-Path $scriptDir 'the album.fms'
 $albumTxt = Join-Path $scriptDir 'the album.txt'
-$dest = Join-Path $scriptDir 'native-windows\published'
-
 if (Test-Path $mapFile) { Copy-Item -Path $mapFile -Destination (Join-Path $dest (Split-Path $mapFile -Leaf)) -Force }
 if (Test-Path $parsedFile) { Copy-Item -Path $parsedFile -Destination (Join-Path $dest (Split-Path $parsedFile -Leaf)) -Force }
 

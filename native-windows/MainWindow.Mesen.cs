@@ -92,14 +92,7 @@ namespace FamidashEditor
         {
             try
             {
-                // Use bundled Mesen; fall back to configured path if bundle not found
-                string exePath = Path.Combine(AppContext.BaseDirectory, "mesen", "Mesen.exe");
-                if (!File.Exists(exePath))
-                {
-                    if (string.IsNullOrWhiteSpace(mesenPath) || !File.Exists(mesenPath))
-                        throw new InvalidOperationException($"Bundled Mesen not found at {exePath}. Rebuild the editor to bundle Mesen.");
-                    exePath = mesenPath!;
-                }
+                string exePath = ResolveMesenExePath();
 
                 if (string.IsNullOrWhiteSpace(famidashRomPath) || !File.Exists(famidashRomPath))
                     throw new InvalidOperationException("Famidash ROM is not configured. Use Tools → Mesen (NES) → Configure Famidash ROM.");
@@ -108,6 +101,7 @@ namespace FamidashEditor
                 string luaPath = OverlayLuaPath;
                 try
                 {
+                    RefreshMesenLogStamp();
                     File.WriteAllText(luaPath, BuildOverlayLuaScript(includeReplay: true, drawPathlines: true));
                     File.WriteAllText(OverlayLuaNoPathlinesPath, BuildOverlayLuaScript(includeReplay: true, drawPathlines: false));
                 }
@@ -161,7 +155,7 @@ namespace FamidashEditor
 
                 var options = new MesenRamCaptureOptions
                 {
-                    MesenExePath = mesenPath!,
+                    MesenExePath = ResolveMesenExePath(),
                     RomPath = famidashRomPath!,
                     OutputPath = outputPath,
                     TimeoutSeconds = Math.Max(10, mesenCaptureTimeoutSeconds),
@@ -197,18 +191,29 @@ namespace FamidashEditor
 
         private void EnsureMesenConfigured()
         {
-            // Accept bundled Mesen (next to editor exe) OR a manually configured path
-            string bundled = Path.Combine(AppContext.BaseDirectory, "mesen", "Mesen.exe");
-            bool hasMesen  = File.Exists(bundled) || (!string.IsNullOrWhiteSpace(mesenPath) && File.Exists(mesenPath));
-            if (!hasMesen)
-            {
-                throw new InvalidOperationException($"Mesen not found. Expected bundled copy at:\n{bundled}\nRebuild the editor to bundle Mesen, or configure a path manually.");
-            }
+            _ = ResolveMesenExePath();
 
             if (string.IsNullOrWhiteSpace(famidashRomPath) || !File.Exists(famidashRomPath))
             {
                 throw new InvalidOperationException("Famidash ROM is not configured. Use Tools -> Mesen (NES) -> Configure Famidash ROM.");
             }
+        }
+
+        private string ResolveMesenExePath()
+        {
+            // The release-local bundled copy is authoritative. A manually configured
+            // path remains only as a fallback for developer machines that have not
+            // rebuilt/copied the bundle yet.
+            string bundled = LocalRuntimeFolders.MesenExePath;
+            if (File.Exists(bundled))
+                return bundled;
+
+            if (!string.IsNullOrWhiteSpace(mesenPath) && File.Exists(mesenPath))
+                return mesenPath!;
+
+            throw new InvalidOperationException(
+                $"Bundled Mesen not found at:\n{bundled}\n\n" +
+                "Rebuild/publish the editor to copy Mesen into the local mesen folder.");
         }
 
         private List<ushort> ParseAddressList(string? csv)

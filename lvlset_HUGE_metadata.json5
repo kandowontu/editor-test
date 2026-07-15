@@ -17,10 +17,8 @@
 			startingBackgroundColor: 0x12,
 			startingGroundColor: 0x02,
 			//spawnYPositionHi: 0x30,		;default #$B000
-			//spawnYPositionLow: 0x00,
-			//scrollYPositionHi: 0x02,		;default $02EF, less to go up
 			//scrollYPositionLow: 0x30,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			parallaxDisable: true,
 			objectOffsets: [
 				{
@@ -47,10 +45,8 @@
 			startingBackgroundColor: 0x12,
 			startingGroundColor: 0x02,
 			//spawnYPositionHi: 0x30,		;default #$B000
-			//spawnYPositionLow: 0x00,
-			//scrollYPositionHi: 0x02,		;default $02EF, less to go up
 			//scrollYPositionLow: 0x30,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -96,7 +92,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x14,
 			startingGroundColor: 0x14,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [ 			
@@ -130,7 +126,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x2A,
 			startingGroundColor: 0x1A,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -169,7 +165,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x16,
 			startingGroundColor: 0x16,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -199,7 +195,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x11,
 			startingGroundColor: 0x11,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -244,7 +240,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x14,
 			startingGroundColor: 0x04,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -271,7 +267,7 @@
 			lowerText: "JUMPER",
 			decoType: "DECO1",
 			spikeSet: "A",
-			blockSet: "A",
+			blockSet: "C",
 			sawSet: "A",
 			difficulty: "HARDER",
 			stars: 7,
@@ -280,7 +276,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x13,
 			startingGroundColor: 0x13,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates:	[
@@ -312,7 +308,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x2A,
 			startingGroundColor: 0x1A,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -363,7 +359,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x04,
 			startingGroundColor: 0x14,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -412,7 +408,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x1C,
 			startingGroundColor: 0x0C,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -466,7 +462,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x16,
 			startingGroundColor: 0x06,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -564,7 +560,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x05,
 			startingGroundColor: 0x15,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -633,7 +629,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x02,
 			startingGroundColor: 0x01,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [119, 19],		//shrink portal
@@ -705,7 +701,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -776,7 +772,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x19,
 			startingGroundColor: 0x09,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -855,7 +851,7 @@
 			startingBackgroundColor: 0x13,
 			startingGroundColor: 0x03,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -941,7 +937,7 @@
 			upperText: "BLAST",
 			lowerText: "PROCESSING",
 			decoType: "DECO1",
-			spikeSet: "B",
+			spikeSet: "C",
 			blockSet: "B",
 			sawSet: "A",
 			difficulty: "HARDER",
@@ -949,12 +945,16 @@
 			songID: "song_blast_processing",
 			startingGameMode: 0,
 			startingSpeed: 0,
-			startingBackgroundColor: 0x02,
-			startingGroundColor: 0x12,
+			startingBackgroundColor: 0x12,
+			startingGroundColor: 0x02,
 			parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
-					coordinates: [31, 26],		//yellow pad
+					coordinates: [
+						[31, 26], [167, 25], [179, 20], [195, 21], [217, 20], [236, 19], [269, 24], [284, 18], [300, 21], [317, 22], [335, 23], [353, 22], [381, 23],
+						[530, 21], [547, 22], [577, 21], [1030, 20],
+					],
 					offsetX: -8
 				},
 				{
@@ -963,6 +963,8 @@
 				},
 				{
 					coordinates: [
+						[195, 21], [250, 20], [284, 18], [300, 21], [317, 22], [335, 23], [353, 22], [381, 23], [403, 22], [418, 22],
+						[526, 21], [530, 21], [533, 21], [577, 21], [586, 22], [595, 20], [604, 22],
 						[553, 20],		//single portal
 						[554, 20],		//grav portal
 						[978, 18],		//yellow orb
@@ -975,6 +977,7 @@
 				},
 				{
 					coordinates: [
+						[547, 22],
 						[609, 22],		//cube portal
 						[794, 21],		//ball portal
 						[905, 21],		//cube portal
@@ -982,8 +985,30 @@
 					offsetY: -8
 				},
 				{
-					coordinates: [938, 21],		//blue orb
+					coordinates: [
+						[147, 18], [147, 20], [720, 24], [781, 18], [938, 21],
+					],
 					offsetX: +8
+				},
+				{
+					coordinates: [
+						[72, 22], [73, 22], [99, 22], [101, 22], [108, 22], [110, 22],
+					],
+					offsetY: -4,
+				},
+				{
+					coordinates: [
+						[660, 23], [918, 23],
+					],
+					offsetY: +4,
+					offsetX: +4
+				},
+				{
+					coordinates: [
+						[662, 23], [920, 23],
+					],
+					offsetY: +4,
+					offsetX: -4
 				},
 			]
 		},
@@ -1002,7 +1027,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x01,
 			startingGroundColor: 0x01,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			parallaxDisable: true,
 			objectOffsets: [
 				{
@@ -1104,9 +1129,10 @@
 			songID: "song_geometrical_dominator",
 			startingGameMode: 0,
 			startingSpeed: 0,
-			startingBackgroundColor: 0x0F,
-			startingGroundColor: 0x0F,
+			startingBackgroundColor: 0x00,
+			startingGroundColor: 0x10,
 			parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -1146,7 +1172,7 @@
 				},
 				{
 					coordinates: [
-						[665, 17], [674, 16],	[683, 17], [692, 16], [701, 17],		//deco
+						[341, 12], [543, 19], [665, 17], [674, 16],	[683, 17], [692, 16], [701, 17],		//deco
 					],
 					offsetX: -8
 				},
@@ -1154,6 +1180,13 @@
 					coordinates: [
 						[707, 16], 	[714, 19], 	[721, 16], 		[728, 18], 		//deco
 					],
+					offsetX: +8
+				},
+				{
+					coordinates: [
+						[226, 14], [228, 14], [230, 14],
+					],
+					offsetY: +8,
 					offsetX: +8
 				},
 			],
@@ -1170,9 +1203,10 @@
 			songID: "song_deadlocked",
 			startingGameMode: 0,
 			startingSpeed: 0,
-			startingBackgroundColor: 0x0F,
-			startingGroundColor: 0x0F,
+			startingBackgroundColor: 0x0C,
+			startingGroundColor: 0x1C,
 			parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [	
@@ -1194,6 +1228,7 @@
 					coordinates: [	
 						[28, 19],	//mini
 						[38, 21],	//growth
+						[109, 23],  //grav
 						[295, 18],	//mini
 						[296, 18],	//grav
 					],
@@ -1202,12 +1237,13 @@
 				{
 					coordinates: [	
 						[559, 19],	//grav
+						[859, 22],	//speed
 					],
 					offsetY: -16
 				},
 				{
 					coordinates: [	
-						[148, 20],	[342, 20],	[388, 20],	[407, 20],	[428, 16],	[508, 16],	[582, 19],	[859, 22],	[943, 22],	[1034, 21],	[1114, 21],	//speed
+						[148, 18],	[148, 20],	[342, 20],	[388, 20],	[407, 20],	[428, 16],	[508, 16],	[582, 19],	[943, 22],	[1034, 21],	[1114, 21],	//speed
 						[250, 19],	//ball
 						[251, 19],	//growth
 						[718, 18],	//ship
@@ -1240,9 +1276,9 @@
 				},
 				{
 					coordinates: [	
-						[361, 24],	[361, 25],	//pad
+						[362, 19], [535, 20], [537, 16],
 					],
-					offsetX: -8
+					offsetX: +8
 				},
 			],
 		},
@@ -1258,31 +1294,33 @@
 			songID: "song_fingerdash",
 			startingGameMode: 0,
 			startingSpeed: 0,
-			startingBackgroundColor: 0x0F,
-			startingGroundColor: 0x0F,
+			startingBackgroundColor: 0x04,
+			startingGroundColor: 0x15,
 			parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
-					coordinates: [	
+					coordinates: [
 						[732, 22],	//growth portal
 						[783, 21],	//mini portal
 					],
 					offsetX: -16
 				},
 				{
-					coordinates: [	
+					coordinates: [
 						[830, 21],	//growth portal
 					],
 					offsetX: +16
 				},
 				{
-					coordinates: [	
+					coordinates: [
 						[90, 20],	[203, 14],	[243, 14],		//s block
 					],
 					offsetY: +16
 				},
 				{
-					coordinates: [	
+					coordinates: [
+						[386, 22],
 						[622, 22],	[651, 21],	[722, 23], [782, 22], [831, 22],	//speed
 						[713, 25],		//mini coin
 						[798, 21],
@@ -1290,7 +1328,7 @@
 					offsetY: -8
 				},
 				{
-					coordinates: [	
+					coordinates: [
 						[193, 20],	[839, 22],	//dash orb
 						[203, 19],		//teleport portal
 						[510, 17],		//coin
@@ -1298,7 +1336,7 @@
 					offsetY: +8
 				},
 				{
-					coordinates: [	
+					coordinates: [
 						[310, 18],		//black orb					
 						[662, 23],	[667, 20],	[691, 20],	[705, 20],	[713, 25],		//mini coin
 						[325, 20],	[382, 22],	[389, 16],	[397, 16],	[412, 22],	[415, 16],	[418, 22],	[430, 22],	[433, 16],	[730, 19],	[733, 25],	[736, 21],	[764, 19],		//deco
@@ -1324,9 +1362,10 @@
 			songID: "song_dash",
 			startingGameMode: 0,
 			startingSpeed: 0,
-			startingBackgroundColor: 0x0F,
-			startingGroundColor: 0x0F,
+			startingBackgroundColor: 0x07,
+			startingGroundColor: 0x06,
 			parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [	
@@ -1381,7 +1420,7 @@
 			startingBackgroundColor: 0x03,
 			startingGroundColor: 0x03,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
                 {
                     coordinates: [
@@ -1459,12 +1498,10 @@
             startingBackgroundColor: 0x03,
             startingGroundColor: 0x0F,
             spawnYPositionHi: 0xA0,
-            spawnYPositionLow: 0x00,
-            scrollYPositionHi: 0x02,
             scrollYPositionLow: 0x80,
             parallaxDisable: true,
             forcePlatformer: true,
-            maxFallSpeed: 0x07,
+            maxFallSpeed_is_7: 0x01,
             objectOffsets: [
                 {
                     coordinates: [
@@ -1491,12 +1528,10 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x1a,
 			startingGroundColor: 0x0f,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			parallaxDisable: true,
 			forcePlatformer: true,
 			spawnYPositionHi: 0xA0,
-			spawnYPositionLow: 0x00,
-			scrollYPositionHi: 0x02,
 			scrollYPositionLow: 0x80,
 			objectOffsets: [
 				{
@@ -1560,11 +1595,10 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x1c,
 			startingGroundColor: 0x0f,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			parallaxDisable: true,
 			forcePlatformer: true,
 			spawnYPositionHi: 0xb0,
-			spawnYPositionLow: 0x00,
 			scrollYPositionHi: 0x02,
 			scrollYPositionLow: 0xef,
 			objectOffsets: [
@@ -1578,6 +1612,57 @@
 				},
 			]
 		},
+		{
+			level: "thesecrethollow",
+			upperText: "THE SECRET",
+			lowerText: "HOLLOW",
+			decoType: "DECO1",
+			spikeSet: "A",
+			blockSet: "B",
+			sawSet: "A",
+			difficulty: "HARDER",
+			stars: 7,
+			songID: "song_scheming_weasel",
+			startingGameMode: 4,
+			startingSpeed: 0,
+			startingBackgroundColor: 0x03,
+			startingGroundColor: 0x0f,
+			maxFallSpeed_is_7: 0x01,
+			parallaxDisable: true,
+			forcePlatformer: true,
+			spawnYPositionHi: 0x40,
+			spawnYPositionLow: 0x00,
+			scrollYPositionHi: 0x02,
+			scrollYPositionLow: 0xef,
+			objectOffsets: [
+				{
+					coordinates: [41,44],
+					offsetX: 8,
+				},
+				{
+					coordinates: [48,44],
+					offsetX: 8,
+				},
+				{
+					coordinates: [55,44],
+					offsetX: 8,
+				},
+				{
+					coordinates: [93,42],
+					offsetX: 8,
+				},
+				{
+					coordinates: [318,20],
+					offsetX: 8,
+					offsetY: 8,
+				},
+				{
+					coordinates: [453,38],
+					offsetX: 8,
+					offsetY: 8,
+				},
+			]
+		},		
 		{
 			level: "thechallenge",
 			upperText: "THE",
@@ -1594,7 +1679,7 @@
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -1633,7 +1718,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x16,
 			startingGroundColor: 0x10,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			parallaxDisable: false
 		},
 		{
@@ -1652,7 +1737,7 @@
             startingBackgroundColor: 0x0F,
             startingGroundColor: 0x0F,
             parallaxDisable: false,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
         },
 		{
 			level: "retray",
@@ -1713,7 +1798,7 @@
 			songID: "song_ground_to_retray",
 			startingGameMode: 0,
 			startingSpeed: 1,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			startingBackgroundColor: 0x03,
 			startingGroundColor: 0x00,
 			parallaxDisable: true,
@@ -1802,7 +1887,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x12,
 			startingGroundColor: 0x02,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -1813,6 +1898,52 @@
 					offsetY: -8
 				},
 			]	
+		},
+		{ 
+            level: "feather",
+            lowerText: "FEATHER",
+            decoType: "DECO1",
+            spikeSet: "A",
+            blockSet: "A",
+            sawSet: "A",
+            difficulty: "EASY",
+            stars: 2,
+            songID: "song_aether_new",
+            startingGameMode: 0,
+            startingSpeed: 0,
+            startingBackgroundColor: 0x01,
+            startingGroundColor: 0x0F,
+			maxFallSpeed_is_7: 0x01,
+            parallaxDisable: false,
+        },
+		{
+			level: "doubletripletrial",
+			upperText: "DOUBLE TRIPLE",
+			lowerText: "TRIAL",
+			decoType: "DECO1",
+			spikeSet: "A",
+			blockSet: "B",
+			sawSet: "A",
+			difficulty: "EASY",
+			stars: 2,
+			songID: "song_dastardly",
+			startingGameMode: 0,
+			startingSpeed: 4,
+			startingBackgroundColor: 0x00,
+			startingGroundColor: 0x00,
+			maxFallSpeed_is_7: 0x01,
+			objectOffsets: [
+				{
+					coordinates: [
+						[25, 21], [25, 24], [36, 21], [36, 24], [47, 21], [47, 24], [58, 21], [58, 24], [69, 21], [69, 24],
+						[92, 21], [92, 24], [103, 21], [103, 24], [114, 21], [114, 24], [125, 21], [125, 24], [136, 21], [136, 24],
+						[159, 21], [159, 24], [170, 21], [170, 24], [181, 21], [181, 24], [192, 21], [192, 24], [203, 21], [203, 24],
+						[226, 21], [226, 24], [237, 21], [237, 24], [248, 21], [248, 24], [259, 21], [259, 24], [270, 21], [270, 24],
+						[293, 21], [293, 24], [304, 21], [304, 24], [315, 21], [315, 24], [326, 21], [326, 24], [349, 21], [349, 24],
+					],
+					offsetX: +8
+				},
+			]
 		},
 		{
 			level: "xmaschallenge",
@@ -1830,7 +1961,7 @@
 			startingBackgroundColor: 0x16,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -1868,7 +1999,7 @@
 			songID: "song_load",
 			startingGameMode: 0,
 			startingSpeed: 3,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			startingBackgroundColor: 0x01,
 			startingGroundColor: 0x15,
 			spawnYPositionHi: 0x00,
@@ -1926,7 +2057,7 @@
 			startingBackgroundColor: 0x28,
 			startingGroundColor: 0x27,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			spawnYPositionHi: 0x00,
 			objectOffsets: [
 				{
@@ -1944,7 +2075,46 @@
 				},
 			]
 		},
-		
+		{
+			level: "cosmicdolphin",
+			upperText: "COSMIC",
+			middleText: "SPACE33",
+			lowerText: "DOLPHIN",
+			decoType: "DECO1",
+			spikeSet: "A",
+			blockSet: "D",
+			sawSet: "A",
+			difficulty: "NORMAL",
+			stars: 3,
+			songID: "song_cosmic_dolphin",
+			startingGameMode: 0,
+			startingSpeed: 0,
+			startingBackgroundColor: 0x02,
+			startingGroundColor: 0x0F,
+			parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
+			spawnYPositionHi: 0x00,
+			objectOffsets: [
+				{
+					coordinates: [
+						[17, 45], [33, 45], [291, 39], [360, 39], [369, 32], [398, 33], [616, 32], [680, 31], [695, 32], [751, 28], [791, 27], [810, 30], [836, 34],
+					],
+					offsetX: +8
+				},
+				{
+					coordinates: [
+						[242, 37], [242, 42], [245, 42], [248, 42], [269, 40], [288, 40], [291, 39], [369, 32], [398, 33], [552, 28], [586, 34], [751, 28], [791, 27], [810, 30], [836, 34],
+					],
+					offsetY: -8
+				},
+				{
+					coordinates: [
+						[586, 33],
+					],
+					offsetY: +8
+				},
+			]
+		},
 		{
 			level: "leveleasy",
 			lowerText: "LEVEL EASY",
@@ -2176,7 +2346,7 @@
 			startingSpeed: 1,
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			parallaxDisable: true,
 			objectOffsets: [
 				{
@@ -2356,7 +2526,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x02,
 			startingGroundColor: 0x01,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -2406,7 +2576,7 @@
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -2433,7 +2603,50 @@
 					offsetX: -8
 				},
 			]
-		},		
+		},
+		{
+            level: "storymadness",
+			lowerText: "STORY MADNESS",
+            decoType: "DECO1",
+            spikeSet: "A",
+            blockSet: "A",
+            sawSet: "A",
+            difficulty: "HARD",
+            stars: 4,
+            songID: "song_stereo_madness",
+            startingGameMode: 0,
+            startingSpeed: 0,
+            startingBackgroundColor: 0x11,
+            startingGroundColor: 0x11,
+            parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
+			objectOffsets: [
+				{
+					coordinates: [
+						[14, 24], [71, 17], [73, 17], [229, 20], [383, 9], [447, 8], [494, 24], [497, 26], [620, 20], [813, 18], [867, 14], [874, 21], [8989, 20],
+					],
+					offsetX: -8
+				},
+				{
+					coordinates: [
+						[33, 23], [169, 23], [355, 12], [442, 12], [813, 18], [876, 14],
+					],
+					offsetY: +8
+				},
+				{
+					coordinates: [
+						[133, 22], [168, 23], [264, 18], [359, 9], [387, 8], [479, 26], [480, 26], [484, 26], [554, 18], [623, 17], [796, 15], [797, 20], [862, 21],
+					],
+					offsetX: +16
+				},
+				{
+					coordinates: [
+						[51, 24], [79, 22], [317, 18], [320, 24], [355, 13], [368, 11], [426, 13], [443, 19], [446, 9], [493, 11], [510, 25], [797, 20], [855, 14], [867, 14],
+					],
+					offsetY: -8
+				},
+			]
+        },
 		{
 			level: "groundtospace",
 			upperText: "GROUND TO",
@@ -2450,7 +2663,7 @@
 			startingBackgroundColor: 0x03,
 			startingGroundColor: 0x00,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -2497,7 +2710,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			parallaxDisable: true,
 			objectOffsets: [
 				{
@@ -2529,7 +2742,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x11,
 			startingGroundColor: 0x11,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -2552,6 +2765,22 @@
 			]
 		},
 		{
+			level: "chippe",
+			lowerText: "CHIPPE",
+			decoType: "DECO1",
+			spikeSet: "A",
+			blockSet: "A",
+			sawSet: "A",
+			difficulty: "HARD",
+			stars: 5,
+			songID: "song_dry_out",
+			startingGameMode: 0,
+			startingSpeed: 0,
+			startingBackgroundColor: 0x16,
+			startingGroundColor: 0x0F,
+			maxFallSpeed_is_7: 0x01
+		},
+		{
 			level: "subzero",
 			lowerText: "SUBZERO",
 			decoType: "DECO1",
@@ -2565,7 +2794,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x01,
 			startingGroundColor: 0x01,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -2695,7 +2924,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x12,
 			startingGroundColor: 0x02,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			parallaxDisable: true,
 			objectOffsets: [
 				{
@@ -2723,7 +2952,7 @@
 			startingBackgroundColor: 0x07,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -2765,7 +2994,7 @@
 			startingBackgroundColor: 0x07,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [109, 13],
@@ -2877,6 +3106,24 @@
 				},
 			]
 		},
+		{ 
+            level: "chromaticexpedition",
+            upperText: "CHROMATIC",
+            lowerText: "EXPEDITION",
+            decoType: "DECO1",
+            spikeSet: "A",
+            blockSet: "A",
+            sawSet: "A",
+            difficulty: "HARDER",
+            stars: 6,
+            songID: "song_somewhere_in_a_forest",
+            startingGameMode: 3,
+            startingSpeed: 0,
+            startingBackgroundColor: 0x12,
+            startingGroundColor: 0x0C,
+            parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
+        },
 		{
 			level: "oceane",
 			lowerText: "OCEANE",
@@ -2909,7 +3156,7 @@
 			startingBackgroundColor: 0x03,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -3123,7 +3370,7 @@
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -3254,6 +3501,64 @@
 			]
 		},
 		{
+			level: "rotd",
+			lowerText: "ROTD",
+			decoType: "DECO1",
+			spikeSet: "A",
+			blockSet: "D",
+			sawSet: "A",
+			difficulty: "HARDER",
+			stars: 7,
+			songID: "song_mario_kart_7__rainbow_road_remix",
+			startingGameMode: 0,
+			startingSpeed: 0,
+			startingBackgroundColor: 0x0F,
+			startingGroundColor: 0x0F,
+			parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
+			objectOffsets: [
+				{
+					coordinates: [
+						[37, 25], [110, 17], [181, 17], [298, 19], [341, 17], [454, 17], [558, 17], [721, 17], [845, 18], [962, 18], [976, 18], [1002, 17],
+						[1126, 25], [1133, 25], [1135, 25], [1142, 25], [1148, 25], [1156, 25], [1159, 25], [1246, 25],
+					],
+					offsetY: -8
+				},
+				{
+					coordinates: [
+						[181, 16], [220, 19], [261, 16], [262, 16], [342, 16], [559, 16], [920, 17], [1002, 21], [1103, 18], [1109, 18], [1117, 18], [1118, 18],
+					],
+					offsetY: +8
+				},
+				{
+					coordinates: [
+						[109, 16], [252, 13], [261, 16], [1043, 18], [1044, 18],
+					],
+					offsetX: +16
+				},
+				{
+					coordinates: [
+						[182, 17], [253, 13], [342, 16], [1117, 18], [1118, 18],
+					],
+					offsetX: -8
+				},
+				{
+					coordinates: [
+						[181, 17], [220, 19], [558, 17], [1043, 18],
+					],
+					offsetX: +8
+				},
+				{
+					coordinates: [831, 18],
+					offsetY: -4
+				},
+				{
+					coordinates: [1045, 19],
+					offsetY: -16
+				},
+			]
+		},
+		{
 			level: "wintherace",
 			upperText: "WIN",
 			lowerText: "THE RACE",
@@ -3269,7 +3574,7 @@
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -3410,7 +3715,7 @@
 			startingSpeed: 1,
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			parallaxDisable: true,
 			spawnYPositionHi: 0x00,
 			objectOffsets: [
@@ -3450,7 +3755,7 @@
 			startingBackgroundColor: 0x06,
 			startingGroundColor: 0x16,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -3481,6 +3786,56 @@
 						[946, 20], [946, 21],
 					],
 					offsetX: -8
+				},
+			]
+		},
+		{
+			level: "carefreevictory",
+			upperText: "CAREFREE",
+			lowerText: "VICTORY",
+			decoType: "DECO1",
+			spikeSet: "A",
+			blockSet: "D",
+			sawSet: "A",
+			difficulty: "HARDER",
+			stars: 7,
+			songID: "song_carefree_victory_remix",
+			startingGameMode: 0,
+			startingSpeed: 0,
+			startingBackgroundColor: 0x11,
+			startingGroundColor: 0x29,
+			parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
+			objectOffsets: [
+				{
+					coordinates: [
+						[53, 20], [57, 22], [386, 19], [474, 25], [583, 8], [583, 14], [587, 13], [587, 9], [605, 10], [615, 11], [615, 16], [640, 14], [852, 12], [1020, 13], [1034, 13], [1187, 19], [1266, 15],
+					],
+					offsetX: -8
+				},
+				{
+					coordinates: [
+						[139, 22], [176, 22], [181, 23], [202, 24], [204, 25], [205, 25], [713, 17], [1044, 15], [1129, 16], [1154, 23],
+					],
+					offsetX: +8
+				},
+				{
+					coordinates: [
+						[53, 20], [225, 23], [410, 21], [428, 23], [484, 21], [517, 25], [670, 15], [865, 13], [968, 15], [1071, 16], [1083, 18], [1154, 23], [1266, 16],
+					],
+					offsetY: -8
+				},
+				{
+					coordinates: [
+						[894, 12],
+					],
+					offsetY: +8
+				},
+				{
+					coordinates: [
+						[75, 22], [313, 20], [409, 20], [446, 20], [531, 21], [607, 14], [662, 14], [753, 13], [1044, 15], [1045, 15],
+					],
+					offsetX: +16
 				},
 			]
 		},
@@ -3550,7 +3905,7 @@
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
 			spawnYPositionHi: 0x00,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -3601,7 +3956,7 @@
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -3886,7 +4241,7 @@
 			songID: "song_off_to_mars",
 			startingGameMode: 0,
 			startingSpeed: 1,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
@@ -3928,7 +4283,7 @@
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -3990,7 +4345,7 @@
 			startingSpeed: 1,
 			startingBackgroundColor: 0x0f,
 			startingGroundColor: 0x0f,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			parallaxDisable: true,
 			objectOffsets: [
 				{
@@ -4164,7 +4519,7 @@
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			hasSuperheroes: false,
 			objectOffsets: [
 				{
@@ -4212,12 +4567,10 @@
 			songID: "song_dastardly",
 			startingGameMode: 0,
 			startingSpeed: 1,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			startingBackgroundColor: 0x0C,
 			startingGroundColor: 0x0C,
 			spawnYPositionHi: 0x70,
-			spawnYPositionLow: 0x00,
-			scrollYPositionHi: 0x02,
 			scrollYPositionLow: 0x30,
 			parallaxDisable: true,
 			objectOffsets: [
@@ -4280,7 +4633,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x00,
 			startingGroundColor: 0x00,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -4321,7 +4674,7 @@
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			spawnYPositionHi: 0x10,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			parallaxDisable: true,
 			containsKasaneTeto: false,
 			objectOffsets: [
@@ -4912,8 +5265,6 @@
 			startingGroundColor: 0x0F,
 			parallaxDisable: true
 		},
-		// fuggin rodata+vectors bank overflow
-		
 		{
             level: "respitev2",
             lowerText: "RESPITE",
@@ -4929,7 +5280,7 @@
             startingBackgroundColor: 0x0F,
             startingGroundColor: 0x0F,
             parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -4969,7 +5320,61 @@
 				},
 			],
         },
-		
+		{
+            level: "chaozimpact",
+			lowerText: "CHAOZ IMPACT",
+            decoType: "DECO1",
+            spikeSet: "A",
+            blockSet: "B",
+            sawSet: "A",
+            difficulty: "EASYDEMON",
+            stars: 10,
+            songID: "song_chaoz_impact",
+            startingGameMode: 0,
+            startingSpeed: 0,
+            startingBackgroundColor: 0x06,
+            startingGroundColor: 0x16,
+            parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
+			objectOffsets: [
+				{
+					coordinates: [
+						[23, 19], [26, 22], [28, 22], [33, 18], [41, 20], [41, 22], [50, 19], [55, 19], [59, 19], [63, 17], [63, 20], [67, 17], [67, 20], [69, 18], [69, 20], [81, 17], [83, 18], [99, 19], [99, 21], [101, 14], [103, 15], [107, 18], [109, 21], [126, 16], [137, 16], [142, 16], [151, 16], [176, 16], [213, 13], [226, 15], [284, 14], [288, 15], [290, 10], [292, 11], [292, 14], [312, 14], [312, 17], [334, 16], [339, 10], [351, 16], [358, 11], [359, 13], [365, 10], [366, 11], [367, 13], [369, 15], [374, 18], [379, 9], [379, 14], [381, 20], [384, 16], [387, 9], [389, 8], [389, 11], [391, 13], [391, 18], [392, 14], [400, 12], [401, 14], [401, 21], [411, 12], [411, 20], [412, 22], [413, 21], [415, 12], [420, 24], [421, 21], [422, 13], [422, 17], [423, 12], [425, 10], [432, 10], [436, 13], [437, 16], [437, 19], [442, 17], [443, 9], [444, 20], [449, 10], [451, 18], [455, 16], [455, 19], [456, 9], [457, 17], [458, 7], [462, 16], [464, 14], [466, 8], [470, 14], [470, 18], [472, 12], [477, 12], [479, 10], [480, 6], [485, 3], [485, 13], [490, 14], [491, 4], [492, 3], [492, 13], [496, 2], [497, 12], [498, 3], [498, 6], [500, 5], [506, 4], [508, 5], [508, 9], [509, 14], [509, 17], [511, 15], [514, 7], [514, 8], [576, 9], [579, 7], [652, 10], [658, 9], [672, 8], [678, 8], [715, 7], [730, 8], [739, 10], [750, 10], [764, 7],
+					],
+					offsetX: +8
+				},
+				{
+					coordinates: [
+						[118, 15], [173, 14], [173, 15], [193, 16], [231, 13], [267, 15], [368, 13], [380, 14], [443, 12], [467, 8], [480, 10], [515, 8], [601, 4], [644, 6], [648, 5], [653, 10], [664, 7], [698, 6], [698, 10], [765, 7],
+					],
+					offsetX: -8
+				},
+				{
+					coordinates: [
+						[47, 16], [502, 11], [580, 6], [654, 11], [656, 10], [736, 8], [757, 7],
+					],
+					offsetX: +16
+				},
+				{
+					coordinates: [
+						[643, 6], [644, 6],
+					],
+					offsetY: +4
+				},
+				{
+					coordinates: [
+						[118, 14], [172, 14], [173, 14], [262, 11], [271, 12], [281, 13], [301, 11], [302, 10], [310, 15], [318, 11], [323, 12], [328, 12], [336, 11], [339, 13], [355, 11], [384, 18], [387, 16], [399, 15], [402, 13], [403, 12], [407, 20], [424, 14], [434, 15], [440, 16], [449, 13], [450, 15], [483, 14], [492, 6], [514, 7], [515, 7], [570, 8], [600, 4], [601, 4], [663, 3], [770, 8],
+					],
+					offsetY: +8
+				},
+				{
+					coordinates: [
+						[14, 25], [22, 25], [26, 18], [32, 20], [43, 19], [47, 18], [52, 15], [53, 16], [56, 21], [72, 16], [72, 20], [86, 18], [88, 18], [89, 18], [105, 17], [117, 15], [118, 15], [126, 16], [132, 16], [137, 16], [142, 16], [151, 16], [173, 15], [176, 18], [178, 15], [183, 15], [199, 16], [224, 11], [225, 13], [226, 15], [231, 13], [244, 14], [248, 14], [259, 15], [260, 14], [274, 14], [288, 15], [298, 17], [325, 12], [336, 15], [343, 14], [361, 17], [364, 13], [367, 13], [368, 13], [389, 13], [392, 11], [409, 20], [419, 19], [427, 12], [434, 16], [449, 14], [450, 16], [483, 13], [515, 8], [553, 12], [570, 9], [616, 4], [625, 7], [651, 8], [663, 14], [687, 9], [692, 8], [748, 7], [749, 8], [750, 9], [763, 8], [770, 9], [776, 9], [779, 9],
+					],
+					offsetY: -8
+				},
+			]
+        },
 		{
 			level: "everymadness",
 			upperText: "EVERY",
@@ -5013,7 +5418,7 @@
 			startingBackgroundColor: 0x07,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -5396,7 +5801,7 @@
 			startingBackgroundColor: 0x17,
 			startingGroundColor: 0x17,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -5482,7 +5887,7 @@
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -5520,6 +5925,55 @@
 				},
 			]
 		},
+		{
+            level: "solarcircles",
+			lowerText: "SOLAR CIRCLES",
+            decoType: "DECO1",
+            spikeSet: "A",
+            blockSet: "B",
+            sawSet: "A",
+            difficulty: "MEDIUMDEMON",
+            stars: 10,
+            songID: "song_solar_wind",
+            startingGameMode: 0,
+            startingSpeed: 1,
+            startingBackgroundColor: 0x0F,
+            startingGroundColor: 0x0F,
+            parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
+			objectOffsets: [
+				{
+					coordinates: [
+						[24, 27], [25, 27], [27, 26], [29, 23], [32, 27], [39, 29], [47, 26], [66, 13], [79, 16], [96, 5], [107, 7], [199, 18], [202, 16], [209, 22], [228, 21], [233, 17], [233, 19], [236, 22], [246, 21], [247, 19], [250, 21], [295, 27], [344, 23], [344, 25], [368, 24], [413, 25], [425, 25], [425, 28], [538, 24], [545, 25], [551, 25], [557, 25], [563, 25], [569, 25], [575, 25], [591, 23], [606, 22], [656, 20], [660, 27], [666, 21],
+					],
+					offsetX: +8
+				},
+				{
+					coordinates: [
+						[54, 22], [58, 22], [159, 19], [186, 15], [208, 19], [415, 25], [539, 24], [634, 24],
+					],
+					offsetX: -8
+				},
+				{
+					coordinates: [
+						[46, 28], [250, 21], [390, 21], [390, 28],
+					],
+					offsetX: +16
+				},
+				{
+					coordinates: [
+						[24, 27], [207, 18], [209, 22], [215, 17], [219, 19], [220, 21], [295, 27], [314, 24], [425, 28], [509, 24], [545, 25], [551, 25], [557, 25], [563, 25], [569, 25], [575, 25], [591, 23], [660, 27],
+					],
+					offsetY: +8
+				},
+				{
+					coordinates: [
+						[27, 26], [92, 4], [117, 9], [121, 11], [124, 16], [134, 13], [227, 21], [230, 20], [233, 19], [235, 20], [239, 21], [240, 21], [247, 19], [253, 19], [258, 19], [260, 19], [268, 19], [276, 25], [344, 23], [344, 25], [351, 27], [366, 29], [414, 26], [419, 28], [425, 25], [434, 24], [481, 21], [482, 21], [538, 24], [539, 24], [561, 21], [633, 24], [634, 24], [651, 24], [659, 26], [666, 21], [697, 25], [712, 23],
+					],
+					offsetY: -8
+				},
+			]
+        },
 		{
 			level: "invisiblelight",
 			upperText: "INVISIBLE",
@@ -5615,7 +6069,7 @@
 			startingBackgroundColor: 0x06,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -5673,7 +6127,7 @@
             startingSpeed: 0,
             startingBackgroundColor: 0x01,
             startingGroundColor: 0x01,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
             parallaxDisable: true,
 			objectOffsets: [
 				{
@@ -5722,6 +6176,37 @@
 						[645, 23], [813, 22],
 					],
 					offsetX: -5
+				},
+			]
+        },
+		{
+            level: "watertemple",
+			lowerText: "WATER TEMPLE",
+            decoType: "DECO1",
+            spikeSet: "A",
+            blockSet: "B",
+            sawSet: "A",
+            difficulty: "HARDDEMON",
+            stars: 10,
+            songID: "song_cant_let_go",
+            startingGameMode: 0,
+            startingSpeed: 0,
+            startingBackgroundColor: 0x00,
+            startingGroundColor: 0x0F,
+            parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
+			objectOffsets: [
+				{
+					coordinates: [
+						[132, 9], [246, 45], [254, 54], [344, 51], [399, 50], [408, 51], [417, 52], [447, 50], [550, 51], [551, 51], [552, 51], [605, 49], [605, 53], [627, 51], [782, 54],
+					],
+					offsetX: -8
+				},
+				{
+					coordinates: [
+						[223, 16], [254, 54], [270, 52], [342, 51], [343, 51], [344, 51], [376, 53], [495, 51], [521, 51], [550, 51], [551, 51], [595, 51], [627, 51],
+					],
+					offsetY: -8
 				},
 			]
         },
@@ -5858,7 +6343,7 @@
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -5893,6 +6378,68 @@
             parallaxDisable: true
         },
 		{
+            level: "shadowtemple",
+			lowerText: "SHADOW TEMPLE",
+            decoType: "DECO1",
+            spikeSet: "A",
+            blockSet: "B",
+            sawSet: "A",
+            difficulty: "HARDDEMON",
+            stars: 10,
+            songID: "song_clubstep",
+            startingGameMode: 0,
+            startingSpeed: 0,
+            startingBackgroundColor: 0x00,
+            startingGroundColor: 0x0F,
+            parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
+			objectOffsets: [
+				{
+					coordinates: [
+						[91, 24], [141, 24], [243, 21], [334, 20], [334, 21], [479, 20], [479, 21], [666, 21], [689, 24], [727, 21],
+					],
+					offsetX: +16
+				},
+				{
+					coordinates: [
+						[93, 24], [691, 24],
+					],
+					offsetX: -16
+				},
+				{
+					coordinates: [
+						[144, 24],
+					],
+					offsetX: -32
+				},
+				{
+					coordinates: [
+						[97, 22], [101, 22], [105, 22], [194, 21], [246, 22], [250, 22], [254, 22], [268, 22], [334, 21], [375, 21], [432, 21], [455, 19], [479, 21], [584, 24], [666, 21], [667, 21], [690, 25], [728, 22], [771, 21], [836, 25],
+					],
+					offsetY: -8
+				},
+				{
+					coordinates: [
+						[286, 20], [287, 20], [334, 20], [335, 20], [376, 20], [432, 20], [479, 20], [480, 20], [771, 20],
+					],
+					offsetY: +8
+				},
+				{
+					coordinates: [
+						[286, 20], [375, 21], [455, 19], [583, 23], [667, 21], [906, 24],
+					],
+					offsetX: +8
+				},
+				{
+					coordinates: [
+						[732, 22], [735, 22], [738, 22], [748, 22], [751, 22], [754, 22], [757, 22], [760, 22], [763, 22], [766, 22],
+					],
+					offsetY: -8,
+					offsetX: +8,
+				},
+			]
+        },
+		{
 			level: "foresttemple",
 			lowerText: "FOREST TEMPLE",
 			decoType: "DECO1",
@@ -5907,7 +6454,7 @@
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 		},
 		{
 			level: "ninecircles",
@@ -6195,7 +6742,7 @@
 			startingBackgroundColor: 0x01,
 			startingGroundColor: 0x01,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 		},
 		{
 			level: "futurefunkfix",
@@ -6219,6 +6766,37 @@
 				},			
 			]
 		},
+		{
+            level: "denouement",
+			lowerText: "DENOUEMENT",
+            decoType: "DECO1",
+            spikeSet: "A",
+            blockSet: "B",
+            sawSet: "A",
+            difficulty: "INSANEDEMON",
+            stars: 10,
+            songID: "song_glory",
+            startingGameMode: 6,
+            startingSpeed: 4,
+            startingBackgroundColor: 0x03,
+            startingGroundColor: 0x0F,
+            parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
+			objectOffsets: [
+				{
+					coordinates: [
+						[23, 18], [23, 21], [59, 20], [184, 16],
+					],
+					offsetX: +8
+				},
+				{
+					coordinates: [
+						[24, 19], [24, 22],
+					],
+					offsetY: -8
+				},
+			]
+        },
 		{
 			level: "stalemate",
 			lowerText: "STALEMATE",
@@ -6307,7 +6885,7 @@
 			startingSpeed: 1,
 			startingBackgroundColor: 0x00,
 			startingGroundColor: 0x00,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 		},
 		{
 			level: "hi",
@@ -6379,7 +6957,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x00,
 			startingGroundColor: 0x0F,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -6587,10 +7165,8 @@
 			stars: 10,
 			songID: "song_slow_down",
 			//spawnYPositionHi: 0x30,
-			//spawnYPositionLow: 0x00,
-			//scrollYPositionHi: 0x02,
 			//scrollYPositionLow: 0x30,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			startingGameMode: 4,
 			startingSpeed: 1,
 			startingBackgroundColor: 0x30,
@@ -6634,12 +7210,12 @@
 			difficulty: "IMPOSSIBLEDEMON",
 			stars: 10,
 			songID: "song_time_machine",
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			startingGameMode: 0,
 			startingSpeed: 0,
 			startingBackgroundColor: 0x1C,
 			startingGroundColor: 0x0F,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -6719,7 +7295,6 @@
 			startingGameMode: 4,
 			startingSpeed: 1,
 			spawnYPositionHi: 0xFF,
-			spawnYPositionLow: 0xFF,
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
@@ -6764,7 +7339,7 @@
 			startingBackgroundColor: 0x11,
 			startingGroundColor: 0x11,
 			parallaxDisable: false,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 		},
 		{
 			level: "heliopolis",

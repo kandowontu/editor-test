@@ -418,19 +418,68 @@
     <PackageReference Include="NAudio" Version="2.1.0" />
   </ItemGroup>
 
-  <!-- Copy Mesen (bundled) to output folder after each build -->
-  <Target Name="CopyMesenBundled" AfterTargets="Build"
-          Condition="Exists('C:\Editor Test\Mesen2\bin\win-x64\Release\Mesen.exe')">
+  <PropertyGroup>
+    <LocalMesenBuildDir Condition="'$(LocalMesenBuildDir)' == ''">$(MSBuildProjectDirectory)\..\Mesen2\bin\win-x64\Release\</LocalMesenBuildDir>
+    <LocalSimFamidashDir Condition="'$(LocalSimFamidashDir)' == ''">$(MSBuildProjectDirectory)\..\sim-famidash\</LocalSimFamidashDir>
+    <LocalSimFamidashOverlayLua Condition="'$(LocalSimFamidashOverlayLua)' == ''">$(MSBuildProjectDirectory)\..\famidash_path_overlay.lua</LocalSimFamidashOverlayLua>
+    <MesenRuntimeCopyExcludes>$(LocalMesenBuildDir)**\*.lib</MesenRuntimeCopyExcludes>
+    <RuntimeFolderCopyExcludes>$(LocalSimFamidashDir).git\**;$(LocalSimFamidashDir)BUILD.zip;$(LocalSimFamidashDir)**\*.log</RuntimeFolderCopyExcludes>
+  </PropertyGroup>
+
+  <!-- Copy local runtime folders next to the editor executable after each normal build. -->
+  <Target Name="CopyLocalRuntimeFoldersToBuildOutput" AfterTargets="Build">
     <ItemGroup>
-      <MesenFiles Include="C:\Editor Test\Mesen2\bin\win-x64\Release\**\*" />
+      <BuildMesenFiles Include="$(LocalMesenBuildDir)**\*" Exclude="$(MesenRuntimeCopyExcludes)" Condition="Exists('$(LocalMesenBuildDir)Mesen.exe')" />
+      <BuildSimFamidashFiles Include="$(LocalSimFamidashDir)**\*" Exclude="$(RuntimeFolderCopyExcludes)" Condition="Exists('$(LocalSimFamidashDir)1BigSimExport.bat')" />
     </ItemGroup>
-    <Copy SourceFiles="@(MesenFiles)"
-          DestinationFiles="@(MesenFiles->'$(OutDir)mesen\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-    <Copy SourceFiles="C:\Editor Test\Mesen2\bin\win-x64\Release\MesenCore.dll"
+    <Copy SourceFiles="@(BuildMesenFiles)"
+          DestinationFiles="@(BuildMesenFiles->'$(OutDir)mesen\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(BuildMesenFiles)' != ''" />
+    <MakeDir Directories="$(OutDir)mesen\Dependencies"
+             Condition="Exists('$(LocalMesenBuildDir)MesenCore.dll')" />
+    <Copy SourceFiles="$(LocalMesenBuildDir)MesenCore.dll"
           DestinationFiles="$(OutDir)mesen\Dependencies\MesenCore.dll"
           SkipUnchangedFiles="false"
-          Condition="Exists('C:\Editor Test\Mesen2\bin\win-x64\Release\MesenCore.dll') And Exists('$(OutDir)mesen\Dependencies')" />
+          Condition="Exists('$(LocalMesenBuildDir)MesenCore.dll')" />
+    <Copy SourceFiles="@(BuildSimFamidashFiles)"
+          DestinationFiles="@(BuildSimFamidashFiles->'$(OutDir)sim-famidash\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(BuildSimFamidashFiles)' != ''" />
+    <MakeDir Directories="$(OutDir)sim-famidash"
+             Condition="Exists('$(LocalSimFamidashOverlayLua)')" />
+    <Copy SourceFiles="$(LocalSimFamidashOverlayLua)"
+          DestinationFiles="$(OutDir)sim-famidash\famidash_path_overlay.lua"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(LocalSimFamidashOverlayLua)')" />
+  </Target>
+
+  <!-- dotnet publish -o ReleaseBuild uses PublishDir, so copy there as well. -->
+  <Target Name="CopyLocalRuntimeFoldersToPublishOutput" AfterTargets="Publish">
+    <ItemGroup>
+      <PublishMesenFiles Include="$(LocalMesenBuildDir)**\*" Exclude="$(MesenRuntimeCopyExcludes)" Condition="Exists('$(LocalMesenBuildDir)Mesen.exe')" />
+      <PublishSimFamidashFiles Include="$(LocalSimFamidashDir)**\*" Exclude="$(RuntimeFolderCopyExcludes)" Condition="Exists('$(LocalSimFamidashDir)1BigSimExport.bat')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PublishMesenFiles)"
+          DestinationFiles="@(PublishMesenFiles->'$(PublishDir)mesen\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(PublishMesenFiles)' != '' And '$(PublishDir)' != ''" />
+    <MakeDir Directories="$(PublishDir)mesen\Dependencies"
+             Condition="Exists('$(LocalMesenBuildDir)MesenCore.dll') And '$(PublishDir)' != ''" />
+    <Copy SourceFiles="$(LocalMesenBuildDir)MesenCore.dll"
+          DestinationFiles="$(PublishDir)mesen\Dependencies\MesenCore.dll"
+          SkipUnchangedFiles="false"
+          Condition="Exists('$(LocalMesenBuildDir)MesenCore.dll') And '$(PublishDir)' != ''" />
+    <Copy SourceFiles="@(PublishSimFamidashFiles)"
+          DestinationFiles="@(PublishSimFamidashFiles->'$(PublishDir)sim-famidash\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(PublishSimFamidashFiles)' != '' And '$(PublishDir)' != ''" />
+    <MakeDir Directories="$(PublishDir)sim-famidash"
+             Condition="Exists('$(LocalSimFamidashOverlayLua)') And '$(PublishDir)' != ''" />
+    <Copy SourceFiles="$(LocalSimFamidashOverlayLua)"
+          DestinationFiles="$(PublishDir)sim-famidash\famidash_path_overlay.lua"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(LocalSimFamidashOverlayLua)') And '$(PublishDir)' != ''" />
   </Target>
 
 </Project>

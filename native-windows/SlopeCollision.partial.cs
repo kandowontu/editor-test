@@ -747,7 +747,7 @@ namespace FamidashEditor
         /// Checks slopes at Y + height - 2, loops for LEFT and RIGHT edges
         /// Returns true if slope collision found, sets eject_D
         /// </summary>
-        private bool bg_coll_D_slopes()
+        private bool bg_coll_D_slopes(int? genericYOverride_px = null)
         {
             int playerX_px = playerX_fixed >> 8;
             int playerY_px = playerY_fixed >> 8;
@@ -786,7 +786,8 @@ namespace FamidashEditor
                 // Generic.y + Generic.height - 2 + (currplayer_mini ? byte(0x10 - Generic.height) >> 1 : 0)
                 // The mini offset is (0x10 - height) >> 1 = 4 for ALL modes (not mode-specific).
                 int hitboxOffsetY = (currplayer_mini != 0) ? ((0x10 - hitboxH) >> 1) : 0;
-                int adjustedPlayerY = playerY_px + hitboxOffsetY;
+                int genericY = genericYOverride_px ?? playerY_px;
+                int adjustedPlayerY = genericY + hitboxOffsetY;
                 
                 checkBaseX = playerX_px;
                 checkWidth = hitboxW_local;
@@ -917,7 +918,7 @@ namespace FamidashEditor
         ///              + (currplayer_mini ? 1 : 2) + (gamemode == GAMEMODE_SHIP ? 1 : 0)
         /// Returns true if slope collision found, sets eject_U
         /// </summary>
-        private bool bg_coll_U_slopes()
+        private bool bg_coll_U_slopes(int? genericYOverride_px = null)
         {
             int playerX_px = playerX_fixed >> 8;
             int playerY_px = playerY_fixed >> 8;
@@ -946,11 +947,12 @@ namespace FamidashEditor
                 int hitboxW_local = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;
                 int hitboxH = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
                 int hitboxOffsetY = (currplayer_mini != 0) ? ((0x10 - hitboxH) >> 1) : 0;
+                int genericY = genericYOverride_px ?? playerY_px;
                 
                 checkBaseX = playerX_px;
                 checkWidth = hitboxW_local;
                 // NES: Generic.y + (byte(0x10 - Generic.height) >> 1) + (mini?1:2) + (ship?1:0)
-                checkBaseY = playerY_px + hitboxOffsetY + (currplayer_mini != 0 ? 1 : 2) + (currentGameMode == 1 ? 1 : 0);
+                checkBaseY = genericY + hitboxOffsetY + (currplayer_mini != 0 ? 1 : 2) + (currentGameMode == 1 ? 1 : 0);
             }
             
             AppendSimDebug($"[SLOPE_U] bg_coll_U_slopes: playerX={playerX_px}, checkY={checkBaseY}, checkX={checkBaseX}, checkW={checkWidth}, mini={currplayer_mini != 0}");
@@ -1009,7 +1011,7 @@ namespace FamidashEditor
         ///   - When already 0: clears last_slope_type and slope_type
         /// Thin wrapper over SharedPhysics.UpdateSlopeCounters.
         /// </summary>
-        private void UpdateSlopeCounters()
+        private void UpdateSlopeCounters(bool applyPosition = true)
         {
             int slopeWasOnCounter = currplayer_was_on_slope_counter;
             int slopeType = currplayer_slope_type;
@@ -1019,7 +1021,7 @@ namespace FamidashEditor
                 ref playerVelY_fixed, ref playerY_fixed,
                 currentGameMode,
                 currplayer_gravity != 0, currplayer_mini != 0,
-                ref lastSlopeType);
+                ref lastSlopeType, applyPosition);
             currplayer_was_on_slope_counter = slopeWasOnCounter;
             currplayer_slope_type = slopeType;
             currplayer_last_slope_type = lastSlopeType;

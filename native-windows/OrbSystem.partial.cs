@@ -393,8 +393,13 @@ namespace FamidashEditor
         /// <summary>
         /// Activate an orb and apply its effect
         /// </summary>
-        private void ActivateOrb(int orbType, int gamemode, bool gravityInverted, bool mini, ref int velocityY)
-        {
+		private void ActivateOrb(int orbType, int gamemode, bool gravityInverted, bool mini, ref int velocityY)
+		{
+			// sprite_gamemode_main sets this before dispatching any regular
+			// orb while in robot mode.
+			if (gamemode == 4)
+				orbed[currplayer] = true;
+
             // Map gamemodes to their orb/pad interaction base modes
             int modeCol = gamemode;
             if (modeCol == 8) modeCol = 0; // Ninja uses cube values
@@ -474,15 +479,14 @@ namespace FamidashEditor
                 case TELEPORT_ORB_ENTER:
                     if (simulatorNesDispatchActive)
                     {
-                        int destinationWorldY_px =
-                            (cameraY_fixed >> 8) + (simulatorTeleportOutputY_px & 0xFF);
+                        int destinationScreenY_px = simulatorTeleportOutputY_px & 0xFF;
                         playerY_fixed =
-                            (destinationWorldY_px << 8) | (playerY_fixed & 0xFF);
+                            cameraY_fixed + (destinationScreenY_px << 8) + (playerY_fixed & 0xFF);
                         velocityY = 0;
                         playerVelY_fixed = 0;
                         orbed[currplayer] = true;
                         AppendSimDebug(
-                            $"[TELEPORT_ORB] NES shared output Y={destinationWorldY_px}");
+                            $"[TELEPORT_ORB] NES shared output screenY={destinationScreenY_px} worldY={playerY_fixed >> 8}");
                         break;
                     }
 
@@ -813,7 +817,15 @@ namespace FamidashEditor
                     AppendSimDebug($"[DASH_ORB] Gravity flipped to {(gravityFlipped ? "UP" : "DOWN")} by orb 0x{spriteType:X2}");
                 }
 
-                // Set dash state and velocity based on orb type
+				// sprite_gamemode_main sets orbed before every dash effect in robot mode.
+				if (currentGameMode == 4)
+					orbed[currplayer] = true;
+
+				// Set dash state and velocity based on orb type. Ship/UFO/wave use
+				// sprite_gamemode_controller_check, whose vertical dash transfers
+				// X velocity into Y and clears X; cube-group modes use the x4 branch.
+				int dashVelX = playerVelX_fixed;
+				bool controllerOnlyMode = currentGameMode == 1 || currentGameMode == 3 || currentGameMode == 6;
                 if (spriteType == DASH_ORB || spriteType == DASH_GRAVITY_ORB)
                 {
                     // Horizontal dash (right)
@@ -835,17 +847,21 @@ namespace FamidashEditor
                     dashing[currplayer] = 3;
                     AppendSimDebug($"[DASH_ORB] 45deg downward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }
-                else if (spriteType == DASH_ORB_UPWARDS || spriteType == DASH_GRAVITY_ORB_UPWARDS)
-                {
-                    // Upward dash (vertical)
-                    velocityY = playerVelX_fixed * 4;  // currplayer_vel_y = currplayer_vel_x * 4
+				else if (spriteType == DASH_ORB_UPWARDS || spriteType == DASH_GRAVITY_ORB_UPWARDS)
+				{
+					// Upward dash (vertical)
+					velocityY = controllerOnlyMode ? dashVelX : dashVelX * 4;
+					if (controllerOnlyMode)
+						playerVelX_fixed = 0;
                     dashing[currplayer] = 4;
                     AppendSimDebug($"[DASH_ORB] Upward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }
-                else if (spriteType == DASH_ORB_DOWNWARDS || spriteType == DASH_GRAVITY_ORB_DOWNWARDS)
-                {
-                    // Downward dash (vertical)
-                    velocityY = -playerVelX_fixed * 4;  // currplayer_vel_y = -currplayer_vel_x * 4
+				else if (spriteType == DASH_ORB_DOWNWARDS || spriteType == DASH_GRAVITY_ORB_DOWNWARDS)
+				{
+					// Downward dash (vertical)
+					velocityY = controllerOnlyMode ? -dashVelX : -dashVelX * 4;
+					if (controllerOnlyMode)
+						playerVelX_fixed = 0;
                     dashing[currplayer] = 5;
                     AppendSimDebug($"[DASH_ORB] Downward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }

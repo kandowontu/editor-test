@@ -1084,7 +1084,7 @@ namespace FamidashEditor
             catch { return false; }
         }
 
-        private bool SpriteIntersectsPlayer(int idx, int sid, int playerLeft_px, int playerRight_px, int playerTop_px, int playerBottom_px, bool ignoreSentinels = false)
+        private bool SpriteIntersectsPlayer(int idx, int sid, int playerLeft_px, int playerRight_px, int playerTop_px, int playerBottom_px, bool ignoreSentinels = false, bool requirePositiveXOverlap = false)
         {
             try
             {
@@ -1150,9 +1150,14 @@ namespace FamidashEditor
                         SimulatorNesSaturatingOffset(SimulatorNesDispatchRealX(), hxoff);
                     int spriteTop_screen_px =
                         SimulatorNesSaturatingOffset(SimulatorNesDispatchRealY(), hyoff);
-                    return SimulatorNesAxisOverlaps(
-                               playerLeft_screen_px, playerWidth,
-                               spriteLeft_screen_px, hw) &&
+                    bool xOverlap = requirePositiveXOverlap
+                        ? SimulatorNesAxisOverlapsPositive(
+                            playerLeft_screen_px, playerWidth,
+                            spriteLeft_screen_px, hw)
+                        : SimulatorNesAxisOverlaps(
+                            playerLeft_screen_px, playerWidth,
+                            spriteLeft_screen_px, hw);
+                    return xOverlap &&
                            SimulatorNesAxisOverlaps(
                                playerTop_screen_px, playerHeight,
                                spriteTop_screen_px, hh);
@@ -1218,8 +1223,11 @@ namespace FamidashEditor
                 // NES no-collision: (x1+w1 < x2) || (x2+w2 < x1) || (y1+h1 < y2) || (y2+h2 < y1)
                 // With our variables: ((pR+1) < sL) || (sR < pL) || ((pB+1) < sT) || (sB < pT)
                 // Note: sR < pL is equivalent to pL > sR, using strict > because NES uses bcc (< unsigned)
-                bool overlap = !((playerRight_px + 1) < spriteLeft_world_px || spriteRight_world_px < playerLeft_px || (playerBottom_px + 1) < spriteTop_world_px || spriteBottom_world_px < playerTop_px);
-                return overlap;
+                bool xOverlapWorld = requirePositiveXOverlap
+                    ? !((playerRight_px + 1) <= spriteLeft_world_px || spriteRight_world_px <= playerLeft_px)
+                    : !((playerRight_px + 1) < spriteLeft_world_px || spriteRight_world_px < playerLeft_px);
+                bool yOverlapWorld = !((playerBottom_px + 1) < spriteTop_world_px || spriteBottom_world_px < playerTop_px);
+                return xOverlapWorld && yOverlapWorld;
             }
             catch { return false; }
         }
@@ -1318,6 +1326,7 @@ namespace FamidashEditor
         // Dual-mode player arrays (for two-player simultaneous)
         private int[] player_x_fixed = new int[2] { 0, 0 };  // Both players' X positions
         private int[] player_y_fixed = new int[2] { 0, 0 };  // Both players' Y positions
+        private int[] player_vel_x_fixed = new int[2] { 0, 0 };  // Dormant P2 X velocity persists across single sections
         private int[] player_vel_y_fixed = new int[2] { 0, 0 };  // Both players' Y velocities
         private bool[] player_mini = new bool[2] { false, false };  // Mini mode for each player
         private byte[] player_gravity = new byte[2] { 0, 0 };  // Gravity state (0=down, 0xFF=up)
@@ -1445,16 +1454,25 @@ namespace FamidashEditor
         /// </summary>
         private int? ComputeScrollYFixed()
         {
-            if (!configScrollYHi.HasValue) return null;
-            int hi = configScrollYHi.Value & 0xFF;
-            int lo = (configScrollYLo.HasValue ? configScrollYLo.Value : 0) & 0xFF;
+            if (!configSpawnYHi.HasValue && !configSpawnYLo.HasValue &&
+                !configScrollYHi.HasValue && !configScrollYLo.HasValue)
+                return null;
+            int hi = (configScrollYHi.HasValue ? configScrollYHi.Value : 0x02) & 0xFF;
+            int lo = (configScrollYLo.HasValue ? configScrollYLo.Value : 0xEF) & 0xFF;
             // Linearize NES nametable scroll (each 0x100 block = 240 valid pixels, F0-FF skipped)
             int linearScroll = hi * 240 + lo;
             int linearMax = 2 * 240 + 239; // 719 = linearize(0x02EF), the default bottom scroll
             int pixelsFromBottom = linearMax - linearScroll;
-            int maxCameraY = (mapHeight - NES_H) * TILE;
+            int maxCameraY = SimulatorNesMaxCameraY_px();
             int tmxCamY = Math.Max(0, maxCameraY - pixelsFromBottom);
             return Math.Min(maxCameraY, tmxCamY) << 8;
+        }
+
+        private int SimulatorNesMaxCameraY_px()
+        {
+            int mapMax = Math.Max(0, (mapHeight - NES_H) * TILE);
+            int nesMax = 719 - _sim_nesCoordOffset;
+            return Math.Max(0, Math.Min(mapMax, nesMax));
         }
 
         // Centralized helper for determining whether a collision category provides
@@ -1941,12 +1959,16 @@ namespace FamidashEditor
             return killed;
         }
 
-        // NES collision probes use screen-space player Y high with proper borrow from camera subpixel.
-        // In simulator world-space fixed coordinates, this is equivalent to:
-        //   (cameraY>>8) + ((playerY-cameraY)>>8)
+        // Sprite/display probes use the ROM's fixed screen-space fractional bias
+        // relative to simulator world Y.
         private int NesPlayerY_px(int playerYFixed)
         {
-            return (cameraY_fixed >> 8) + ((playerYFixed - cameraY_fixed) >> 8);
+            return SharedPhysics.NesPlayerY_px(playerYFixed, cameraY_fixed);
+        }
+
+        private int NesPlayerBgCollisionY_px(int playerYFixed)
+        {
+            return SharedPhysics.NesPlayerBgCollisionY_px(playerYFixed, cameraY_fixed);
         }
 
         /// <summary>
@@ -1962,6 +1984,9 @@ namespace FamidashEditor
 
             // If NO DEATH mode is on, never trigger death
             if (MainWindow.Option_NoDeath) return false;
+            // NES runthecolls does not call bg_coll_death while the level-start
+            // invincibility counter is non-zero.
+            if (invincibleCounter != 0) return false;
 
             // If death already triggered, don't check again
             if (deathTriggered) return false;
@@ -1975,7 +2000,7 @@ namespace FamidashEditor
             // NES x_movement sets Generic.width/height = WAVE_WIDTH/WAVE_HEIGHT (8x8)
             // for wave/snake before bg_coll_death runs.  Mini wave still uses 8x8 there
             // (bg_coll_death uses Generic.width/height that x_movement just set).
-            if (currentGameMode == 6 || currentGameMode == 7)  // wave or snake
+            if (currentGameMode == 6 || currentGameMode == 10)  // wave or snake
             {
                 width = 8;
                 height = 8;
@@ -1988,12 +2013,12 @@ namespace FamidashEditor
             
             // Apply mini mode centering offset to match NES bg_coll_death:
             // NES computes center as Y + (height>>1) + (mini ? (0x10-height)>>1 : 0)
-            // The centering offset (0x10-7)>>1 = 4 is applied unconditionally
-            // (not gravity-dependent) because Generic.y already reflects the
-            // ejected position.  Wave/snake skip this since their Generic.height = 8.
-            if (miniMode && currentGameMode != 6 && currentGameMode != 7)
+            // The centering offset is applied unconditionally for mini players.
+            // In particular, NES bg_coll_death also adds (0x10-8)>>1 for a mini
+            // wave/snake even though those modes use the fixed 8x8 hitbox.
+            if (miniMode)
             {
-                playerY_px += (0x10 - height) >> 1;  // +4 for mini (height=7)
+                playerY_px += (0x10 - height) >> 1;
             }
             
             int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
@@ -2073,6 +2098,7 @@ namespace FamidashEditor
                 case MetatileCollision.COL_NO_SIDE:
                 case MetatileCollision.COL_BOTTOM:
                 case MetatileCollision.COL_TOP:
+                case MetatileCollision.COL_TOP_CENTER_SPIKE:
                 case MetatileCollision.COL_LEFT:
                 case MetatileCollision.COL_RIGHT:
                 case MetatileCollision.COL_UP_LEFT:
@@ -2126,7 +2152,7 @@ namespace FamidashEditor
             {
                 // NES: Generic.x = high_byte(currplayer_x) + 1
                 int playerX_px = (playerX_fixed >> 8) + 1;
-                int playerY_px = playerY_fixed >> 8;
+                int playerY_px = NesPlayerY_px(playerY_fixed);
                 
                 // Use actual collision hitbox size, not visual size
                 int hitboxW = miniMode ? 8 : 15;
@@ -2163,6 +2189,9 @@ namespace FamidashEditor
                     if (processedGravityPortals.Contains(idx)) continue;
                     
                     // Use SpriteIntersectsPlayer to check sprite hitbox overlap
+                    // NES sprite_collide/check_collision counts the edge-touch
+                    // frame for gravity portals.  Using positive-only X overlap
+                    // makes sim/PF hit these one frame late.
                     bool gravIntersects = SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px);
                     if (gravIntersects)
                     {
@@ -2197,9 +2226,9 @@ namespace FamidashEditor
                             // Update player icon flip and checkbox on UI thread
                             try { Dispatcher?.BeginInvoke(new Action(() => { UpdatePlayerIconFlip(); InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
                             
-                            // Halve Y velocity
-                            // cc65 optimizes int /= 2 → asr (arithmetic shift floors negatives).
-                            // C# /= 2 truncates toward zero — use >>= 1 to match NES exactly.
+                            // NES/cc65 lowers this gravity-portal halve to an
+                            // arithmetic shift on the replayed path.  Odd negative
+                            // velocities round down: -725 -> -363.
                             playerVelY_fixed >>= 1;
                             robotJumpTime[currplayer] = 0;
                             
@@ -2225,7 +2254,7 @@ namespace FamidashEditor
             try
             {
                 int playerX_px = (playerX_fixed >> 8) + 1;
-                int playerY_px = playerY_fixed >> 8;
+                int playerY_px = NesPlayerY_px(playerY_fixed);
                 // NES sprite_collide (sprite_loading.h L1149-1156): wave/snake uses
                 // Generic = WAVE_WIDTH(8) x WAVE_HEIGHT(8); other modes use CUBE dims.
                 bool isWaveGmp = (currentGameMode == 6 || currentGameMode == 10);
@@ -2291,10 +2320,6 @@ namespace FamidashEditor
                             // Clear ballToggleRequested — a press during the old ball mode
                             // that wasn't consumed must not carry into the next ball segment.
                             Interlocked.Exchange(ref ballToggleRequested, 0);
-                            // NES sprite_gamemode_main calls clear_slope_stuff() on mode
-                            // change — slope counters must not leak across game modes
-                            // (e.g. ship slope counter causing wave SLOPE_FREEZE).
-                            ClearSlopeStuff();
                             // NOTE: Do NOT clear keyXPressedCount here.
                             // PF_InjectInput already clears pressCount at the start
                             // of every frame, so all presses are fresh.  The PF's
@@ -2316,7 +2341,8 @@ namespace FamidashEditor
                                 switch (newMode)
                                 {
                                     case 1: case 2: case 3:
-                                        // cc65 asr semantics; see grav-portal note above
+                                        // NES game-mode portal ASR semantics; odd negative
+                                        // velocities round down (-545 -> -273).
                                         playerVelY_fixed >>= 1;
                                         break;
                                     case 4:
@@ -2374,8 +2400,6 @@ namespace FamidashEditor
                             ballFlipBuffer[0] = 0;
                             ballFlipBuffer[1] = 0;
                             Interlocked.Exchange(ref ballToggleRequested, 0);
-                            // NES sprite_gamemode_main calls clear_slope_stuff() on mode change
-                            ClearSlopeStuff();
                             // NOTE: Do NOT clear keyXPressedCount — see main portal block.
                             try { UpdateGameModeDisplay(); } catch { }
                             try { UpdateEffectiveGravity(); } catch { }
@@ -2386,7 +2410,7 @@ namespace FamidashEditor
                                 switch (newMode)
                                 {
                                     case 1: case 2: case 3:
-                                        playerVelY_fixed >>= 1;  // cc65 asr; see notes
+                                        playerVelY_fixed >>= 1;  // cc65 ASR; see notes
                                         break;
                                     case 4:
                                         if (prevWaveSnake) playerVelY_fixed >>= 1;
@@ -2420,11 +2444,11 @@ namespace FamidashEditor
         {
             try
             {
-                AppendSimDebug($"[GRAV_MOD] Checking portals - playerX={playerX_fixed >> 8}, playerY={playerY_fixed >> 8}, gravMult={gravityMultiplier:F3}");
+                AppendSimDebug($"[GRAV_MOD] Checking portals - playerX={playerX_fixed >> 8}, playerY={NesPlayerY_px(playerY_fixed)}, gravMult={gravityMultiplier:F3}");
                 
                 // NES: Generic.x = high_byte(currplayer_x) + 1
                 int playerX_px = (playerX_fixed >> 8) + 1;
-                int playerY_px = playerY_fixed >> 8;
+                int playerY_px = NesPlayerY_px(playerY_fixed);
                 
                 // Use actual collision hitbox size
                 int hitboxW = miniMode ? 8 : 15;
@@ -2605,7 +2629,7 @@ namespace FamidashEditor
             {
                 // NES: Generic.x = high_byte(currplayer_x) + 1
                 int playerX_px = (playerX_fixed >> 8) + 1;
-                int playerY_px = playerY_fixed >> 8;
+                int playerY_px = NesPlayerY_px(playerY_fixed);
                 
                 // Use actual collision hitbox size (15x15 for normal, 8x7 for mini)
                 bool isMini = (currplayer_mini != 0);
@@ -2752,7 +2776,7 @@ namespace FamidashEditor
 
                 // --- Wrap portals (0x8E / 0x9E): hitbox collision ---
                 int playerX_px = (playerX_fixed >> 8) + 1;
-                int playerY_px = playerY_fixed >> 8;
+                int playerY_px = NesPlayerY_px(playerY_fixed);
 
                 bool isMini = (currplayer_mini != 0);
                 int hitboxW = isMini ? 8 : 15;
@@ -2797,7 +2821,7 @@ namespace FamidashEditor
             try
             {
                 int playerX_px = (playerX_fixed >> 8) + 1;
-                int playerY_px = playerY_fixed >> 8;
+                int playerY_px = NesPlayerY_px(playerY_fixed);
                 bool isMini = (currplayer_mini != 0);
                 int hitboxW = isMini ? 8 : 15;
                 int hitboxH = isMini ? 7 : 15;
@@ -2853,11 +2877,9 @@ namespace FamidashEditor
         {
             try
             {
-                if (dual) return; // Already in dual mode
-                
-                // NES: Generic.x = high_byte(currplayer_x) + 1
+				// NES: Generic.x = high_byte(currplayer_x) + 1
                 int playerX_px = (playerX_fixed >> 8) + 1;
-                int playerY_px = playerY_fixed >> 8;
+                int playerY_px = NesPlayerY_px(playerY_fixed);
                 
                 // NES hitbox: CUBE_WIDTH x CUBE_HEIGHT
                 int hitboxW = miniMode ? 8 : 15;
@@ -2900,21 +2922,8 @@ namespace FamidashEditor
                         player_mini[1] = miniMode;
                         player_gravity[1] = (byte)(currplayer_gravity ^ 0xFF);
                         
-                        // Initialize player 2 per-player physics flags
-                        player_wasZeroed[1] = false;
-                        player_onGround[1] = false;
-                        player_groundStabilize[1] = 0;
-                        
-                        // Initialize player 2 ball flip state
-                        player_ballFlipCooldown[1] = 0;
-                        player_ballWasGroundedBeforeFlip[1] = false;
-                        ballSwitched[1] = false;
-                        ballFlipBuffer[1] = 0;
-                        orbBufferActive[1] = false;
-                        orbHoldSuppressing[1] = false;
-                        orbHoldConsumedKeyStillDown[1] = false;
-                        ufoOrbed[1] = false;
-                        p2BallHoldCounter = 0;
+                        // NES preserves dormant P2 speed, slope state, and
+                        // mode-specific flags across a single-player section.
                         
                         // Initialize player 2 rotation state (start upright, same as P1 portal entry)
                         player_cubeRotate[1] = cubeRotate_fixed;
@@ -3054,7 +3063,7 @@ namespace FamidashEditor
             {
                 // NES: Generic.x = high_byte(currplayer_x) + 1
                 int playerX_px = (playerX_fixed >> 8) + 1;
-                int playerY_px = playerY_fixed >> 8;
+                int playerY_px = NesPlayerY_px(playerY_fixed);
                 
                 // NES hitbox: CUBE_WIDTH x CUBE_HEIGHT
                 int hitboxW = miniMode ? 8 : 15;
@@ -3141,7 +3150,7 @@ namespace FamidashEditor
             try
             {
                 int playerX_px = (playerX_fixed >> 8) + 1;
-                int playerY_px = playerY_fixed >> 8;
+                int playerY_px = NesPlayerY_px(playerY_fixed);
 
                 int hitboxW = (currplayer_mini != 0) ? 8 : 15;
                 int hitboxH = (currplayer_mini != 0) ? 7 : 15;
@@ -3169,10 +3178,10 @@ namespace FamidashEditor
                     if (collectedCoins.Contains(idx)) continue;
                     bool useRawNesRecord = IsSimulatorNesRawDispatchIndex(idx);
 
-                    // Coins use a simple 16×16 hitbox (NES sprite_load_special_behavior returns
-                    // 0x10 for coins) with zero x/y offset. Don't use SpriteIntersectsPlayer
-                    // because coins have SPBH sentinel (0xFF) in sprite_heights which causes
-                    // the hh >= 0xFC gate to early-return false.
+                    // Full coins use a simple 16×16 hitbox (NES
+                    // sprite_load_special_behavior returns 0x10 for SPBH coins).
+                    // Mini coins are not SPBH; they use the normal NES sprite table
+                    // geometry, then spcl_minicoi kills the active slot immediately.
                     int storageTileX_c = idx % mapWidth;
                     int storageTileY_c = idx / mapWidth;
 
@@ -3198,9 +3207,29 @@ namespace FamidashEditor
                     int coinTop = useRawNesRecord
                         ? SimulatorNesDispatchRealY()
                         : (storageTileY_c - groundRowsToReserve_coin) * TILE + pyOff_c - 1;
+                    int coinW = 0x10;
+                    int coinH = 0x10;
+                    if (miniCoin)
+                    {
+                        int sid8 = sid & 0xFF;
+                        int xOff = sid8 < sprite_x_offset.Length ? sprite_x_offset[sid8] : 0;
+                        int yOff = sid8 < sprite_y_offset.Length ? sprite_y_offset[sid8] : 0;
+                        coinW = sid8 < sprite_widths.Length ? sprite_widths[sid8] : 0x10;
+                        coinH = sid8 < sprite_heights.Length ? sprite_heights[sid8] : 0x10;
+                        if (useRawNesRecord)
+                        {
+                            coinLeft = SimulatorNesSaturatingOffset(coinLeft, xOff);
+                            coinTop = SimulatorNesSaturatingOffset(coinTop, yOff);
+                        }
+                        else
+                        {
+                            coinLeft += xOff;
+                            coinTop += yOff;
+                        }
+                    }
                     // NES uses exclusive bounds (edge-touching = collision): x1+w1 >= x2
-                    int coinRight  = coinLeft + 0x10; // exclusive
-                    int coinBottom = coinTop  + 0x10; // exclusive
+                    int coinRight  = coinLeft + coinW; // exclusive
+                    int coinBottom = coinTop  + coinH; // exclusive
 
                     bool xOv;
                     bool yOv;
@@ -3210,9 +3239,9 @@ namespace FamidashEditor
                         int playerLeft_screen_px = playerLeft_px - scrollX_px;
                         int playerTop_screen_px = playerTop_px - (cameraY_fixed >> 8);
                         xOv = SimulatorNesAxisOverlaps(
-                            playerLeft_screen_px, hitboxW, coinLeft, 0x10);
+                            playerLeft_screen_px, hitboxW, coinLeft, coinW);
                         yOv = SimulatorNesAxisOverlaps(
-                            playerTop_screen_px, hitboxH, coinTop, 0x10);
+                            playerTop_screen_px, hitboxH, coinTop, coinH);
                     }
                     else
                     {
@@ -3269,8 +3298,8 @@ namespace FamidashEditor
                 // In famidash sprite_collide(), Generic.x = high_byte(currplayer_x) + 1
                 // This means player X is offset +1 pixel to the RIGHT for sprite collision!
                 int playerX_px = (playerX_fixed >> 8) + 1;
-                if (currentGameMode == 4) AppendSimDebug($"[ROBOT_PAD_CHECK] Frame: playerX_px={playerX_px}, playerY_px={playerY_fixed >> 8}");
-                int playerY_px = playerY_fixed >> 8;
+                if (currentGameMode == 4) AppendSimDebug($"[ROBOT_PAD_CHECK] Frame: playerX_px={playerX_px}, playerY_px={NesPlayerY_px(playerY_fixed)}");
+                int playerY_px = NesPlayerY_px(playerY_fixed);
                 
                 // Use actual collision hitbox size (15x15 for normal, 8x7 for mini)
                 int hitboxW = (currplayer_mini != 0) ? 8 : 15;
@@ -3448,7 +3477,7 @@ namespace FamidashEditor
                 
                 // NES: Generic.x = high_byte(currplayer_x) + 1
                 int playerX_px = (playerX_fixed >> 8) + 1;
-                int playerY_px = playerY_fixed >> 8;
+                int playerY_px = NesPlayerY_px(playerY_fixed);
                 
                 // Use actual collision hitbox size, not visual size
                 int hitboxWidth = miniMode ? 8 : 15;
@@ -3511,8 +3540,10 @@ namespace FamidashEditor
                         
                         bool shouldActivate = false;
                         
-                        // Orbs require X press/hold, pads activate immediately on collision
-                        if (isOrb && (pressedJump || holdingJump))
+                        // NES spider orbs require a fresh press or the cube_data&2-style
+                        // buffered airborne press. A plain held input must not fire one.
+                        bool bufferedJump = holdingJump && orbBufferActive[currplayer] && !orbHoldSuppressing[currplayer];
+                        if (isOrb && (pressedJump || bufferedJump))
                         {
                             shouldActivate = true;
                         }
@@ -3539,13 +3570,10 @@ namespace FamidashEditor
                                 // Teleport upward (flip to ceiling)
                                 AppendSimDebug($"[SPIDER_ORB/PAD] Teleporting UP");
                                 
-                                // Eject from current surface first (eject_D in famidash)
-                                var (collided_pre, eject_pre) = BgCollD_Spider(playerX_px, playerY_px + hitboxOffsetY, hitboxW, hitboxH, groundRowsToReserve);
-                                if (collided_pre)
-                                {
-                                    playerY_fixed -= (eject_pre << 8);
-                                    AppendSimDebug($"[SPIDER_ORB/PAD] Ejected from floor by {eject_pre}px");
-                                }
+                                // NES consumes the persistent eject_D global here; it does
+                                // not perform a new floor collision in the sprite handler.
+                                playerY_fixed = (((playerY_fixed >> 8) - eject_D) << 8) | (playerY_fixed & 0xFF);
+                                AppendSimDebug($"[SPIDER_ORB/PAD] Applied stale eject_D={eject_D}");
                                 playerVelY_fixed = 0;
                                 
                                 // Flip gravity
@@ -3561,7 +3589,7 @@ namespace FamidashEditor
                                 // internally to position player at ceiling surface. The NES orb
                                 // handler's "high_byte(y) -= eject_U" uses the SAME eject_U
                                 // already consumed by the scan, so no second eject is needed.
-                                SpiderUpWait_Fresh();
+                                SpiderUpWait_Fresh(playerXBias: 1);
                                 playerVelY_fixed = 0;
                                 
                                 // Set orbed flag
@@ -3575,13 +3603,9 @@ namespace FamidashEditor
                                 // Teleport downward (flip to floor)
                                 AppendSimDebug($"[SPIDER_ORB/PAD] Teleporting DOWN");
                                 
-                                // Eject from current surface first (eject_U + 1 in famidash)
-                                var (collided_pre, eject_pre) = BgCollU_Spider(playerX_px, playerY_px, hitboxW, hitboxH, groundRowsToReserve);
-                                if (collided_pre)
-                                {
-                                    playerY_fixed += ((eject_pre + 1) << 8);
-                                    AppendSimDebug($"[SPIDER_ORB/PAD] Ejected from ceiling by {eject_pre + 1}px");
-                                }
+                                // NES likewise uses the persistent signed eject_U value.
+                                playerY_fixed = (((playerY_fixed >> 8) - (eject_U + 1)) << 8) | (playerY_fixed & 0xFF);
+                                AppendSimDebug($"[SPIDER_ORB/PAD] Applied stale eject_U={eject_U} (+1)");
                                 playerVelY_fixed = 0;
                                 
                                 // Flip gravity
@@ -3593,7 +3617,7 @@ namespace FamidashEditor
                                 
                                 // Scan downward for floor
                                 // Same as UP: scan already positions player at floor surface.
-                                SpiderDownWait_Fresh();
+                                SpiderDownWait_Fresh(playerXBias: 1);
                                 playerVelY_fixed = 0;
                                 
                                 // Set orbed flag
@@ -3608,6 +3632,9 @@ namespace FamidashEditor
                             {
                                 playerProcessedOrbs[currplayer].Add(idx);
                                 if (!dual) orbActivated[idx] = true;
+                                orbBufferActive[currplayer] = false;
+                                ballInputBufferCountdown[currplayer] = 0;
+                                orbHoldConsumedKeyStillDown[currplayer] = holdingJump;
                             }
                             
                             // Consume press if it was an orb activation
@@ -3964,6 +3991,24 @@ namespace FamidashEditor
             return true;
         }
 
+        private static bool SimulatorNesAxisOverlapsPositive(int first, int firstSize, int second, int secondSize)
+        {
+            first &= 0xFF;
+            second &= 0xFF;
+            firstSize &= 0xFF;
+            secondSize &= 0xFF;
+
+            int firstEnd = first + firstSize;
+            if (firstEnd <= 0xFF && firstEnd <= second)
+                return false;
+
+            int secondEnd = second + secondSize;
+            if (secondEnd <= 0xFF && secondEnd <= first)
+                return false;
+
+            return true;
+        }
+
         private static int SimulatorNesCoinKind(int sid) => sid switch
         {
             0x07 or 0x1C => 0,
@@ -4179,25 +4224,7 @@ namespace FamidashEditor
 
             if ((!dual || twoplayer) && camFollowsY)
             {
-                int groundRowsReserved =
-                    (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                int minCameraY_fixed = -(groundRowsReserved * TILE) << 8;
-                int screenY_fixed = playerY_fixed - cameraY_fixed;
-                if (screenY_fixed < 0x4000)
-                {
-                    int needed_fixed = 0x4000 - screenY_fixed;
-                    cameraY_fixed -= needed_fixed;
-                    if (cameraY_fixed < minCameraY_fixed)
-                        cameraY_fixed = minCameraY_fixed;
-                }
-                else if ((screenY_fixed >> 8) >= 0xA0)
-                {
-                    int needed_fixed = screenY_fixed - 0xA000;
-                    int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                    cameraY_fixed += needed_fixed;
-                    if (cameraY_fixed > maxCameraY_fixed)
-                        cameraY_fixed = maxCameraY_fixed;
-                }
+                ApplySimulatorNesCubeRobotYScroll();
                 return;
             }
 
@@ -4205,23 +4232,114 @@ namespace FamidashEditor
             // so a +2 step may overshoot and immediately take the -3 branch.
             int cameraY_px = cameraY_fixed >> 8;
             int targetCameraY_px = targetCameraY_fixed >> 8;
-            int maxShipCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+            int maxShipCameraY_fixed = SimulatorNesMaxCameraY_px() << 8;
             if (targetCameraY_px > cameraY_px)
+            {
                 cameraY_fixed += SHIP_SCROLL_SPEED_UP_FIXED;
+                // Simulator stores world Y. NES screen currplayer_y moves -2px
+                // while scroll_y moves +2px, so world Y is unchanged.
+            }
 
             if (cameraY_fixed <= maxShipCameraY_fixed &&
                 targetCameraY_px < (cameraY_fixed >> 8))
             {
                 cameraY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED;
-                playerY_fixed -= 0x0100;
+                // NES adds SHIP_SCROLL_SPEED to screen currplayer_y here, while
+                // scroll_y moves -3px on NTSC due the carry after subtracting 0.
+                // World Y therefore moves by -1px.
+                playerY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED - SHIP_SCROLL_SPEED_UP_FIXED;
+                if (dual && !twoplayer && currplayer == 0)
+                    player_y_fixed[1] -= SHIP_SCROLL_SPEED_DOWN_FIXED - SHIP_SCROLL_SPEED_UP_FIXED;
             }
 
             int minShipCameraY_fixed =
-                -(((hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0) * TILE) << 8;
+                (_sim_minScrollYLin - _sim_nesCoordOffset) << 8;
             if (cameraY_fixed < minShipCameraY_fixed)
+            {
+                // NES moves screen Y and scroll by the same integer clamp
+                // amount; simulator Y is world-space, so only fold subpixels.
+                playerY_fixed -= _sim_scrollYSubpx;
+                if (dual && !twoplayer && currplayer == 0)
+                    player_y_fixed[1] -= _sim_scrollYSubpx;
+                _sim_scrollYSubpx = 0;
                 cameraY_fixed = minShipCameraY_fixed;
-            if (cameraY_fixed > maxShipCameraY_fixed)
+            }
+            if (cameraY_fixed > maxShipCameraY_fixed || (cameraY_fixed == maxShipCameraY_fixed && _sim_scrollYSubpx != 0))
+            {
+                // The integer bottom-cap delta is already represented by
+                // clamping cameraY_fixed; only fold in the NES fractional
+                // scroll byte before clearing it.
+                playerY_fixed += _sim_scrollYSubpx;
+                if (dual && !twoplayer && currplayer == 0)
+                    player_y_fixed[1] += _sim_scrollYSubpx;
+                _sim_scrollYSubpx = 0;
                 cameraY_fixed = maxShipCameraY_fixed;
+            }
+        }
+
+        private void ApplySimulatorNesCubeRobotYScroll()
+        {
+            int screenY_fixed = playerY_fixed - cameraY_fixed;
+            int scrollYLinear = (cameraY_fixed >> 8) + _sim_nesCoordOffset;
+            int minCameraY_fixed = (_sim_minScrollYLin - _sim_nesCoordOffset) << 8;
+            int maxCameraY_fixed = SimulatorNesMaxCameraY_px() << 8;
+
+            if (screenY_fixed < 0x4000)
+            {
+                if (scrollYLinear > _sim_minScrollYLin ||
+                    (scrollYLinear == _sim_minScrollYLin && _sim_scrollYSubpx != 0))
+                {
+                    int needed_fixed = 0x4000 - screenY_fixed;
+                    int low = needed_fixed & 0xFF;
+                    int high = (needed_fixed >> 8) & 0xFF;
+                    int sub = _sim_scrollYSubpx - low;
+                    int borrow = 0;
+                    if (sub < 0)
+                    {
+                        sub += 256;
+                        borrow = 1;
+                    }
+                    _sim_scrollYSubpx = sub;
+                    int cameraMove_fixed = -((high + borrow) << 8);
+                    int playerMove_fixed = needed_fixed + cameraMove_fixed;
+                    cameraY_fixed += cameraMove_fixed;
+                    playerY_fixed += playerMove_fixed;
+                    if (cameraY_fixed < minCameraY_fixed)
+                    {
+                        // The integer top-cap compensation preserves world Y.
+                        playerY_fixed -= _sim_scrollYSubpx;
+                        _sim_scrollYSubpx = 0;
+                        cameraY_fixed = minCameraY_fixed;
+                    }
+                }
+            }
+            else if ((screenY_fixed >> 8) >= 0xA0 && scrollYLinear < 719)
+            {
+                int needed_fixed = screenY_fixed - 0xA000;
+                int low = needed_fixed & 0xFF;
+                int high = (needed_fixed >> 8) & 0xFF;
+                int sub = _sim_scrollYSubpx + low;
+                int carry = 0;
+                if (sub > 255)
+                {
+                    sub -= 256;
+                    carry = 1;
+                }
+                _sim_scrollYSubpx = sub;
+                int cameraMove_fixed = (high + carry) << 8;
+                int playerMove_fixed = -needed_fixed + cameraMove_fixed;
+                cameraY_fixed += cameraMove_fixed;
+                playerY_fixed += playerMove_fixed;
+                if (cameraY_fixed > maxCameraY_fixed || (cameraY_fixed == maxCameraY_fixed && _sim_scrollYSubpx != 0))
+                {
+                    // NES cap_scroll_y_at_bottom() folds the fractional scroll
+                    // byte into currplayer_y even when PF/sim's integer linear
+                    // camera value lands exactly on the bottom cap.
+                    playerY_fixed += _sim_scrollYSubpx;
+                    _sim_scrollYSubpx = 0;
+                    cameraY_fixed = maxCameraY_fixed;
+                }
+            }
         }
 
         private bool PrepareSimulatorNesSpriteSlot()
@@ -4399,19 +4517,24 @@ namespace FamidashEditor
         private const int SHIP_SCROLL_SPEED_DOWN_FIXED = 0x0300; // 3 px/frame (NES down branch, NTSC)
         private const int SHIP_SCROLL_SPEED_UP_FIXED   = 0x0200; // 2 px/frame (NES up branch,   NTSC)
         private int _sim_nesCoordOffset; // PF→NES linear-Y offset for nametable distortion
+        private int _sim_minScrollYLin;
+        private int _sim_scrollYSubpx;
 
         private int NesNtCameraTarget_fixed(int portalWorldY_px)
         {
             int rawTarget = portalWorldY_px - PORTAL_TO_TOP_DIFF_PX;
             int nesLinear = rawTarget + _sim_nesCoordOffset;
             if (nesLinear < 0x100)
-                return Math.Max(0, rawTarget << 8);
+                return rawTarget << 8;
             if ((nesLinear & 0xFF) >= 0xF0) nesLinear += 0x10;
             int hi = nesLinear >> 8;
             int lo = nesLinear & 0xFF;
             int physicalNES = hi * 240 + lo;
             int effectivePF = physicalNES - _sim_nesCoordOffset;
-            return Math.Max(0, effectivePF << 8);
+            // NES nametable-space targets may legitimately map above editor
+            // world Y=0.  Keep the signed PF-space target so ship-style camera
+            // motion and min_scroll_y capping follow the ROM exactly.
+            return effectivePF << 8;
         }
         private bool _suppressDebugBarEvents = false;
         // Track orbs that have been activated so they only fire once
@@ -4523,7 +4646,7 @@ namespace FamidashEditor
         private bool dblocked = false; // D block - allows wave to walk on surfaces instead of going through/colliding/dying
         private bool fblocked = false; // F block - forces press-to-jump in cube mode and flips gravity on ceiling/floor hit
         private int invincibleCounter = 0; // NES invincible_counter: 8 frames of spawn protection
-        private int[] ninjajumps = new int[2] { 3, 3 };
+        private int[] ninjajumps = new int[2];
         private int[] robotJumpTime = new int[2];
 #pragma warning disable CS0414
         private int[] robotJumpFrame = new int[2];
@@ -4531,7 +4654,7 @@ namespace FamidashEditor
 #pragma warning restore CS0414
         private bool[] robotJumpPressed = new bool[2];
 #pragma warning disable CS0414
-        private int ninjaJumps = 3;
+        private int ninjaJumps = 0;
 #pragma warning restore CS0414
         private bool ninjaJumpedThisFrame = false;
 #pragma warning disable CS0414
@@ -5320,7 +5443,7 @@ namespace FamidashEditor
                         // Send copies of recorded paths (both player 1 and player 2 if in dual mode)
                         var path1 = new System.Collections.Generic.List<(int x, int y)>(recordedPlayerPath);
                         var path2 = new System.Collections.Generic.List<(int x, int y)>(recordedPlayer2Path);
-                        mw.ShowPlayerPathsFromSimulator(path1, path2, dual);
+                        mw.ShowPlayerPathsFromSimulator(path1, path2, dual, completed: levelCompleteTriggered);
                     }
                 }
                 catch { }
@@ -5562,6 +5685,17 @@ namespace FamidashEditor
             {
                 int gRTR = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                 _sim_nesCoordOffset = (57 - mapHeight + gRTR) * 16;
+                int emptyTopRows = 57 - mapHeight;
+                if (emptyTopRows < 0)
+                    emptyTopRows = 0;
+                int minScrollHi = 0;
+                int minScrollRow = emptyTopRows;
+                while (minScrollRow >= 15)
+                {
+                    minScrollRow -= 15;
+                    minScrollHi++;
+                }
+                _sim_minScrollYLin = minScrollHi * 240 + ((minScrollRow * 16) | 8);
             }
             this.tileImages = tileImages;
             this.tileTonedImages = tileTonedImages;
@@ -6105,7 +6239,6 @@ namespace FamidashEditor
             }
             catch { }
 
-            try { ApplyNesIntroFreezePrestepForSimulator(); } catch { }
             this.Loaded += (s, e) => { 
                 try { this.Focus(); Keyboard.Focus(this); } catch { }
                 // Update UI to reflect starting game mode
@@ -7109,6 +7242,12 @@ namespace FamidashEditor
             playerVelY_fixed += gravityStep;
             playerY_fixed += playerVelY_fixed;
             playerX_fixed += playerVelX_fixed;
+            ApplySimulatorNesCubeRobotYScroll();
+
+            // This is a complete NES everything_else tick. reset_level starts
+            // invincible_counter at 8 and the tick decrements it after runthecolls.
+            if (invincibleCounter > 0)
+                invincibleCounter--;
         }
         
         private void UpdateGameModeDisplay()
@@ -7160,6 +7299,8 @@ namespace FamidashEditor
 
                 // Reset player position to start or START POS marker
                 playerX_fixed = startX_px << 8;
+                eject_U = 0;
+                eject_D = 0;
 
                 // Calculate interaction screen offset based on START POS
                 if (hasStartPos)
@@ -7353,6 +7494,7 @@ namespace FamidashEditor
                 playerInvis = false;
                 forcedTrails = 0;
                 simTickCount = 0;
+                invincibleCounter = 8;
                 Array.Clear(playerOldPosY, 0, playerOldPosY.Length);
                 try { processedTimewarpTriggers.Clear(); } catch { }
                 try { processedPlayerInvisTriggers.Clear(); } catch { }
@@ -7362,6 +7504,7 @@ namespace FamidashEditor
                 
                 // Reset dual mode state
                 dual = false;
+                Array.Clear(player_vel_x_fixed, 0, player_vel_x_fixed.Length);
                 _prevDualActiveForP2Path = false;
                 singlePortalExitPending = false;
                 currplayer = 0;
@@ -7382,6 +7525,7 @@ namespace FamidashEditor
                 try { ResetOrbSystem(); } catch { }
                 try { ResetBluePadSystem(); } catch { }
                 try { ResetSlopeState(); } catch { }
+                Array.Clear(ninjajumps, 0, ninjajumps.Length);
 
                 // Clear input buffers and reset key state tracking
                 try { Interlocked.Exchange(ref keyXPressedCount, 0); } catch { }
@@ -7394,6 +7538,7 @@ namespace FamidashEditor
                 // gravity not to apply on the first frame (matching PathfinderEngine).
                 wasZeroedByCollisionLastFrame = true;
                 onGround = true;
+                _sim_scrollYSubpx = 0;
 
                 try { ApplyNesIntroFreezePrestepForSimulator(); } catch { }
 
@@ -7480,6 +7625,7 @@ namespace FamidashEditor
             if (hasAppliedStartPos) return;
             try
             {
+                _sim_scrollYSubpx = 0;
                 int? spawnY = ComputeSpawnYFixed();
                 if (spawnY.HasValue)
                 {
@@ -7502,6 +7648,7 @@ namespace FamidashEditor
                     int minCamY_fixed = -(grReserved * TILE) << 8;
                     cameraY_fixed = Math.Max(minCamY_fixed, Math.Min(maxCamY_fixed, playerY_fixed - ((NES_H * TILE / 2) << 8)));
                 }
+                try { ApplyNesIntroFreezePrestepForSimulator(); } catch { }
             }
             catch { }
         }
@@ -7633,6 +7780,7 @@ namespace FamidashEditor
                         // Apply color triggers up to this position
                         ApplyColorTriggersUpToPosition(startX_px);
 
+                        _sim_scrollYSubpx = 0;
                         try { ApplyNesIntroFreezePrestepForSimulator(); } catch { }
                         
                         // Cache the music time for when playback starts
@@ -8031,26 +8179,7 @@ namespace FamidashEditor
                     {
                         if ((!dual || twoplayer) && camFollowsY_2)
                         {
-                            // Match NES process_y_scroll: top threshold 0x4000 (64px), bottom 0xA0 (160px)
-                            int grReserved_cam2 = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                            int minCamY_reserved2 = -(grReserved_cam2 * TILE) << 8;
-                            int screenY_fixed_2 = playerY_fixed - cameraY_fixed;
-                            if (screenY_fixed_2 < 0x4000)
-                            {
-                                // NES gate: only when camera actually moves up.
-                                int need_fixed = 0x4000 - screenY_fixed_2;
-                                cameraY_fixed -= need_fixed;
-                                if (cameraY_fixed < minCamY_reserved2) cameraY_fixed = minCamY_reserved2;
-                                // (See primary site — world-Y conserved; do NOT touch playerY_fixed.)
-                            }
-                            else if ((screenY_fixed_2 >> 8) >= 0xA0)
-                            {
-                                // NES gate: scroll_y < 0x2EF.
-                                int need_fixed = screenY_fixed_2 - 0xA000;
-                                int maxCameraY_fixed_local = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                                cameraY_fixed += need_fixed;
-                                if (cameraY_fixed > maxCameraY_fixed_local) cameraY_fixed = maxCameraY_fixed_local;
-                            }
+                            ApplySimulatorNesCubeRobotYScroll();
                         }
                         else
                         {
@@ -8058,19 +8187,44 @@ namespace FamidashEditor
                             // INTEGER-PIXEL comparison (NES `scroll_y` byte-only).
                             int _camPx2 = cameraY_fixed >> 8;
                             int _tgtPx2 = targetCameraY_fixed >> 8;
-                            int maxCamY_2 = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                            int maxCamY_2 = SimulatorNesMaxCameraY_px() << 8;
                             if (_tgtPx2 > _camPx2)
                             {
                                 cameraY_fixed += SHIP_SCROLL_SPEED_UP_FIXED;
+                                // Simulator stores world Y. NES screen currplayer_y moves -2px
+                                // while scroll_y moves +2px, so world Y is unchanged.
                             }
                             if (cameraY_fixed <= maxCamY_2 && _tgtPx2 < (cameraY_fixed >> 8))
                             {
                                 cameraY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED;
-                                playerY_fixed -= 0x0100;
+                                // NES adds SHIP_SCROLL_SPEED to screen currplayer_y here;
+                                // camera still takes the 3px NTSC carry path, so world
+                                // Y moves by -1px.
+                                playerY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED - SHIP_SCROLL_SPEED_UP_FIXED;
+                                if (dual && !twoplayer && currplayer == 0)
+                                    player_y_fixed[1] -= SHIP_SCROLL_SPEED_DOWN_FIXED - SHIP_SCROLL_SPEED_UP_FIXED;
                             }
-                            int minCamY_2 = -(((hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0) * TILE) << 8;
-                            if (cameraY_fixed < minCamY_2) cameraY_fixed = minCamY_2;
-                            if (cameraY_fixed > maxCamY_2) cameraY_fixed = maxCamY_2;
+                            int minCamY_2 = (_sim_minScrollYLin - _sim_nesCoordOffset) << 8;
+                            if (cameraY_fixed < minCamY_2)
+                            {
+                                // The integer top-cap compensation preserves world Y.
+                                playerY_fixed -= _sim_scrollYSubpx;
+                                if (dual && !twoplayer && currplayer == 0)
+                                    player_y_fixed[1] -= _sim_scrollYSubpx;
+                                _sim_scrollYSubpx = 0;
+                                cameraY_fixed = minCamY_2;
+                            }
+                            if (cameraY_fixed > maxCamY_2 || (cameraY_fixed == maxCamY_2 && _sim_scrollYSubpx != 0))
+                            {
+                                // The integer bottom-cap delta is already represented
+                                // by clamping cameraY_fixed; only fold in the NES
+                                // fractional scroll byte before clearing it.
+                                playerY_fixed += _sim_scrollYSubpx;
+                                if (dual && !twoplayer && currplayer == 0)
+                                    player_y_fixed[1] += _sim_scrollYSubpx;
+                                _sim_scrollYSubpx = 0;
+                                cameraY_fixed = maxCamY_2;
+                            }
                         }
                     }
                 }
@@ -11820,6 +11974,11 @@ namespace FamidashEditor
                     }
                 }
 
+                // NES runs decrement_was_on_slope before sprite_collide, while the
+                // old mode/gravity are still active. A same-frame portal must not
+                // reinterpret a ship slope exit as a cube/ball slope exit.
+                UpdateSlopeCounters(applyPosition: false);
+
                 // -- Orbed clear (before sprite_collide, matching NES state_game.h line 557-559) --
                 if (orbed[currplayer])
                 {
@@ -11929,7 +12088,6 @@ namespace FamidashEditor
                                 {
                                     int spd = speedPortalMap[sid];
                                     currentSpeed_fixed = spd;
-                                    playerVelX_fixed = spd;
                                     if (spd == CUBE_SPEED_X05) speed = 0;
                                     else if (spd == CUBE_SPEED_X1) speed = 1;
                                     else if (spd == CUBE_SPEED_X2) speed = 2;
@@ -12361,6 +12519,10 @@ namespace FamidashEditor
                                 UpdateFootballRotation();
                                 break;
                         }
+
+                        // NES x_movement reloads currplayer_vel_x only after the
+                        // gamemode's Y movement has used the old saved velocity.
+                        playerVelX_fixed = currentSpeed_fixed;
                         
                         // Sync state back (gravity might have flipped)
                         gravityFlipped = (currplayer_gravity != 0);
@@ -12431,7 +12593,7 @@ namespace FamidashEditor
                                 // OLD X, post-eject Y — matches NES x_movement_coll which refreshes
                                 // Generic.y from currplayer_y (post-eject) before calling bg_coll_R
                                 int playerX_px_fwd = preAdvancePlayerX_fixed >> 8;
-                                int playerY_px_fwd = NesPlayerY_px(playerY_fixed);
+                                int playerY_px_fwd = NesPlayerBgCollisionY_px(playerY_fixed);
                                 int hitboxW_fwd, hitboxH_fwd, hitboxOffsetY_fwd;
                                 if (currentGameMode == 6) // Wave: NES WAVE_WIDTH=8, WAVE_HEIGHT=8
                                 {
@@ -12545,11 +12707,11 @@ namespace FamidashEditor
                         // NES bg_side_coll_common slope Y nudge: when forward probe hits a
                         // slope (and not already on slope), adjust Y by ±2 pixels.
                         // Wave/snake handle slopes separately (as death), so skip them.
-                        if (!deathTriggered && !ShouldSkipSideCollisionForSlope() &&
+                        if (invincibleCounter == 0 && !deathTriggered && !ShouldSkipSideCollisionForSlope() &&
                             currentGameMode != 6 && currentGameMode != 10)
                         {
                             int playerX_px_nudge = preAdvancePlayerX_fixed >> 8;
-                            int playerY_px_nudge = NesPlayerY_px(playerY_fixed);
+                            int playerY_px_nudge = NesPlayerBgCollisionY_px(playerY_fixed);
                             int hbW_nudge = (currplayer_mini != 0) ? 8 : 15;
                             int hbH_nudge = (currplayer_mini != 0) ? 7 : 15;
                             int centerY_nudge;
@@ -12602,7 +12764,7 @@ namespace FamidashEditor
                         // Both kill the wave if the slope surface is reached (dblocked doesn't
                         // prevent slope death in bg_coll_death).
                         // NES x_movement: WAVE_WIDTH=8, WAVE_HEIGHT=8 for the player hitbox.
-                        if (!MainWindow.Option_NoDeath && !deathTriggered && (currentGameMode == 6 || currentGameMode == 10))
+                        if (!MainWindow.Option_NoDeath && invincibleCounter == 0 && !deathTriggered && (currentGameMode == 6 || currentGameMode == 10))
                         {
                             int wPx = preAdvancePlayerX_fixed >> 8;
                             int wPy = NesPlayerY_px(playerY_fixed);
@@ -12756,6 +12918,11 @@ namespace FamidashEditor
                         // Clear dblocked every frame (matches state_game.h line 636)
                         dblocked = false;
 
+                        // NES decrements this global once after P1 runthecolls,
+                        // before camera/slot refresh and before processing P2.
+                        if (invincibleCounter > 0)
+                            invincibleCounter--;
+
                         // Exact NES order:
                         // P1 sprite_collide -> movement/collisions -> scroll ->
                         // check_spr_objects -> save P1 -> P2 sprite_collide.
@@ -12797,6 +12964,7 @@ namespace FamidashEditor
                             // CRITICAL: Save player 1's current state before switching to player 2
                             player_x_fixed[0] = playerX_fixed;
                             player_y_fixed[0] = playerY_fixed;
+                            player_vel_x_fixed[0] = playerVelX_fixed;
                             player_vel_y_fixed[0] = playerVelY_fixed;
                             player_mini[0] = miniMode;
                             player_gravity[0] = currplayer_gravity;
@@ -12894,6 +13062,7 @@ namespace FamidashEditor
                             applyPlayer2Colors = true;  // Flag that we should apply player 2 colors to icons
                             playerX_fixed = player_x_fixed[1];
                             playerY_fixed = player_y_fixed[1];
+                            playerVelX_fixed = player_vel_x_fixed[1];
                             playerVelY_fixed = player_vel_y_fixed[1];
                             miniMode = player_mini[1];
                             currplayer_mini = (byte)(miniMode ? 1 : 0);
@@ -12905,6 +13074,10 @@ namespace FamidashEditor
                             
                             // Load player 2 slope state
                             LoadSlopeStateForPlayer(1);
+
+                            // P2 also decrements its slope-exit counter before its
+                            // sprite_collide pass in the NES dual-player loop.
+                            UpdateSlopeCounters(applyPosition: false);
                             
                             // Load player 2 per-player physics flags
                             wasZeroedByCollisionLastFrame = player_wasZeroed[1];
@@ -12996,7 +13169,6 @@ namespace FamidashEditor
                                         {
                                             int spd = speedPortalMap[sid];
                                             currentSpeed_fixed = spd;
-                                            playerVelX_fixed = spd;
                                             if (spd == CUBE_SPEED_X05) speed = 0;
                                             else if (spd == CUBE_SPEED_X1) speed = 1;
                                             else if (spd == CUBE_SPEED_X2) speed = 2;
@@ -13108,16 +13280,18 @@ namespace FamidashEditor
                             // This ensures path recording captures the synchronized X position
                             playerX_fixed = player_x_fixed[0];
                             player_x_fixed[1] = player_x_fixed[0];
+                            playerVelX_fixed = player_vel_x_fixed[0];
+                            player_vel_x_fixed[1] = player_vel_x_fixed[0];
                             AppendSimDebug($"[PLAYER2_X_SYNC] Synced X to player 1: {playerX_fixed>>8}");
                             
                             // === P2 DEATH CHECKS (NES: x_movement_coll + bg_coll_death run for P2) ===
                             // NES processes x_movement_coll (floor spikes + forward collision) and
                             // bg_coll_death for P2 at P1's X, P2's post-physics Y.
                             // P2's X doesn't advance independently (synced to P1), so no preAdvance distinction.
-                            if (!MainWindow.Option_NoDeath && !deathTriggered)
+                            if (!MainWindow.Option_NoDeath && invincibleCounter == 0 && !deathTriggered)
                             {
                                 int p2X_px = playerX_fixed >> 8;
-                                int p2Y_px = playerY_fixed >> 8;
+                                int p2Y_px = NesPlayerY_px(playerY_fixed);
                                 int groundRowsToReserve_p2 = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                                 
                                 // 1) Floor spike check (NES bg_coll_floor_spikes)
@@ -13135,13 +13309,13 @@ namespace FamidashEditor
                                 // 2) Forward collision check (NES bg_coll_R → bg_side_coll_common)
                                 if (!deathTriggered && !ShouldSkipSideCollisionForSlope())
                                 {
-                                    int hitboxW_p2 = (currentGameMode == 6) ? 8 : ((currplayer_mini != 0) ? 8 : 15);
-                                    int hitboxH_p2 = (currentGameMode == 6) ? 8 : ((currplayer_mini != 0) ? 7 : 15);
+                                    int hitboxW_p2 = (currentGameMode == 6 || currentGameMode == 10) ? 8 : ((currplayer_mini != 0) ? 8 : 15);
+                                    int hitboxH_p2 = (currentGameMode == 6 || currentGameMode == 10) ? 8 : ((currplayer_mini != 0) ? 7 : 15);
                                     int rightEdge_p2 = p2X_px + hitboxW_p2;
                                     int centerY_p2;
-                                    if (currentGameMode == 6)
+                                    if (currentGameMode == 6 || currentGameMode == 10)
                                     {
-                                        centerY_p2 = p2Y_px + (hitboxH_p2 >> 1);
+                                        centerY_p2 = p2Y_px + ((currplayer_mini != 0) ? ((0x10 - hitboxH_p2) >> 1) : 0) + (hitboxH_p2 >> 1);
                                     }
                                     else if (currplayer_mini != 0)
                                     {
@@ -13218,9 +13392,10 @@ namespace FamidashEditor
                                 {
                                     int wW_p2 = 8, wH_p2 = 8;
                                     bool isMiniWave_p2 = (currplayer_mini != 0);
+                                    int miniCenter_p2 = isMiniWave_p2 ? ((0x10 - wH_p2) >> 1) : 0;
                                     // Center-point slope
                                     int cX_p2 = p2X_px + (wW_p2 >> 1) - 1;
-                                    int cY_p2 = p2Y_px + (wH_p2 >> 1);
+                                    int cY_p2 = p2Y_px + miniCenter_p2 + (wH_p2 >> 1);
                                     int cTX_p2 = cX_p2 / TILE, cTY_p2 = cY_p2 / TILE;
                                     int cTIY_p2 = cTY_p2 + groundRowsToReserve_p2;
                                     if (cTX_p2 >= 0 && cTX_p2 < mapWidth && cTIY_p2 >= 0 && cTIY_p2 < mapHeight)
@@ -13245,7 +13420,7 @@ namespace FamidashEditor
                                     if (!deathTriggered && !ShouldSkipSideCollisionForSlope())
                                     {
                                         int rX_p2 = p2X_px + wW_p2;
-                                        int rY_p2 = p2Y_px + (wH_p2 >> 1);
+                                        int rY_p2 = p2Y_px + miniCenter_p2 + (wH_p2 >> 1);
                                         int rTX_p2 = rX_p2 / TILE, rTY_p2 = rY_p2 / TILE;
                                         int rTIY_p2 = rTY_p2 + groundRowsToReserve_p2;
                                         if (rTX_p2 >= 0 && rTX_p2 < mapWidth && rTIY_p2 >= 0 && rTIY_p2 < mapHeight)
@@ -13288,6 +13463,7 @@ namespace FamidashEditor
                             // Save player 2 state back to arrays
                             player_x_fixed[1] = playerX_fixed;
                             player_y_fixed[1] = playerY_fixed;
+                            player_vel_x_fixed[1] = playerVelX_fixed;
                             player_vel_y_fixed[1] = playerVelY_fixed;
                             player_mini[1] = miniMode;
                             player_gravity[1] = currplayer_gravity;
@@ -13338,6 +13514,7 @@ namespace FamidashEditor
                             applyPlayer2Colors = false;  // Reset color flag for player 1
                             playerX_fixed = player_x_fixed[0];
                             playerY_fixed = player_y_fixed[0];
+                            playerVelX_fixed = player_vel_x_fixed[0];
                             playerVelY_fixed = player_vel_y_fixed[0];
                             miniMode = player_mini[0];
                             currplayer_mini = (byte)(miniMode ? 1 : 0);

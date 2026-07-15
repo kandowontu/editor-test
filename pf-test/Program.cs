@@ -247,8 +247,8 @@ if (!gotOffsetsFromConfig)
         Console.WriteLine($"No config or metadata found for sprite offsets");
     }
 }
-// Generated NES records already contain exporter globalObjectOffsets.
-// Runtime sprite offset tables therefore remain byte-for-byte NES values.
+// Build the current NES stream from the raw SP layer and current offsets.
+// Generated records beside the source level may belong to an older export.
 
 // Ground layer: the GUI always loads a ground bitmap (3 tile rows reserved)
 bool hasGround = true;
@@ -278,10 +278,11 @@ Console.WriteLine($"Spawn: spawnHi=0x{nesSpawnHi:X2} scrollHi=0x{nesScrollHi:X2}
 
 Console.WriteLine($"Start: ({startX_px}, {startY_px})  speed={startSpeedUiIndex}  maxFall=0x{maxFallSpeed:X}  bias={jumpTimingBias:F2}  mode={startGameMode}");
 
-NesSpriteRecord[]? nesSpriteRecords =
-    NesSpriteDataLoader.TryLoadForTmx(tmxPath, out NesSpriteRecord[] generatedSpriteRecords)
-        ? generatedSpriteRecords
-        : null;
+NesSpriteRecord[]? nesSpriteRecords = NesSpriteDataLoader.BuildRuntimeRecords(
+    level.NesSpriteLayer ?? sprites,
+    mapWidth,
+    level.Height,
+    spritePixelOffsets);
 
 var engine = new PathfinderEngine(
     tiles, sprites, spriteAnchors,
@@ -486,11 +487,18 @@ static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode, int? spawn
                     string? lvl = lvlProp.GetString();
                     if (lvl?.Equals(levelName, StringComparison.OrdinalIgnoreCase) == true)
                     {
-                        int? speed = null, maxFall = null, gameMode = null, spawnHi = null, spawnLo = null, scrollHi = null, scrollLo = null;
+                        int? speed = null, gameMode = null, spawnHi = null, spawnLo = null, scrollHi = null, scrollLo = null;
+                        int? maxFall = 0x06;
                         if (entry.TryGetProperty("startingSpeed", out var sp) && sp.ValueKind == JsonValueKind.Number)
                             speed = sp.GetInt32();
-                        if (entry.TryGetProperty("maxFallSpeed", out var mf) && mf.ValueKind == JsonValueKind.Number)
-                            maxFall = mf.GetInt32();
+                        // Current source metadata uses a boolean-like numeric flag.
+                        // Only exactly 1 selects 0x07; zero, absent, or any other
+                        // value uses the NES default 0x06. The editor's generated
+                        // ROM-test metadata deliberately remains in the old format.
+                        if (entry.TryGetProperty("maxFallSpeed_is_7", out var mf7)
+                            && mf7.ValueKind == JsonValueKind.Number
+                            && mf7.GetInt32() == 1)
+                            maxFall = 0x07;
                         if (entry.TryGetProperty("startingGameMode", out var gm) && gm.ValueKind == JsonValueKind.Number)
                             gameMode = gm.GetInt32();
                         if (entry.TryGetProperty("spawnYPositionHi", out var syh) && syh.ValueKind == JsonValueKind.Number)

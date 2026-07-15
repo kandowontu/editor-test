@@ -15,13 +15,25 @@ namespace FamidashEditor
 {
     public partial class MainWindow
     {
-        // Hard-coded paths relative to the sim-famidash root.
-        private const string SimFamidashFolder     = @"C:\Editor Test\sim-famidash";
-        private const string SimLevelsFolder       = SimFamidashFolder + @"\LEVELS\level data\lvlset_D";
-        private const string SimLevelMetadata      = SimFamidashFolder + @"\LEVELS\metadata\lvlset_D_metadata.json5";
-        private const string SimMusicMetadata      = SimFamidashFolder + @"\MUSIC\metadata\lvlset_D_metadata.json5";
-        private const string SimBuildBat           = SimFamidashFolder + @"\1BigSimExport.bat";
-        private const string SimOutputRom          = SimFamidashFolder + @"\Famidash.nes";
+        private sealed class SimFamidashPaths
+        {
+            public required string Root { get; init; }
+            public required string LevelsFolder { get; init; }
+            public required string LevelMetadata { get; init; }
+            public required string MusicMetadata { get; init; }
+            public required string BuildBat { get; init; }
+            public required string OutputRom { get; init; }
+        }
+
+        private static SimFamidashPaths GetSimFamidashPaths(string root) => new()
+        {
+            Root = root,
+            LevelsFolder = Path.Combine(root, "LEVELS", "level data", "lvlset_D"),
+            LevelMetadata = Path.Combine(root, "LEVELS", "metadata", "lvlset_D_metadata.json5"),
+            MusicMetadata = Path.Combine(root, "MUSIC", "metadata", "lvlset_D_metadata.json5"),
+            BuildBat = Path.Combine(root, "1BigSimExport.bat"),
+            OutputRom = Path.Combine(root, "Famidash.nes"),
+        };
 
         // -------------------------------------------------------------------------
         // Menu handler
@@ -99,7 +111,7 @@ namespace FamidashEditor
                 var confirm = MessageBox.Show(
                     this,
                     $"Build and test level: {levelName}\nSong: {rawSong}\n\nThis will:\n" +
-                    "  A) Copy the TMX into sim-famidash\n" +
+                    "  A) Copy the TMX into the local sim-famidash folder\n" +
                     "  B) Update the level metadata\n" +
                     "  C) Update the music metadata\n" +
                     "  D) Run 1BigSimExport.bat\n" +
@@ -109,25 +121,28 @@ namespace FamidashEditor
                 if (confirm != MessageBoxResult.Yes) return;
             }
 
-            if (StatusText != null) StatusText.Text = "Build and Test: preparing...";
+            if (StatusText != null) StatusText.Text = "Build and Test: preparing local sim-famidash...";
 
             try
             {
+                string simRoot = await Task.Run(() => LocalRuntimeFolders.EnsureSimFamidashFolder());
+                SimFamidashPaths simPaths = GetSimFamidashPaths(simRoot);
+
                 // --- A) Copy TMX ---
-                Directory.CreateDirectory(SimLevelsFolder);
-                string destTmx = Path.Combine(SimLevelsFolder, Path.GetFileName(tmxPath));
+                Directory.CreateDirectory(simPaths.LevelsFolder);
+                string destTmx = Path.Combine(simPaths.LevelsFolder, Path.GetFileName(tmxPath));
                 File.Copy(tmxPath, destTmx, overwrite: true);
 
                 // --- B) Update level metadata ---
-                UpdateLevelMetadata(jsonSegment);
+                UpdateLevelMetadata(simPaths.LevelMetadata, jsonSegment);
 
                 // --- C) Update music metadata ---
-                UpdateMusicMetadata(rawSong);
+                UpdateMusicMetadata(simPaths.MusicMetadata, rawSong);
 
                 // --- D) Run 1BigSimExport.bat ---
                 if (StatusText != null) StatusText.Text = "Build and Test: building ROM...";
 
-                bool buildOk = await RunBuildBatAsync();
+                bool buildOk = await RunBuildBatAsync(simPaths.Root, simPaths.BuildBat);
                 if (!buildOk)
                 {
                     MessageBox.Show(this, "1BigSimExport.bat failed or timed out. Check the console output.", "Build and Test", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -136,14 +151,26 @@ namespace FamidashEditor
                 }
 
                 // --- E) Open ROM in Mesen ---
-                if (!File.Exists(SimOutputRom))
+                if (!File.Exists(simPaths.OutputRom))
                 {
-                    MessageBox.Show(this, $"Build completed but ROM not found at:\n{SimOutputRom}", "Build and Test", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(this, $"Build completed but ROM not found at:\n{simPaths.OutputRom}", "Build and Test", MessageBoxButton.OK, MessageBoxImage.Error);
                     if (StatusText != null) StatusText.Text = "Build and Test: ROM not found.";
                     return;
                 }
 
-                OpenRomInMesen(SimOutputRom, useReplay);
+                string? luaPathOverride = null;
+                if (!useReplay)
+                {
+                    luaPathOverride = LocalRuntimeFolders.EnsureSimFamidashOverlayScript(simPaths.Root);
+                    if (!File.Exists(luaPathOverride))
+                    {
+                        MessageBox.Show(this, $"Build completed but Lua overlay not found at:\n{luaPathOverride}", "Build and Test", MessageBoxButton.OK, MessageBoxImage.Error);
+                        if (StatusText != null) StatusText.Text = "Build and Test: Lua overlay not found.";
+                        return;
+                    }
+                }
+
+                OpenRomInMesen(simPaths.OutputRom, useReplay, luaPathOverride);
                 if (StatusText != null)
                     StatusText.Text = useReplay
                         ? $"Replay: launched {levelName} in Mesen with injected pathfinder inputs."
@@ -336,9 +363,9 @@ namespace FamidashEditor
         // -------------------------------------------------------------------------
         // B) Write the level metadata file
         // -------------------------------------------------------------------------
-        private static void UpdateLevelMetadata(string jsonSegment)
+        private static void UpdateLevelMetadata(string metadataPath, string jsonSegment)
         {
-            string content = File.ReadAllText(SimLevelMetadata);
+            string content = File.ReadAllText(metadataPath);
 
             // Find the end of the template block comment (first "*/" in the file).
             int commentEnd = content.IndexOf("*/", StringComparison.Ordinal);
@@ -365,15 +392,15 @@ namespace FamidashEditor
                 "\n\n" + jsonSegment + "\n" +
                 content.Substring(arrayClose);
 
-            File.WriteAllText(SimLevelMetadata, newContent, new UTF8Encoding(false));
+            File.WriteAllText(metadataPath, newContent, new UTF8Encoding(false));
         }
 
         // -------------------------------------------------------------------------
         // C) Write the music metadata file
         // -------------------------------------------------------------------------
-        private static void UpdateMusicMetadata(string rawSong)
+        private static void UpdateMusicMetadata(string metadataPath, string rawSong)
         {
-            string content = File.ReadAllText(SimMusicMetadata);
+            string content = File.ReadAllText(metadataPath);
 
             // Find the placeholder entry: the song object whose lowerText is "TEXT".
             // Walk backwards from that position to find the fmsSongName in the same entry and replace it.
@@ -389,7 +416,7 @@ namespace FamidashEditor
                     string updated = content.Substring(0, songNameMatch.Index)
                         + $"fmsSongName: \"{EscapeJson5(rawSong)}\""
                         + content.Substring(songNameMatch.Index + songNameMatch.Length);
-                    File.WriteAllText(SimMusicMetadata, updated, new UTF8Encoding(false));
+                    File.WriteAllText(metadataPath, updated, new UTF8Encoding(false));
                     return;
                 }
             }
@@ -401,7 +428,7 @@ namespace FamidashEditor
                 $"fmsSongName: \"{EscapeJson5(rawSong)}\"",
                 RegexOptions.IgnoreCase);
 
-            File.WriteAllText(SimMusicMetadata, fallback, new UTF8Encoding(false));
+            File.WriteAllText(metadataPath, fallback, new UTF8Encoding(false));
         }
 
         private static string EscapeJson5(string s) => (s ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
@@ -409,15 +436,15 @@ namespace FamidashEditor
         // -------------------------------------------------------------------------
         // D) Run 1BigSimExport.bat
         // -------------------------------------------------------------------------
-        private static Task<bool> RunBuildBatAsync()
+        private static Task<bool> RunBuildBatAsync(string simFamidashFolder, string simBuildBat)
         {
             return Task.Run(() =>
             {
                 try
                 {
-                    var psi = new ProcessStartInfo("cmd.exe", $"/c \"{SimBuildBat}\"")
+                    var psi = new ProcessStartInfo("cmd.exe", $"/c \"{simBuildBat}\"")
                     {
-                        WorkingDirectory = SimFamidashFolder,
+                        WorkingDirectory = simFamidashFolder,
                         UseShellExecute = true,   // show the console window so the user can see progress
                         CreateNoWindow  = false,
                     };
@@ -441,14 +468,31 @@ namespace FamidashEditor
 
         private void OpenRomInMesen(string romPath, bool useReplay)
         {
-            // Write the overlay Lua script to the per-level Documents folder.
-            string luaPath = OverlayLuaPath;
-            try
+            OpenRomInMesen(romPath, useReplay, luaPathOverride: null);
+        }
+
+        private void OpenRomInMesen(string romPath, bool useReplay, string? luaPathOverride)
+        {
+            string luaPath = "";
+
+            if (!string.IsNullOrWhiteSpace(luaPathOverride))
             {
-                File.WriteAllText(luaPath, BuildOverlayLuaScript(includeReplay: useReplay, drawPathlines: true));
-                File.WriteAllText(OverlayLuaNoPathlinesPath, BuildOverlayLuaScript(includeReplay: useReplay, drawPathlines: false));
+                luaPath = luaPathOverride;
             }
-            catch { luaPath = ""; }
+            else
+            {
+                // Write the replay-capable overlay Lua script to the per-level
+                // Documents folder.  This path is still used by F9 / Replay in
+                // Mesen and by any caller that does not supply an external Lua.
+                luaPath = OverlayLuaPath;
+                try
+                {
+                    RefreshMesenLogStamp();
+                    File.WriteAllText(luaPath, BuildOverlayLuaScript(includeReplay: useReplay, drawPathlines: true));
+                    File.WriteAllText(OverlayLuaNoPathlinesPath, BuildOverlayLuaScript(includeReplay: useReplay, drawPathlines: false));
+                }
+                catch { luaPath = ""; }
+            }
 
             // Embedded mode: host MesenCore.dll inside MainWindow.  No separate
             // process, no separate window — true lockstep with the editor.
@@ -459,8 +503,8 @@ namespace FamidashEditor
                 // Fall through to the legacy launch path on failure.
             }
 
-            // Always use the bundled Mesen that lives next to the editor executable.
-            string exePath = Path.Combine(AppContext.BaseDirectory, "mesen", "Mesen.exe");
+            // Always use the local bundled Mesen that lives next to the editor executable.
+            string exePath = LocalRuntimeFolders.MesenExePath;
 
             if (!File.Exists(exePath))
             {

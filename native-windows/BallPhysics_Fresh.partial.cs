@@ -332,11 +332,11 @@ namespace FamidashEditor
                 }
             }
             
-            // Collision ejection
-            if (currentGameMode == 7) // Swingcopter: ship-style eject (both directions, no velocity guard)
-                UfoShipEject_Fresh();
-            else
-                BallEject_Fresh();
+            // Collision ejection.
+            // NES gamemode_ball.h routes GAMEMODE_SWING through ball_eject(),
+            // the same helper used by Ball/Pogo.  Swing's ship-like feel comes
+            // from SWING_GRAVITY and the press-to-flip below, not ship/ufo eject.
+            BallEject_Fresh();
 
             // NES ball_movement does NOT run bg_coll_death inside the mode handler.
             // Center death runs AFTER x_movement advances currplayer_x (at NEW X).
@@ -354,8 +354,18 @@ namespace FamidashEditor
                 
                 if (pressedJump && !ufoOrbed[currplayer] && !orbed[currplayer]) {
                     AppendSimDebug($"[SWING] FLIPPING GRAVITY!");
+					bool gravityBeforeFlip = currplayer_gravity != 0;
                     InvertGravity_Fresh();
                     UpdateCurrplayerTableIdx_Fresh(); // Must update table_idx AFTER gravity flip!
+					int spikeX = playerX_fixed >> 8;
+					int spikeY = NesPlayerY_px(playerY_fixed) + (gravityBeforeFlip ? -1 : 1);
+					if (CheckFloorSpikes(spikeX, spikeY, out int deathX, out int deathY))
+					{
+						deathTriggered = true;
+						deathTileX = deathX;
+						deathTileY = deathY;
+						AppendSimDebug($"[DEATH] Swing flip spike at ({deathX},{deathY})");
+					}
                     // Swing does NOT apply velocity like Ball does - just flips gravity
                 }
             }
@@ -420,7 +430,8 @@ namespace FamidashEditor
                 currplayer_was_on_slope_counter, currplayer_slope_frames,
                 currplayer_slope_type, make_cube_jump_higher,
                 currplayer_last_slope_type,
-                cameraY_fixed);
+                cameraY_fixed,
+                updateSlopeCounters: false);
 
             playerY_fixed = r.NewY_fixed;
             playerVelY_fixed = r.NewVelY_fixed;

@@ -517,6 +517,25 @@ namespace FamidashEditor
         private FillMode currentFillMode = FillMode.Normal;
 
     // Allow toggling simulator sprite hitbox overlays from the main editor via F2
+    private bool TryHandleReplayInMesenShortcut(System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != System.Windows.Input.Key.F9 || e.IsRepeat)
+            return false;
+
+        try
+        {
+            if (PathfinderReplayButton != null && PathfinderReplayButton.IsEnabled)
+            {
+                PathfinderReplayButton_Click(PathfinderReplayButton, new RoutedEventArgs());
+                e.Handled = true;
+                return true;
+            }
+        }
+        catch { }
+
+        return false;
+    }
+
     protected override void OnKeyDown(System.Windows.Input.KeyEventArgs e)
     {
         try
@@ -574,19 +593,7 @@ namespace FamidashEditor
             }
 
             // F9 triggers "Replay in Mesen"
-            if (e.Key == System.Windows.Input.Key.F9 && !e.IsRepeat)
-            {
-                try
-                {
-                    if (PathfinderReplayButton != null && PathfinderReplayButton.IsEnabled)
-                    {
-                        PathfinderReplayButton_Click(PathfinderReplayButton, new RoutedEventArgs());
-                        e.Handled = true;
-                        return;
-                    }
-                }
-                catch { }
-            }
+            if (TryHandleReplayInMesenShortcut(e)) return;
 
             // F10 toggles Cam Mode global option
             if (e.Key == System.Windows.Input.Key.F10)
@@ -1328,8 +1335,6 @@ namespace FamidashEditor
                     var candidates = new List<string>();
                     // explicit path the user mentioned
                     candidates.Add(Path.Combine(AppContext.BaseDirectory, "..")); // keep as general fallback
-                    // prioritize a tilesets folder at workspace root (common user location)
-                    candidates.Add(Path.Combine("C:\\Editor Test", "tilesets"));
                     candidates.Add(Path.Combine(AppContext.BaseDirectory, "tilesets"));
                     candidates.Add(AppContext.BaseDirectory);
                     candidates.Add(Environment.CurrentDirectory);
@@ -2432,7 +2437,8 @@ namespace FamidashEditor
     private System.Collections.Generic.List<(int x, int y)> playerPathPoints = new System.Collections.Generic.List<(int x, int y)>();
     private System.Collections.Generic.List<(int x, int y)> playerPath2Points = new System.Collections.Generic.List<(int x, int y)>();  // Player 2 path for dual mode
     private Shapes.Polyline? playerPathPolyline = null;
-    private Shapes.Polyline? playerPath2Polyline = null;  // Player 2 path line for dual mode
+    private System.Windows.UIElement? playerPath2Polyline = null;  // Player 2 path line for dual mode
+    private bool playerPathIncomplete = false;
     // Pathfinder-calculated paths (colored by bias, persist until F12 clear)
     private System.Collections.Generic.List<(System.Collections.Generic.List<(int x, int y)> points, Color color)> pathfinderPaths = new();
     private System.Collections.Generic.List<(System.Collections.Generic.List<(int x, int y)> points, Color color)> pathfinderPath2s = new();  // P2 paths for dual mode
@@ -2458,6 +2464,8 @@ namespace FamidashEditor
     // Optional death marker (red X) placed by simulator when a death occurs
     private Shapes.Line? playerDeathMarkerA = null;
     private Shapes.Line? playerDeathMarkerB = null;
+    private Shapes.Line? playerIncompleteMarkerA = null;
+    private Shapes.Line? playerIncompleteMarkerB = null;
     // START POS marker (green rectangle) - player spawns here when set
     private System.Windows.UIElement? startPosMarker = null;
     private int? startPosMarkerX = null; // World pixel X
@@ -7839,16 +7847,19 @@ namespace FamidashEditor
             return fallbackSprites.ToArray();
         }
 
-        private NesSpriteRecord[]? GetNesSpriteRecordsForRuntime()
+        private NesSpriteRecord[]? GetNesSpriteRecordsForRuntime(int[] nesSpriteLayer)
         {
-            if (!hasUnsavedChanges &&
-                !string.IsNullOrWhiteSpace(currentFilePath) &&
-                File.Exists(currentFilePath) &&
-                NesSpriteDataLoader.TryLoadForTmx(currentFilePath, out var records))
-            {
-                return records;
-            }
-            return null;
+            // Match LEVELS/export_levels.py:export_spr directly. Generated .bin/.s files
+            // beside the source TMX are build artifacts and can be stale, while Build and
+            // Test exports the current raw SP layer and the editor's current offsets.
+            // Reading those old artifacts here made PF/sim disagree with the ROM that had
+            // just been built. The NES stream is column-major and counts every non-empty
+            // sprite, including decorations and triggers.
+            return NesSpriteDataLoader.BuildRuntimeRecords(
+                nesSpriteLayer,
+                mapWidth,
+                mapHeight,
+                spritePixelOffsets);
         }
 
         // Open the simulator window showing the current map state. This is lightweight
@@ -8328,7 +8339,7 @@ namespace FamidashEditor
                     // the simulator does not render a sprite 0 on every cell.
                     var sanitizedSprites = (sprites ?? Array.Empty<int>()).ToArray();
                     var nesSpriteLayerForRuntime = GetNesSpriteLayerForRuntime(sanitizedSprites);
-                    var nesSpriteRecordsForRuntime = GetNesSpriteRecordsForRuntime();
+                    var nesSpriteRecordsForRuntime = GetNesSpriteRecordsForRuntime(nesSpriteLayerForRuntime);
 
                     var sim = new SimulatorWindow(
                     sanitizedTiles,
@@ -8816,8 +8827,8 @@ namespace FamidashEditor
         private async System.Threading.Tasks.Task SwitchToTab(int index)
         {
             if (isSwitchingTab) return;
-            isSwitchingTab = true;
             if (index < 0 || index >= openFiles.Count) return;
+            isSwitchingTab = true;
             
             // Show loading indicator
             LoadingWindow? loadingWindow = null;
@@ -9214,18 +9225,47 @@ namespace FamidashEditor
                         try { await SwitchToTab(index); } catch { }
                     }
                 }
-                    // Track last selected tab reference
-                    lastSelectedTab = tab;
+                    // Track the actual selected tab. The + tab handler changes
+                    // SelectedItem programmatically, so keeping the original +
+                    // TabItem here makes the next user click look like a stale
+                    // duplicate selection.
+                    lastSelectedTab = FileTabControl.SelectedItem as TabItem ?? tab;
             }
+        }
+
+        private string NormalizeEditorFilePath(string filePath)
+        {
+            try { return System.IO.Path.GetFullPath(filePath); }
+            catch { return filePath; }
+        }
+
+        private bool EditorFilePathsEqual(string? a, string? b)
+        {
+            if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
+            return string.Equals(NormalizeEditorFilePath(a), NormalizeEditorFilePath(b), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private int FindOpenFileTabIndex(string filePath)
+        {
+            string normalized = NormalizeEditorFilePath(filePath);
+            for (int i = 0; i < openFiles.Count; i++)
+            {
+                if (EditorFilePathsEqual(openFiles[i].FilePath, normalized))
+                {
+                    return i;
+                }
+            }
+            return -1;
         }
 
         private void AddToRecentFiles(string filePath)
         {
-            recentFiles.Remove(filePath);
+            filePath = NormalizeEditorFilePath(filePath);
+            recentFiles.RemoveAll(f => EditorFilePathsEqual(f, filePath));
             recentFiles.Insert(0, filePath);
             if (recentFiles.Count > MaxRecentFiles)
             {
-                recentFiles.RemoveAt(MaxRecentFiles);
+                recentFiles.RemoveRange(MaxRecentFiles, recentFiles.Count - MaxRecentFiles);
             }
             SaveRecentFiles();
             UpdateRecentFilesMenu();
@@ -9269,7 +9309,7 @@ namespace FamidashEditor
                 else
                 {
                     MessageBox.Show($"File not found: {filePath}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                    recentFiles.Remove(filePath);
+                    recentFiles.RemoveAll(f => EditorFilePathsEqual(f, filePath));
                     SaveRecentFiles();
                     UpdateRecentFilesMenu();
                 }
@@ -9279,122 +9319,106 @@ namespace FamidashEditor
         private void LoadTMXFile(string filePath)
         {
     #pragma warning disable CS8602
+            filePath = NormalizeEditorFilePath(filePath);
+
             // Clear player path and death markers when loading new level
             try
             {
                 if (playerPathPolyline != null && CanvasHost != null) CanvasHost.Children.Remove(playerPathPolyline);
                 playerPathPolyline = null;
+                if (playerPath2Polyline != null && CanvasHost != null) CanvasHost.Children.Remove(playerPath2Polyline);
+                playerPath2Polyline = null;
+                playerPathPoints.Clear();
+                playerPath2Points.Clear();
+                playerPathIncomplete = false;
                 if (playerDeathMarkerA != null && CanvasHost != null) CanvasHost.Children.Remove(playerDeathMarkerA);
                 if (playerDeathMarkerB != null && CanvasHost != null) CanvasHost.Children.Remove(playerDeathMarkerB);
                 playerDeathMarkerA = null;
                 playerDeathMarkerB = null;
+                if (playerIncompleteMarkerA != null && CanvasHost != null) CanvasHost.Children.Remove(playerIncompleteMarkerA);
+                if (playerIncompleteMarkerB != null && CanvasHost != null) CanvasHost.Children.Remove(playerIncompleteMarkerB);
+                playerIncompleteMarkerA = null;
+                playerIncompleteMarkerB = null;
                 if (startPosMarker != null && CanvasHost != null) CanvasHost.Children.Remove(startPosMarker);
                 startPosMarker = null;
                 startPosMarkerX = null;
                 startPosMarkerY = null;
             }
             catch { }
-            
-            // Prompt to save only when the current tab is an untitled tab with unsaved changes
-            bool shouldPromptSave = false;
+
+            // If this file is already open, select that tab instead of creating a
+            // duplicate tab with independent dirty state for the same on-disk file.
+            int existingTabIndex = FindOpenFileTabIndex(filePath);
+            if (existingTabIndex >= 0)
+            {
+                try { _ = SwitchToTab(existingTabIndex); } catch { }
+                try { AddToRecentFiles(filePath); } catch { }
+                if (StatusText != null) StatusText.Text = $"Switched to open tab: {System.IO.Path.GetFileName(filePath)}";
+                return;
+            }
+
+            bool replaceCurrentTab = false;
             try
             {
-                if (hasUnsavedChanges && openFiles != null && openFiles.Count == 1)
+                if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
                 {
-                    var only = openFiles[0];
-                    if (only != null && string.IsNullOrEmpty(only.FilePath)) shouldPromptSave = true;
+                    SaveCurrentTabState();
+                    var currentTab = openFiles[currentFileIndex];
+                    bool currentUntitled = string.IsNullOrEmpty(currentTab.FilePath);
+
+                    if (currentUntitled && currentTab.HasUnsavedChanges)
+                    {
+                        var result = MessageBox.Show(
+                            "You have unsaved changes in the untitled tab. Do you want to save before loading?",
+                            "Unsaved Changes",
+                            MessageBoxButton.YesNoCancel,
+                            MessageBoxImage.Question);
+
+                        if (result == MessageBoxResult.Yes)
+                        {
+                            SaveButton_Click(this, new RoutedEventArgs());
+                            if (hasUnsavedChanges) return; // User cancelled Save As
+                            SaveCurrentTabState();
+                            replaceCurrentTab = false;
+                        }
+                        else if (result == MessageBoxResult.Cancel)
+                        {
+                            return;
+                        }
+                        else
+                        {
+                            // Explicit discard: this is the one case where replacing
+                            // an untitled dirty tab is intentional.
+                            hasUnsavedChanges = false;
+                            currentTab.HasUnsavedChanges = false;
+                            try { UpdateTabHeaderForIndex(currentFileIndex); } catch { }
+                            replaceCurrentTab = true;
+                        }
+                    }
+                    else
+                    {
+                        replaceCurrentTab = currentUntitled && !currentTab.HasUnsavedChanges;
+                    }
                 }
             }
             catch { }
-
-            if (shouldPromptSave)
-            {
-                var result = MessageBox.Show(
-                    "You have unsaved changes in the untitled tab. Do you want to save before loading?",
-                    "Unsaved Changes",
-                    MessageBoxButton.YesNoCancel,
-                    MessageBoxImage.Question);
-
-                if (result == MessageBoxResult.Yes)
-                {
-                    // Save; SaveButton_Click will prompt Save As for untitled tabs.
-                    SaveButton_Click(this, new RoutedEventArgs());
-                    // If user cancelled the save dialog, abort the load
-                    if (hasUnsavedChanges) return;
-
-                    // If save succeeded, ensure the sole tab is updated to the saved path and remains open
-                    try
-                    {
-                        if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
-                        {
-                            openFiles[currentFileIndex].FilePath = currentFilePath;
-                            openFiles[currentFileIndex].HasUnsavedChanges = false;
-
-                            // Update the tab header to the saved filename
-                            for (int i = 0; i < FileTabControl!.Items.Count; i++)
-                            {
-                                if (FileTabControl!.Items[i] is TabItem tabItem && tabItem.Tag is FileTabData td && openFiles.IndexOf(td) == currentFileIndex)
-                                {
-                                    var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
-                                    var headerText = new TextBlock
-                                    {
-                                        Text = System.IO.Path.GetFileName(currentFilePath ?? ""),
-                                        Margin = new Thickness(0, 0, 8, 0),
-                                        VerticalAlignment = VerticalAlignment.Center
-                                    };
-                                    var closeButton = new Button
-                                    {
-                                        Content = "�",
-                                        Width = 16,
-                                        Height = 16,
-                                        Padding = new Thickness(0),
-                                        Margin = new Thickness(0),
-                                        VerticalAlignment = VerticalAlignment.Center,
-                                        Background = Brushes.Transparent,
-                                        BorderThickness = new Thickness(0),
-                                        FontSize = 14,
-                                        FontWeight = FontWeights.Bold,
-                                        Cursor = Cursors.Hand,
-                                        Visibility = Visibility.Visible,
-                                        Tag = openFiles[currentFileIndex]
-                                    };
-                                    closeButton.Click += CloseTab_Click;
-                                    headerPanel.Children.Add(headerText);
-                                    headerPanel.Children.Add(closeButton);
-                                    tabItem.Header = headerPanel;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    catch { }
-                }
-                else if (result == MessageBoxResult.Cancel)
-                {
-                    return; // User cancelled the load operation
-                }
-                // If No, continue with load without saving
-            }
             
             LoadingWindow? loadingWindow = null;
             try
             {
-                string ext = Path.GetExtension(filePath).ToLower();
+                string ext = Path.GetExtension(filePath).ToLowerInvariant();
                 int loadedWidth = 0;
                 int loadedHeight = 0;
                 int[]? loadedTiles = null;
                 int[]? loadedSprites = null;
-                
+
+                loadingWindow = new LoadingWindow { Owner = this };
+                loadingWindow.SetMessage("Loading file...\nThis may take a while on larger maps.");
+                loadingWindow.Show();
+                Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+
                 if (ext == ".tmx")
                 {
-                    // Show loading dialog
-                    loadingWindow = new LoadingWindow { Owner = this };
-                    loadingWindow.SetMessage("Loading TMX file...\nThis may take a while on larger maps.");
-                    loadingWindow.Show();
-                    
-                    // Force UI update
-                    Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
-                    
                     // Load TMX format
                     var tmxLevel = TmxHandler.LoadTmx(filePath, useLegacyTriggerOffset);
                     loadedWidth = tmxLevel.Width;
@@ -9438,6 +9462,18 @@ namespace FamidashEditor
                     // Load deco set from TMX if present; config file may override when LoadTmxConfig runs
                     try { loadedDecoSet = string.IsNullOrEmpty(tmxLevel.DecoSet) ? "deco1" : tmxLevel.DecoSet; } catch { loadedDecoSet = "deco1"; }
                 }
+                else
+                {
+                    var json = File.ReadAllText(filePath);
+                    var model = JsonSerializer.Deserialize<LevelModel>(json);
+                    if (model != null)
+                    {
+                        loadedWidth = model.Width;
+                        loadedHeight = model.Height;
+                        loadedTiles = model.Tiles?.ToArray();
+                        loadedSprites = Enumerable.Repeat(-1, loadedWidth * loadedHeight).ToArray();
+                    }
+                }
                 
                 if (loadedWidth > 0 && loadedHeight > 0 && loadedTiles != null)
                 {
@@ -9450,26 +9486,33 @@ namespace FamidashEditor
                     
                     // Directly set the data without going through ResizeMap to avoid undo recording
                     suppressUndoRecording = true;
-                    mapWidth = loadedWidth;
-                    mapHeight = loadedHeight;
-                    // CRITICAL: Create fresh copies for global arrays to ensure no sharing
-                    if (loadedTiles != null && loadedTiles.Length > 0)
+                    try
                     {
-                        tiles = new int[loadedTiles.Length];
-                        Array.Copy(loadedTiles, tiles, loadedTiles.Length);
+                        mapWidth = loadedWidth;
+                        mapHeight = loadedHeight;
+                        // CRITICAL: Create fresh copies for global arrays to ensure no sharing
+                        if (loadedTiles != null && loadedTiles.Length > 0)
+                        {
+                            tiles = new int[loadedTiles.Length];
+                            Array.Copy(loadedTiles, tiles, loadedTiles.Length);
+                        }
+                        else
+                        {
+                            tiles = Array.Empty<int>();
+                        }
+                        if (loadedSprites != null && loadedSprites.Length > 0)
+                        {
+                            sprites = new int[loadedSprites.Length];
+                            Array.Copy(loadedSprites, sprites, loadedSprites.Length);
+                        }
+                        else
+                        {
+                            sprites = Enumerable.Repeat(-1, loadedWidth * loadedHeight).ToArray();
+                        }
                     }
-                    else
+                    finally
                     {
-                        tiles = Array.Empty<int>();
-                    }
-                    if (loadedSprites != null && loadedSprites.Length > 0)
-                    {
-                        sprites = new int[loadedSprites.Length];
-                        Array.Copy(loadedSprites, sprites, loadedSprites.Length);
-                    }
-                    else
-                    {
-                        sprites = Enumerable.Repeat(-1, loadedWidth * loadedHeight).ToArray();
+                        suppressUndoRecording = false;
                     }
                     
                     if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
@@ -9481,84 +9524,74 @@ namespace FamidashEditor
                     // Clear undo/redo stacks when loading a new file
                     undoStack.Clear();
                     redoStack.Clear();
-                    
-                    suppressUndoRecording = false;
-                    
-                    // Update current file and clear dirty flag
+
+                    // Set globals for the loaded file, but do not use SetHasUnsavedChanges
+                    // until currentFileIndex points at the tab that owns this data.
                     currentFilePath = filePath;
-                    SetHasUnsavedChanges(false);
+                    hasUnsavedChanges = false;
+                    RefreshReplayButtonVisibility();
                     
                     // Add to recent files
                     AddToRecentFiles(filePath);
-                    
-                    // Load TMX config to get tints, sprite offsets, and sets
-                    try { LoadTmxConfig(filePath); } catch { }
-                    
-                    // If current tab is untitled with no changes, replace it instead of creating new tab
-                    bool replaceCurrentTab = false;
-                    if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
-                    {
-                        var currentTab = openFiles[currentFileIndex];
-                        if (string.IsNullOrEmpty(currentTab.FilePath) && !currentTab.HasUnsavedChanges)
-                        {
-                            replaceCurrentTab = true;
-                        }
-                    }
-                    
+
                     if (replaceCurrentTab)
                     {
-                        // Update current tab (data already saved above before loading new file)
+                        // Convert the current clean Untitled tab into the loaded file tab.
                         openFiles[currentFileIndex].FilePath = filePath;
-                        
-                        // Update tab header
-                        for (int i = 0; i < FileTabControl!.Items.Count; i++)
-                        {
-                            if (FileTabControl!.Items[i] is TabItem tabItem && tabItem.Tag is FileTabData td && openFiles.IndexOf(td) == currentFileIndex)
-                            {
-                                // Create header panel with close button
-                                var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
-                                var headerText = new TextBlock 
-                                { 
-                                    Text = System.IO.Path.GetFileName(filePath),
-                                    Margin = new Thickness(0, 0, 8, 0),
-                                    VerticalAlignment = VerticalAlignment.Center
-                                };
-                                var closeButton = new Button
-                                {
-                                    Content = "�",
-                                    Width = 16,
-                                    Height = 16,
-                                    Padding = new Thickness(0),
-                                    Margin = new Thickness(0),
-                                    VerticalAlignment = VerticalAlignment.Center,
-                                    Background = Brushes.Transparent,
-                                    BorderThickness = new Thickness(0),
-                                    FontSize = 14,
-                                    FontWeight = FontWeights.Bold,
-                                    Cursor = Cursors.Hand,
-                                    Visibility = Visibility.Visible,
-                                    Tag = openFiles[currentFileIndex]
-                                };
-                                closeButton.Click += CloseTab_Click;
-                                headerPanel.Children.Add(headerText);
-                                headerPanel.Children.Add(closeButton);
-                                tabItem.Header = headerPanel;
-                                break;
-                            }
-                        }
+                        openFiles[currentFileIndex].CreatedAsUntitled = false;
+                        openFiles[currentFileIndex].HasUnsavedChanges = false;
+                        SaveCurrentTabState();
+                        try { UpdateTabHeaderForIndex(currentFileIndex); } catch { }
                     }
                     else
                     {
-                        // Create new tab
+                        // Create a new file tab before loading per-file config so
+                        // LoadTmxConfig writes metadata/offsets into the new tab,
+                        // not into the tab we just left.
                         CreateNewTab(filePath);
-                        
-                        // Force proper tab switch to ensure UI and data are in sync
-                        // CreateNewTab sets the UI selection but SelectionChanged is suppressed,
-                        // so we need to manually trigger the full tab switch logic
-                        try 
-                        { 
-                            _ = SwitchToTab(currentFileIndex); 
-                        } 
+                    }
+
+                    if (ext == ".tmx")
+                    {
+                        // Clear per-level fields before config load so absent/missing
+                        // configs cannot leak values from the previously active tab.
+                        try { loadedStartingSpeedUiIndex = 1; } catch { }
+                        try { loadedStartingBackgroundColor = null; } catch { }
+                        try { loadedStartingGameMode = null; } catch { }
+                        try { loadedStartingGroundColor = null; } catch { }
+                        try { loadedStartingDifficulty = null; } catch { }
+                        try { loadedStartingStars = null; } catch { }
+                        try { loadedStartingLowerText = null; } catch { }
+                        try { loadedStartingUpperText = null; } catch { }
+                        try { loadedSpawnYPositionHi = null; loadedSpawnYPositionLow = null; } catch { }
+                        try { loadedScrollYPositionHi = null; loadedScrollYPositionLow = null; } catch { }
+                        try { loadedForcePlatformer = null; } catch { }
+                        try { loadedMaxFallSpeed = 0x06; } catch { }
+
+                        // Load TMX config to get tints, sprite offsets, sets, and
+                        // per-level metadata after the target tab is active.
+                        try { LoadTmxConfig(filePath); } catch { }
+                        try { if (showAccurateTileset) SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
+                        try { SaveCurrentTabState(); } catch { }
+                    }
+
+                    SetHasUnsavedChanges(false);
+
+                    if (previewMode)
+                    {
+                        try
+                        {
+                            if (PreviewModeCheckbox != null)
+                            {
+                                PreviewModeCheckbox.IsChecked = false;
+                            }
+                            else
+                            {
+                                previewMode = false;
+                                StopPreviewTimer();
+                                animationFrame = 0;
+                            }
+                        }
                         catch { }
                     }
                     
@@ -9633,7 +9666,12 @@ namespace FamidashEditor
                     var loaded = System.Text.Json.JsonSerializer.Deserialize<List<string>>(json);
                     if (loaded != null)
                     {
-                        recentFiles = loaded.Where(f => System.IO.File.Exists(f)).Take(MaxRecentFiles).ToList();
+                        recentFiles = loaded
+                            .Where(f => !string.IsNullOrWhiteSpace(f) && System.IO.File.Exists(f))
+                            .Select(NormalizeEditorFilePath)
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .Take(MaxRecentFiles)
+                            .ToList();
                     }
                 }
             }
@@ -12663,6 +12701,16 @@ namespace FamidashEditor
                     try { CanvasHost.Children.Remove(playerPath2Polyline); } catch { }
                     playerPath2Polyline = null;
                 }
+                if (playerIncompleteMarkerA != null)
+                {
+                    try { CanvasHost.Children.Remove(playerIncompleteMarkerA); } catch { }
+                    playerIncompleteMarkerA = null;
+                }
+                if (playerIncompleteMarkerB != null)
+                {
+                    try { CanvasHost.Children.Remove(playerIncompleteMarkerB); } catch { }
+                    playerIncompleteMarkerB = null;
+                }
                 // Remove previous pathfinder polylines
                 foreach (var pfPoly in pathfinderPathPolylines)
                     try { CanvasHost.Children.Remove(pfPoly); } catch { }
@@ -12925,14 +12973,73 @@ namespace FamidashEditor
                     Canvas.SetZIndex(poly2Path, 2000);
                     CanvasHost.Children.Add(poly2Path);
 
-                    playerPath2Polyline = poly2; // keep reference for removal
+                    playerPath2Polyline = poly2Path; // keep reference for removal
+                }
+
+                // If the simulator/pathfinder run did not complete, mark the final
+                // traveled point with a red X so a partial green outline cannot be
+                // mistaken for a successful finish.
+                if (playerPathIncomplete)
+                {
+                    (int x, int y)? endpoint = null;
+                    if (playerPathPoints != null && playerPathPoints.Count > 0)
+                    {
+                        endpoint = playerPathPoints[playerPathPoints.Count - 1];
+                    }
+                    else if (playerPath2Points != null)
+                    {
+                        for (int i = playerPath2Points.Count - 1; i >= 0; i--)
+                        {
+                            var p = playerPath2Points[i];
+                            if (p.x != -1 || p.y != -1)
+                            {
+                                endpoint = p;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (endpoint.HasValue)
+                    {
+                        double dx = pad + endpoint.Value.x * scale;
+                        double dy = pad + (endpoint.Value.y + (3 * TileSize)) * scale + gridRenderShiftY;
+                        double size = Math.Max(5.0, 9.0 * scale);
+                        double thickness = Math.Max(1.25, 2.25 * scale);
+                        var brush = new SolidColorBrush(Color.FromArgb(0xF0, 0xFF, 0x22, 0x22));
+                        var lineA = new Shapes.Line()
+                        {
+                            X1 = dx - size,
+                            Y1 = dy - size,
+                            X2 = dx + size,
+                            Y2 = dy + size,
+                            Stroke = brush,
+                            StrokeThickness = thickness,
+                            IsHitTestVisible = false
+                        };
+                        var lineB = new Shapes.Line()
+                        {
+                            X1 = dx - size,
+                            Y1 = dy + size,
+                            X2 = dx + size,
+                            Y2 = dy - size,
+                            Stroke = brush,
+                            StrokeThickness = thickness,
+                            IsHitTestVisible = false
+                        };
+                        playerIncompleteMarkerA = lineA;
+                        playerIncompleteMarkerB = lineB;
+                        Canvas.SetZIndex(lineA, 2110);
+                        Canvas.SetZIndex(lineB, 2110);
+                        CanvasHost.Children.Add(lineA);
+                        CanvasHost.Children.Add(lineB);
+                    }
                 }
             }
             catch { }
         }
 
         // Public: called by simulator to set the player path (raw world pixel coords)
-        public void ShowPlayerPathFromSimulator(System.Collections.Generic.IEnumerable<(int x, int y)> pts)
+        public void ShowPlayerPathFromSimulator(System.Collections.Generic.IEnumerable<(int x, int y)> pts, bool completed = true)
         {
             try
             {
@@ -12942,6 +13049,7 @@ namespace FamidashEditor
                     {
                         playerPathPoints = pts?.ToList() ?? new System.Collections.Generic.List<(int x, int y)>();
                         playerPath2Points = new System.Collections.Generic.List<(int x, int y)>();  // Clear player 2 path
+                        playerPathIncomplete = !completed;
                         UpdatePlayerPathOverlay();
                     }
                     catch { }
@@ -12950,7 +13058,7 @@ namespace FamidashEditor
             catch { }
         }
 
-        public void ShowPlayerPathsFromSimulator(System.Collections.Generic.IEnumerable<(int x, int y)> path1, System.Collections.Generic.IEnumerable<(int x, int y)> path2, bool dualMode)
+        public void ShowPlayerPathsFromSimulator(System.Collections.Generic.IEnumerable<(int x, int y)> path1, System.Collections.Generic.IEnumerable<(int x, int y)> path2, bool dualMode, bool completed = true)
         {
             try
             {
@@ -12960,6 +13068,7 @@ namespace FamidashEditor
                     {
                         playerPathPoints = path1?.ToList() ?? new System.Collections.Generic.List<(int x, int y)>();
                         playerPath2Points = (path2?.ToList() ?? new System.Collections.Generic.List<(int x, int y)>());  // Always show path2 if it has data, even after exiting dual mode
+                        playerPathIncomplete = !completed;
                         UpdatePlayerPathOverlay();
                     }
                     catch { }
@@ -12975,6 +13084,7 @@ namespace FamidashEditor
             {
                 playerPathPoints.Clear();
                 playerPath2Points.Clear();
+                playerPathIncomplete = false;
                 if (playerPathPolyline != null && CanvasHost != null)
                 {
                     try { CanvasHost.Children.Remove(playerPathPolyline); } catch { }
@@ -12988,7 +13098,10 @@ namespace FamidashEditor
                 // Remove any death marker as well
                 try { if (playerDeathMarkerA != null && CanvasHost != null) CanvasHost.Children.Remove(playerDeathMarkerA); } catch { }
                 try { if (playerDeathMarkerB != null && CanvasHost != null) CanvasHost.Children.Remove(playerDeathMarkerB); } catch { }
+                try { if (playerIncompleteMarkerA != null && CanvasHost != null) CanvasHost.Children.Remove(playerIncompleteMarkerA); } catch { }
+                try { if (playerIncompleteMarkerB != null && CanvasHost != null) CanvasHost.Children.Remove(playerIncompleteMarkerB); } catch { }
                 playerDeathMarkerA = null; playerDeathMarkerB = null;
+                playerIncompleteMarkerA = null; playerIncompleteMarkerB = null;
             }
             catch { }
         }
@@ -21433,6 +21546,11 @@ namespace FamidashEditor
             // Capture modifier state
             var mods = System.Windows.Input.Keyboard.Modifiers;
 
+            // F9 -> Replay in Mesen.  Handle this at PreviewKeyDown as well
+            // as OnKeyDown so focus on toolbar/menu controls does not swallow
+            // the editor shortcut until the user clicks a tool button.
+            if (TryHandleReplayInMesenShortcut(e)) return;
+
             // F1 -> open Set Options window
             if (e.Key == Key.F1)
             {
@@ -21683,7 +21801,7 @@ namespace FamidashEditor
                 int startGameMode = loadedStartingGameMode.HasValue ? loadedStartingGameMode.Value : 0;
                 int startSpeedUiIndex = loadedStartingSpeedUiIndex;
                 var nesSpriteLayerForRuntime = GetNesSpriteLayerForRuntime(sprites);
-                var nesSpriteRecordsForRuntime = GetNesSpriteRecordsForRuntime();
+                var nesSpriteRecordsForRuntime = GetNesSpriteRecordsForRuntime(nesSpriteLayerForRuntime);
 
                 StatusText.Text = "Pathfinder: Calculating...";
                 CalculatePathButton.IsEnabled = false;
@@ -21720,6 +21838,7 @@ namespace FamidashEditor
                         engine.ConfigScrollYHi = loadedScrollYPositionHi;
                         engine.ConfigScrollYLo = loadedScrollYPositionLow;
                         engine.ConfigSpawnYLo = loadedSpawnYPositionLow;
+                        engine.UseNesSpawnScrollDefaults = !(startPosMarkerX.HasValue && startPosMarkerY.HasValue);
                         _activePathfinderEngine = engine;
 
                         // Real-time speculative path visualization callback.
@@ -21733,171 +21852,178 @@ namespace FamidashEditor
                         const int MAX_SPEC_DATA = 500; // Cap stored paths to prevent editor hang
                         bool _specCancelled = false; // set when Run() completes to abort queued dispatches
                         _speculativePathData.Clear(); // clear from previous run
-                        engine.OnSpeculativePath = (path, delay, survival, isHold) =>
+                        if (showProspectivePaths || showPathfinderLive)
                         {
-                            if (_specCancelled) return; // Run() finished, stop queuing dispatches
-
-                            // Snapshot the data for the UI thread
-                            var pathSnapshot = path != null ? new List<(int x, int y)>(path) : null;
-
-                            // Save path data for persistent "show after" display (capped)
-                            if (showProspectivePaths && pathSnapshot != null && pathSnapshot.Count >= 2
-                                && _specDataCount < MAX_SPEC_DATA)
+                            engine.OnSpeculativePath = (path, delay, survival, isHold) =>
                             {
-                                lock (_speculativePathData)
+                                if (_specCancelled) return; // Run() finished, stop queuing dispatches
+
+                                // Snapshot the data for the UI thread only when a consumer is active.
+                                var pathSnapshot = path != null ? new List<(int x, int y)>(path) : null;
+
+                                // Save path data for persistent "show after" display (capped)
+                                if (showProspectivePaths && pathSnapshot != null && pathSnapshot.Count >= 2
+                                    && _specDataCount < MAX_SPEC_DATA)
                                 {
-                                    _speculativePathData.Add(pathSnapshot);
-                                    _specDataCount++;
-                                }
-                            }
-
-                            // Live rendering (only if toggle is on)
-                            if (showPathfinderLive)
-                            {
-                                int modeCopy = engine.CurrentSpeculativeVizMode;
-                                bool shipOrWave = (modeCopy == 1 || modeCopy == 6);
-
-                                // Reset counter every 16ms window
-                                if (_lastSpecUpdate.ElapsedMilliseconds >= 16)
-                                {
-                                    _lastSpecUpdate.Restart();
-                                    _specPathsInWindow = 0;
-                                }
-                                int maxPerWindow = shipOrWave ? 10 : 3;
-                                if (path != null && _specPathsInWindow >= maxPerWindow)
-                                    return;
-                                _specPathsInWindow++;
-
-                                int survCopy = survival;
-                                bool isHoldCopy = isHold;
-                                int modeForUi = modeCopy;
-
-                                Dispatcher.BeginInvoke(new Action(() =>
-                                {
-                                    try
+                                    lock (_speculativePathData)
                                     {
-                                        // Skip rendering if Run() already completed —
-                                        // this dispatch was queued before completion
-                                        if (_specCancelled) return;
-                                        if (CanvasHost == null) return;
-
-                                        if (pathSnapshot == null || pathSnapshot.Count == 0) return;
-
-                                        double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-                                        double pad = mapViewportPadding;
-
-                                        // Mode-aware styling for denser decision showcase.
-                                        // Ship/Wave use distinct hold/release palettes so
-                                        // decision-making is visible at a glance.
-                                        Color c;
-                                        if (modeForUi == 1) // ship
-                                        {
-                                            c = isHoldCopy
-                                                ? Color.FromArgb(0xD0, 0x00, 0xD7, 0xC8)
-                                                : Color.FromArgb(0xD0, 0xFF, 0xB0, 0x3A);
-                                        }
-                                        else if (modeForUi == 6) // wave
-                                        {
-                                            c = isHoldCopy
-                                                ? Color.FromArgb(0xD0, 0x5A, 0x9D, 0xFF)
-                                                : Color.FromArgb(0xD0, 0xA8, 0xE6, 0x3C);
-                                        }
-                                        else
-                                        {
-                                            if (survCopy >= 90)
-                                                c = Color.FromArgb(0xC0, 0x00, 0xFF, 0x00);
-                                            else if (isHoldCopy)
-                                                c = Color.FromArgb(0xC0, 0xFF, 0x88, 0x00);
-                                            else
-                                                c = Color.FromArgb(0xC0, 0xFF, 0x40, 0x40);
-                                        }
-
-                                        double lifeMs = (modeForUi == 1 || modeForUi == 6) ? 1200.0 : 350.0;
-                                        double lineScale = (modeForUi == 1 || modeForUi == 6) ? 1.0 : 0.8;
-                                        double baseThickness = Math.Max(1.0, (1.2 + Math.Min(2.0, survCopy / 60.0)) * scale * lineScale);
-
-                                        // Keep the number of live speculative elements bounded.
-                                        const int MAX_LIVE_SPEC_ELEMENTS = 240;
-                                        while (_speculativePolylines.Count > MAX_LIVE_SPEC_ELEMENTS)
-                                        {
-                                            var old = _speculativePolylines[0];
-                                            _speculativePolylines.RemoveAt(0);
-                                            try { CanvasHost.Children.Remove(old); } catch { }
-                                        }
-
-                                        var glow = new Shapes.Polyline()
-                                        {
-                                            Stroke = new SolidColorBrush(Color.FromArgb((byte)Math.Max(0x30, c.A / 2), c.R, c.G, c.B)),
-                                            StrokeThickness = baseThickness * 1.9,
-                                            IsHitTestVisible = false
-                                        };
-
-                                        var poly = new Shapes.Polyline()
-                                        {
-                                            Stroke = new SolidColorBrush(c),
-                                            StrokeThickness = baseThickness,
-                                            IsHitTestVisible = false
-                                        };
-                                        if (modeForUi == 1 || modeForUi == 6)
-                                            poly.StrokeDashArray = isHoldCopy ? new DoubleCollection(new[] { 3.0, 2.0 }) : new DoubleCollection(new[] { 1.0, 2.0 });
-
-                                        double lastDx = 0, lastDy = 0;
-                                        foreach (var p in pathSnapshot)
-                                        {
-                                            double dx = pad + p.x * scale;
-                                            double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
-                                            lastDx = dx; lastDy = dy;
-                                            glow.Points.Add(new System.Windows.Point(dx, dy));
-                                            poly.Points.Add(new System.Windows.Point(dx, dy));
-                                        }
-                                        var endMarker = new Shapes.Ellipse()
-                                        {
-                                            Width = Math.Max(2.0, 3.0 * scale),
-                                            Height = Math.Max(2.0, 3.0 * scale),
-                                            Fill = new SolidColorBrush(c),
-                                            Stroke = new SolidColorBrush(Color.FromArgb(0xD0, 0xFF, 0xFF, 0xFF)),
-                                            StrokeThickness = Math.Max(0.5, 0.8 * scale),
-                                            IsHitTestVisible = false
-                                        };
-                                        Canvas.SetLeft(endMarker, lastDx - endMarker.Width / 2.0);
-                                        Canvas.SetTop(endMarker, lastDy - endMarker.Height / 2.0);
-
-                                        Canvas.SetZIndex(glow, 2098);
-                                        Canvas.SetZIndex(poly, 2100); // above committed paths
-                                        Canvas.SetZIndex(endMarker, 2101);
-                                        CanvasHost.Children.Add(glow);
-                                        CanvasHost.Children.Add(poly);
-                                        CanvasHost.Children.Add(endMarker);
-                                        _speculativePolylines.Add(glow);
-                                        _speculativePolylines.Add(poly);
-                                        _speculativePolylines.Add(endMarker);
-
-                                        // Remove temporary speculative visuals after a short lifetime.
-                                        var removeTimer = new System.Windows.Threading.DispatcherTimer();
-                                        removeTimer.Interval = TimeSpan.FromMilliseconds(lifeMs);
-                                        var glowRef = glow;
-                                        var polyRef = poly;
-                                        var markerRef = endMarker;
-                                        removeTimer.Tick += (s, ev) =>
-                                        {
-                                            removeTimer.Stop();
-                                            try
-                                            {
-                                                CanvasHost?.Children.Remove(glowRef);
-                                                CanvasHost?.Children.Remove(polyRef);
-                                                CanvasHost?.Children.Remove(markerRef);
-                                                _speculativePolylines.Remove(glowRef);
-                                                _speculativePolylines.Remove(polyRef);
-                                                _speculativePolylines.Remove(markerRef);
-                                            }
-                                            catch { }
-                                        };
-                                        removeTimer.Start();
+                                        _speculativePathData.Add(pathSnapshot);
+                                        _specDataCount++;
                                     }
-                                    catch { }
-                                }));
-                            }
-                        };
+                                }
+
+                                // Live rendering (only if toggle is on)
+                                if (showPathfinderLive)
+                                {
+                                    int modeCopy = engine.CurrentSpeculativeVizMode;
+                                    bool shipOrWave = (modeCopy == 1 || modeCopy == 6);
+
+                                    // Reset counter every 16ms window
+                                    if (_lastSpecUpdate.ElapsedMilliseconds >= 16)
+                                    {
+                                        _lastSpecUpdate.Restart();
+                                        _specPathsInWindow = 0;
+                                    }
+                                    int maxPerWindow = shipOrWave ? 10 : 3;
+                                    if (path != null && _specPathsInWindow >= maxPerWindow)
+                                        return;
+                                    _specPathsInWindow++;
+
+                                    int survCopy = survival;
+                                    bool isHoldCopy = isHold;
+                                    int modeForUi = modeCopy;
+
+                                    Dispatcher.BeginInvoke(new Action(() =>
+                                    {
+                                        try
+                                        {
+                                            // Skip rendering if Run() already completed —
+                                            // this dispatch was queued before completion
+                                            if (_specCancelled) return;
+                                            if (CanvasHost == null) return;
+
+                                            if (pathSnapshot == null || pathSnapshot.Count == 0) return;
+
+                                            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                                            double pad = mapViewportPadding;
+
+                                            // Mode-aware styling for denser decision showcase.
+                                            // Ship/Wave use distinct hold/release palettes so
+                                            // decision-making is visible at a glance.
+                                            Color c;
+                                            if (modeForUi == 1) // ship
+                                            {
+                                                c = isHoldCopy
+                                                    ? Color.FromArgb(0xD0, 0x00, 0xD7, 0xC8)
+                                                    : Color.FromArgb(0xD0, 0xFF, 0xB0, 0x3A);
+                                            }
+                                            else if (modeForUi == 6) // wave
+                                            {
+                                                c = isHoldCopy
+                                                    ? Color.FromArgb(0xD0, 0x5A, 0x9D, 0xFF)
+                                                    : Color.FromArgb(0xD0, 0xA8, 0xE6, 0x3C);
+                                            }
+                                            else
+                                            {
+                                                if (survCopy >= 90)
+                                                    c = Color.FromArgb(0xC0, 0x00, 0xFF, 0x00);
+                                                else if (isHoldCopy)
+                                                    c = Color.FromArgb(0xC0, 0xFF, 0x88, 0x00);
+                                                else
+                                                    c = Color.FromArgb(0xC0, 0xFF, 0x40, 0x40);
+                                            }
+
+                                            double lifeMs = (modeForUi == 1 || modeForUi == 6) ? 1200.0 : 350.0;
+                                            double lineScale = (modeForUi == 1 || modeForUi == 6) ? 1.0 : 0.8;
+                                            double baseThickness = Math.Max(1.0, (1.2 + Math.Min(2.0, survCopy / 60.0)) * scale * lineScale);
+
+                                            // Keep the number of live speculative elements bounded.
+                                            const int MAX_LIVE_SPEC_ELEMENTS = 240;
+                                            while (_speculativePolylines.Count > MAX_LIVE_SPEC_ELEMENTS)
+                                            {
+                                                var old = _speculativePolylines[0];
+                                                _speculativePolylines.RemoveAt(0);
+                                                try { CanvasHost.Children.Remove(old); } catch { }
+                                            }
+
+                                            var glow = new Shapes.Polyline()
+                                            {
+                                                Stroke = new SolidColorBrush(Color.FromArgb((byte)Math.Max(0x30, c.A / 2), c.R, c.G, c.B)),
+                                                StrokeThickness = baseThickness * 1.9,
+                                                IsHitTestVisible = false
+                                            };
+
+                                            var poly = new Shapes.Polyline()
+                                            {
+                                                Stroke = new SolidColorBrush(c),
+                                                StrokeThickness = baseThickness,
+                                                IsHitTestVisible = false
+                                            };
+                                            if (modeForUi == 1 || modeForUi == 6)
+                                                poly.StrokeDashArray = isHoldCopy ? new DoubleCollection(new[] { 3.0, 2.0 }) : new DoubleCollection(new[] { 1.0, 2.0 });
+
+                                            double lastDx = 0, lastDy = 0;
+                                            foreach (var p in pathSnapshot)
+                                            {
+                                                double dx = pad + p.x * scale;
+                                                double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
+                                                lastDx = dx; lastDy = dy;
+                                                glow.Points.Add(new System.Windows.Point(dx, dy));
+                                                poly.Points.Add(new System.Windows.Point(dx, dy));
+                                            }
+                                            var endMarker = new Shapes.Ellipse()
+                                            {
+                                                Width = Math.Max(2.0, 3.0 * scale),
+                                                Height = Math.Max(2.0, 3.0 * scale),
+                                                Fill = new SolidColorBrush(c),
+                                                Stroke = new SolidColorBrush(Color.FromArgb(0xD0, 0xFF, 0xFF, 0xFF)),
+                                                StrokeThickness = Math.Max(0.5, 0.8 * scale),
+                                                IsHitTestVisible = false
+                                            };
+                                            Canvas.SetLeft(endMarker, lastDx - endMarker.Width / 2.0);
+                                            Canvas.SetTop(endMarker, lastDy - endMarker.Height / 2.0);
+
+                                            Canvas.SetZIndex(glow, 2098);
+                                            Canvas.SetZIndex(poly, 2100); // above committed paths
+                                            Canvas.SetZIndex(endMarker, 2101);
+                                            CanvasHost.Children.Add(glow);
+                                            CanvasHost.Children.Add(poly);
+                                            CanvasHost.Children.Add(endMarker);
+                                            _speculativePolylines.Add(glow);
+                                            _speculativePolylines.Add(poly);
+                                            _speculativePolylines.Add(endMarker);
+
+                                            // Remove temporary speculative visuals after a short lifetime.
+                                            var removeTimer = new System.Windows.Threading.DispatcherTimer();
+                                            removeTimer.Interval = TimeSpan.FromMilliseconds(lifeMs);
+                                            var glowRef = glow;
+                                            var polyRef = poly;
+                                            var markerRef = endMarker;
+                                            removeTimer.Tick += (s, ev) =>
+                                            {
+                                                removeTimer.Stop();
+                                                try
+                                                {
+                                                    CanvasHost?.Children.Remove(glowRef);
+                                                    CanvasHost?.Children.Remove(polyRef);
+                                                    CanvasHost?.Children.Remove(markerRef);
+                                                    _speculativePolylines.Remove(glowRef);
+                                                    _speculativePolylines.Remove(polyRef);
+                                                    _speculativePolylines.Remove(markerRef);
+                                                }
+                                                catch { }
+                                            };
+                                            removeTimer.Start();
+                                        }
+                                        catch { }
+                                    }));
+                                }
+                            };
+                        }
+                        else
+                        {
+                            engine.OnSpeculativePath = null;
+                        }
 
                         engine.Run(startX_px, startY_px, startSpeedUiIndex, startGameMode,
                                    false, false);
@@ -22143,6 +22269,7 @@ namespace FamidashEditor
             // paths — ready for manual load in Mesen or the Replay button.
             try
             {
+                RefreshMesenLogStamp();
                 System.IO.File.WriteAllText(this.OverlayLuaPath, BuildOverlayLuaScript(includeReplay: true, drawPathlines: true));
                 System.IO.File.WriteAllText(this.OverlayLuaNoPathlinesPath, BuildOverlayLuaScript(includeReplay: true, drawPathlines: false));
             }
@@ -22306,7 +22433,10 @@ namespace FamidashEditor
                                                 int x = xy[0].GetInt32();
                                                 int y = xy[1].GetInt32();
                                                 int key = y * mapWidth + x;
-                                                spritePixelOffsets[key] = (ox, oy);
+                                                if (spritePixelOffsets.TryGetValue(key, out var prev))
+                                                    spritePixelOffsets[key] = (prev.offsetX + ox, prev.offsetY + oy);
+                                                else
+                                                    spritePixelOffsets[key] = (ox, oy);
                                             }
                                         }
                                     }
@@ -22318,7 +22448,10 @@ namespace FamidashEditor
                                             int x = coordArray[0].GetInt32();
                                             int y = coordArray[1].GetInt32();
                                             int key = y * mapWidth + x;
-                                            spritePixelOffsets[key] = (ox, oy);
+                                            if (spritePixelOffsets.TryGetValue(key, out var prev))
+                                                spritePixelOffsets[key] = (prev.offsetX + ox, prev.offsetY + oy);
+                                            else
+                                                spritePixelOffsets[key] = (ox, oy);
                                         }
                                     }
                                 }
@@ -22784,36 +22917,17 @@ namespace FamidashEditor
             }
         }
 
-        private async void LoadButton_Click(object sender, RoutedEventArgs e)
+        private void LoadButton_Click(object sender, RoutedEventArgs e)
         {
-            // Prompt to save if there are unsaved changes
-            if (hasUnsavedChanges)
-            {
-                var result = MessageBox.Show(
-                    "You have unsaved changes. Do you want to save before loading?",
-                    "Unsaved Changes",
-                    MessageBoxButton.YesNoCancel,
-                    MessageBoxImage.Question);
-                
-                if (result == MessageBoxResult.Yes)
-                {
-                    SaveButton_Click(sender, e);
-                    // If user cancelled the save dialog, abort the load
-                    if (hasUnsavedChanges) return;
-                }
-                else if (result == MessageBoxResult.Cancel)
-                {
-                    return; // User cancelled the load operation
-                }
-                // If No, continue with load without saving
-            }
-            
             var dlg = new OpenFileDialog { Filter = "Tiled Map (TMX)|*.tmx|JSON level|*.json|All files|*.*" };
             if (dlg.ShowDialog(this) == true)
             {
                 // Reset zoom to 1.0x before loading to improve performance
                 if (ZoomSlider != null) ZoomSlider.Value = 1.0;
-                
+                LoadTMXFile(dlg.FileName);
+                return;
+
+#if false
                 LoadingWindow? loadingWindow = null;
                 try
                 {
@@ -23164,6 +23278,7 @@ namespace FamidashEditor
                         loadingWindow.Close();
                     }
                 }
+#endif
             }
         }
 

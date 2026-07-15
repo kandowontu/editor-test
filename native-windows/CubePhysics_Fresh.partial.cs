@@ -427,7 +427,10 @@ namespace FamidashEditor
                 currplayer_was_on_slope_counter, currplayer_slope_frames,
                 currplayer_slope_type, make_cube_jump_higher,
                 currplayer_last_slope_type,
-                cameraY_fixed);
+                cameraY_fixed,
+                updateSlopeCounters: false,
+                hBlocked: hblocked,
+                fBlocked: fblocked);
 
             playerY_fixed = r.NewY_fixed;
             playerVelY_fixed = r.NewVelY_fixed;
@@ -438,6 +441,14 @@ namespace FamidashEditor
             currplayer_was_on_slope_counter = r.SlopeWasOnCounter;
             make_cube_jump_higher = r.SlopeJumpHigher;
             currplayer_last_slope_type = r.LastSlopeType;
+            currplayer_gravity = r.NewGravFlipped ? (byte)0xFF : (byte)0;
+            gravityFlipped = r.NewGravFlipped;
+            gravityReversed = r.NewGravFlipped;
+            currplayer_table_idx = (r.NewGravFlipped ? 1 : 0) | (mini ? 4 : 0);
+            if (r.EjectUWritten)
+                eject_U = (sbyte)r.EjectU;
+            if (r.EjectDWritten)
+                eject_D = r.EjectD;
 
             if (r.Died && !MainWindow.Option_NoDeath)
             {
@@ -463,77 +474,8 @@ namespace FamidashEditor
                 return;
             }
 
-            // NES cube_eject() hblocked/fblocked handling (gamemode_cube.h lines 201-237).
-            // SharedPhysics.CubeEject already handled the primary direction (floor for
-            // normal grav, ceiling for reversed grav) and sets vel=0, WasZeroed=true.
-            // With the hblocked fix, primary-direction hblocked also produces vel=0
-            // (gravity ? 0xFFFF : 0 for floor, !gravity ? 1 : 0 for ceiling), so
-            // SharedPhysics.CubeEject's vel=0 is already correct — no override needed.
-            //
-            // When hblocked||fblocked, the NES code ALSO checks the opposite direction.
-            // Opposite-direction eject:
-            //   bg_coll_U guard: vel < 0  |  bg_coll_D guard: vel >= 0
-            //   hblocked → velocity = 1 (ceiling) or 0xFFFF (floor) instead of 0
-            //   fblocked → flip gravity
-            if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 11) && (hblocked || fblocked))
-            {
-                int hitboxW = SharedPhysics.GetCubeHitboxW(mini);
-                int hitboxH = SharedPhysics.GetCubeHitboxH(mini);
-                int hitboxOffsetY = SharedPhysics.GetHitboxOffsetY(currentGameMode, mini, gravFlipped);
-
-                // Opposite-direction eject (NES secondary bg_coll_U / bg_coll_D).
-                int collisionX = playerX_fixed >> 8;
-                if (!gravFlipped)
-                {
-                    // Normal grav → opposite = ceiling (bg_coll_U).  Guard: vel < 0.
-                    if ((short)(playerVelY_fixed & 0xFFFF) < 0)
-                    {
-                        int collisionY = (playerY_fixed >> 8) + hitboxOffsetY;
-                        var (topCollided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
-                        if (topCollided)
-                        {
-                            int newY = collisionBottomY - hitboxOffsetY;
-                            AppendSimDebug($"[CUBE]     H/F_BLOCK ceiling eject: Y {playerY_fixed >> 8} -> {newY}, velY -> {(hblocked ? "1" : "0")}");
-                            playerY_fixed = newY << 8;
-                            playerVelY_fixed = hblocked ? 1 : 0;
-                            if (!hblocked) onGround = true;
-                            orbed[currplayer] = false; // NES: orbactive = 0
-                            if (fblocked)
-                            {
-                                currplayer_gravity = 0xFF;
-                                gravityFlipped = true;
-                                gravityReversed = true;
-                                currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    // Reversed grav → opposite = floor (bg_coll_D).  Guard: vel >= 0.
-                    if ((short)(playerVelY_fixed & 0xFFFF) >= 0)
-                    {
-                        int collisionY = (playerY_fixed >> 8) + hitboxOffsetY;
-                        var (bottomCollided, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
-                        if (bottomCollided)
-                        {
-                            int newY = collisionTopY - hitboxH - hitboxOffsetY;
-                            AppendSimDebug($"[CUBE]     H/F_BLOCK floor eject: Y {playerY_fixed >> 8} -> {newY}, velY -> {(hblocked ? "-1" : "0")}");
-                            playerY_fixed = newY << 8;
-                            playerVelY_fixed = hblocked ? -1 : 0;  // NES 0xFFFF = -1 signed 16-bit
-                            if (!hblocked) onGround = true;
-                            orbed[currplayer] = false; // NES: orbactive = 0
-                            if (fblocked)
-                            {
-                                currplayer_gravity = 0;
-                                gravityFlipped = false;
-                                gravityReversed = false;
-                                currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
-                            }
-                        }
-                    }
-                }
-            }
+            // H/F-block dual-direction ejection, including slopes and F-block
+            // gravity changes, is performed by SharedPhysics.CubeEject above.
         }
         
         /// <summary>

@@ -129,7 +129,8 @@ if (currplayer_mini != 0)
                 currplayer_was_on_slope_counter, currplayer_slope_frames,
                 currplayer_slope_type, make_cube_jump_higher,
                 currplayer_last_slope_type,
-                cameraY_fixed);
+                cameraY_fixed,
+                updateSlopeCounters: false);
 
             playerY_fixed = r.NewY_fixed;
             playerVelY_fixed = r.NewVelY_fixed;

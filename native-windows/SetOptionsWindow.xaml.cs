@@ -1073,24 +1073,17 @@ namespace FamidashEditor
                     catch { }
                 }
 
-                // Load max fall speed from metadata if present; metadata values will be numeric (hex converted to decimal by ConvertJson5ToJson)
-                if (levelData.maxFallSpeed.HasValue)
+                // Current source metadata stores this as a flag, not the legacy
+                // numeric maxFallSpeed value: exactly 1 selects 0x07; zero,
+                // another value, or an absent property selects the 0x06 default.
+                // Writers intentionally continue emitting the legacy format for
+                // the ROM build/test pipeline until that pipeline is migrated.
+                try
                 {
-                    try
-                    {
-                        int mf = levelData.maxFallSpeed.Value;
-                        // Only accept 6 or 7; otherwise default to 6
-                        if (mf != 6 && mf != 7) mf = 6;
-                        mainWindow.LoadedMaxFallSpeed = mf;
-                        dataChanged = true;
-                    }
-                    catch { mainWindow.LoadedMaxFallSpeed = 0x06; }
+                    mainWindow.LoadedMaxFallSpeed = levelData.maxFallSpeed_is_7 == 1 ? 0x07 : 0x06;
+                    dataChanged = true;
                 }
-                else
-                {
-                    // If absent in metadata, default to 0x06
-                    try { mainWindow.LoadedMaxFallSpeed = 0x06; } catch { }
-                }
+                catch { mainWindow.LoadedMaxFallSpeed = 0x06; }
                 // Update the MaxFallSpeedCombo in the dialog immediately so the UI reflects the loaded value
                 try
                 {
@@ -1579,10 +1572,12 @@ namespace FamidashEditor
                 if (!string.IsNullOrEmpty(songId)) sb.AppendLine($"\t\t\tsongID: \"{songId}\",");
                 sb.AppendLine($"\t\t\tstartingGameMode: {startingGameMode},");
                 sb.AppendLine($"\t\t\tstartingSpeed: {startingSpeedJson},");
-                // Emit maxFallSpeed only when set to 0x07 (default 0x06 should be omitted)
-                if (maxFallSpeed != 6)
+                // Source/game metadata now uses a flag. Omission means the
+                // default 0x06; only 0x07 emits the enabled flag. The separate
+                // ROM build/test writer intentionally retains legacy maxFallSpeed.
+                if (maxFallSpeed == 7)
                 {
-                    sb.AppendLine($"\t\t\tmaxFallSpeed: 0x{maxFallSpeed:X2},");
+                    sb.AppendLine("\t\t\tmaxFallSpeed_is_7: 0x01,");
                 }
                 if (bgColor.HasValue) sb.AppendLine($"\t\t\tstartingBackgroundColor: 0x{bgColor.Value:X2},"); else sb.AppendLine($"\t\t\tstartingBackgroundColor: 0x12,");
                 if (groundColor.HasValue) sb.AppendLine($"\t\t\tstartingGroundColor: 0x{groundColor.Value:X2},"); else sb.AppendLine($"\t\t\tstartingGroundColor: 0x02,");
@@ -1860,8 +1855,10 @@ namespace FamidashEditor
             public int? startingGroundColor { get; set; }
             // Optional starting game mode metadata (numeric code, 0=cube..8=ninja)
             public int? startingGameMode { get; set; }
-            // Optional max fall speed (numeric); metadata may provide 6 or 7. If absent, default to 6.
+            // Legacy output field retained for ROM build/test JSON generation.
             public int? maxFallSpeed { get; set; }
+            // Current source metadata input flag. 1 => 0x07; absent/other => 0x06.
+            public int? maxFallSpeed_is_7 { get; set; }
             // Optional custom Y position metadata (hex in JSON5 converted to decimal)
             public int? spawnYPositionHi { get; set; }
             public int? spawnYPositionLow { get; set; }

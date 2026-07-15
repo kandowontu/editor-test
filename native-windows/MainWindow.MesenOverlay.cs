@@ -149,16 +149,15 @@ namespace FamidashEditor
         // -----------------------------------------------------------------------
         internal void StartMesenOverlay(Process proc)
         {
-            RefreshMesenLogStamp();
-
-            // Empty the per-run trace/debug logs so each timestamped snapshot
-            // captures only the current run's data (no carry-over from a
-            // previous Mesen session).  The overlay Lua appends to these files.
-            foreach (string f in new[] { MesenTraceFile, MesenOrbDebugFile, MesenPhysicsDebugFile })
-            {
-                try { if (!string.IsNullOrEmpty(f)) File.WriteAllText(f, string.Empty); }
-                catch { /* ignore — file might be locked or path unwritable */ }
-            }
+            // Do not refresh the log stamp here. BuildOverlayLuaScript() bakes
+            // the current stamp into the Lua file names before Mesen launches;
+            // changing it after script generation makes C# point at a new empty
+            // triplet while Lua writes the previous valid triplet.
+            //
+            // Also do not pre-create/truncate the log files here. The Lua script
+            // opens them lazily on the first real gameplay arm and writes headers
+            // immediately, which prevents stray 0-byte sets when Mesen starts,
+            // reloads, or exits without gameplay.
 
             _mesenOverlayProcess = proc;
             _mesenHwnd           = 0;
@@ -196,6 +195,9 @@ namespace FamidashEditor
         internal void StopMesenOverlay()
         {
             string scrollFile = ScrollTempFile; // capture before state is torn down
+            string traceFile = MesenTraceFile;
+            string orbDebugFile = MesenOrbDebugFile;
+            string physicsDebugFile = MesenPhysicsDebugFile;
             try { _overlayReadCts?.Cancel(); } catch { }
             _overlayReadCts      = null;
             _overlayReadTask     = null;
@@ -235,7 +237,22 @@ namespace FamidashEditor
             // Mesen has exited.  Parse the per-frame trace CSV and show the
             // actual NES path on the editor canvas — magenta polyline above
             // the pathfinder bias-colored paths so divergences pop visually.
-            try { LoadAndShowMesenTracePath(MesenTraceFile); } catch { }
+            try { LoadAndShowMesenTracePath(traceFile); } catch { }
+            try { DeleteIfZeroByteFile(traceFile); } catch { }
+            try { DeleteIfZeroByteFile(orbDebugFile); } catch { }
+            try { DeleteIfZeroByteFile(physicsDebugFile); } catch { }
+        }
+
+        private static void DeleteIfZeroByteFile(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+            try
+            {
+                var fi = new FileInfo(path);
+                if (fi.Exists && fi.Length == 0)
+                    fi.Delete();
+            }
+            catch { }
         }
 
         protected override void OnClosing(CancelEventArgs e)
@@ -757,6 +774,33 @@ emu.addMemoryCallback(function(addr, value)
     end
 end, emu.callbackType.write, 0x007B)
 
+-- ── Watchpoint: activesprites_x_lo slot writes ─────────────────────────────
+-- Log every write to activesprites_x_lo[0..15] (0x4DB..0x4EA) to catch
+-- unexpected modifications (e.g. gravity portal worldX discrepancy).
+-- Mesen addMemoryCallback does not accept an address range as two args;
+-- register one callback per slot address.
+local function _xloWriteSnap(addr, value)
+    if orbDbgFp then
+        local st = emu.getState()
+        local pc = 0
+        local aReg = 0
+        local xReg = 0
+        if st then
+            pc = st[""cpu.pc""] or st[""cpu.PC""] or 0
+            aReg = st[""cpu.a""] or st[""cpu.A""] or 0
+            xReg = st[""cpu.x""] or st[""cpu.X""] or 0
+        end
+        local slot = addr - 0x4DB
+        orbDbgFp:write(string.format(
+            ""WRITE_XLO slot=%d addr=$%04X val=$%02X pc=$%04X A=$%02X X=$%02X cursor=%d\n"",
+            slot, addr, value, pc, aReg, xReg, cursor))
+        orbDbgFp:flush()
+    end
+end
+for _sl = 0, 15 do
+    emu.addMemoryCallback(_xloWriteSnap, emu.callbackType.write, 0x4DB + _sl)
+end
+
 -- ── Physics-routine entry hooks ────────────────────────────────────────────
 -- For PF↔NES divergence diagnosis, capture full pre-call state at every
 -- entry to the major movement / eject / collision routines.  PCs come from
@@ -994,6 +1038,13 @@ emu.addEventCallback(function()
     local rawY = emu.read16(0x0441, emu.memType.nesMemory) or 0
     local px = scrollX + (rawX >> 8) + 8
     local py = scrollY + (rawY >> 8) + 8 - nesYOffset
+	-- player_x[0] is not committed until after some overloaded frames.  The
+	-- live currplayer coordinates already contain the completed physics tick
+	-- and therefore provide a stable replay clock through those frames.
+	local clockRawX = emu.read16(0x0068, emu.memType.nesMemory) or 0
+	local clockRawY = emu.read16(0x006A, emu.memType.nesMemory) or 0
+	local clockPx = scrollX + (clockRawX >> 8) + 8
+	local clockPy = scrollY + (clockRawY >> 8) + 8 - nesYOffset
 
     -- Detect level start / respawn: prev was 0/uninitialized, now in-game.
     if (prevPx <= 0 or px < prevPx - 16) and px > 0 then
@@ -1001,7 +1052,7 @@ emu.addEventCallback(function()
         armed = true
         frameIdx = 0
         replayClockStarted = false
-        replayClockPrevPx = px
+        replayClockPrevPx = clockPx
         -- Reset the actual-NES trail on respawn so old trails don't linger.
         nesTrail = {{}}
         nesTrailHead = 1
@@ -1014,7 +1065,7 @@ emu.addEventCallback(function()
             traceFp = io.open(traceFile, ""w"")
             if traceFp then
                 traceFp:write(""nes_y_offset,"" .. tostring(nesYOffset) .. ""\n"")
-                traceFp:write(""rom_frame,sim_cursor,px,py,a_next,a_cur,raw_x,raw_y,scrollx,scrolly,vel_y,table_idx,gravity_mod,dashing,gamemode,scroll_y_subpx,framerate,tgt_scroll_y,cp_y,scroll_y_raw,cube_data,death_pc,death_ctx,collmap_r8,mini,cp_gravity,nocamlock,nocamlockforced,min_scroll_y,dual\n"")
+                traceFp:write(""rom_frame,sim_cursor,px,py,a_next,a_cur,raw_x,raw_y,scrollx,scrolly,vel_y,table_idx,gravity_mod,dashing,gamemode,scroll_y_subpx,framerate,tgt_scroll_y,cp_y,scroll_y_raw,cube_data,death_pc,death_ctx,collmap_r8,mini,cp_gravity,nocamlock,nocamlockforced,min_scroll_y,dual,orbed,jblocked,hblocked,fblocked,ninjajumps\n"")
             end
         else
             traceFp:write(""# --- respawn ---\n"")
@@ -1058,19 +1109,34 @@ emu.addEventCallback(function()
     end
     prevPx = px
 
+	-- In single-player, trace/draw the live coordinate as well.  This avoids a
+	-- false one-frame backward spike while player_x[0] is awaiting its commit.
+	-- Dual keeps using player_x[0], since currplayer may be P2 at endFrame.
+	local dualClock = emu.read(0x0096, emu.memType.nesMemory) or 0
+	local samplePx = px
+	local samplePy = py
+	local sampleRawX = rawX
+	local sampleRawY = rawY
+	if armed and dualClock == 0 and clockRawX ~= 0 then
+		samplePx = clockPx
+		samplePy = clockPy
+		sampleRawX = clockRawX
+		sampleRawY = clockRawY
+	end
+
     -- Append current NES position to the actual-trail ring buffer.
     if armed then
         local holdBits = emu.read(ADDR_JOYPAD1_HOLD, emu.memType.nesMemory) or 0
         local heldNow = ((holdBits & (PAD_A | PAD_UP)) ~= 0)
-        nesTrail[nesTrailHead] = {{ x = px, y = py, a = heldNow and 1 or 0, ra = lastA and 1 or 0 }}
+        nesTrail[nesTrailHead] = {{ x = samplePx, y = samplePy, a = heldNow and 1 or 0, ra = lastA and 1 or 0 }}
         nesTrailHead = nesTrailHead + 1
         if nesTrailHead > nesTrailMax then nesTrailHead = 1 end
         if nesTrailCount < nesTrailMax then nesTrailCount = nesTrailCount + 1 end
     end
 
     if armed then
-        local plausiblePx = px >= 0 and px < 524288
-        local movedThisFrame = plausiblePx and replayClockPrevPx ~= nil and px ~= replayClockPrevPx
+		local plausiblePx = clockPx >= 0 and clockPx < 524288
+		local movedThisFrame = plausiblePx and replayClockPrevPx ~= nil and clockPx ~= replayClockPrevPx
 
         -- Pathfinder applies the NES intro-freeze pre-step before recording
         -- PathPoints[0].  Latch when NES first reaches that same initial X,
@@ -1079,14 +1145,14 @@ emu.addEventCallback(function()
         -- mismatch delay or accelerate the injected input stream.
         if not replayClockStarted then
             local firstEntry = replay[1]
-            if movedThisFrame and firstEntry and px >= firstEntry.x then
+			if movedThisFrame and firstEntry and clockPx >= firstEntry.x then
                 replayClockStarted = true
                 cursor = 1
             end
         elseif movedThisFrame and cursor < #replay then
             cursor = cursor + 1
         end
-        if plausiblePx then replayClockPrevPx = px end
+		if plausiblePx then replayClockPrevPx = clockPx end
 
         -- Frame alignment: PathPoints[cursor] is the post-physics position for
         -- sim frame `cursor`, produced by Inputs[cursor]. We've just observed
@@ -1132,6 +1198,11 @@ emu.addEventCallback(function()
             local nocamlockforced = emu.read(0x0496, emu.memType.nesMemory) or 0
             local min_scroll_y = emu.read16(0x0363, emu.memType.nesMemory) or 0
             local dual_v = emu.read(0x0096, emu.memType.nesMemory) or 0
+			local orbed_v = emu.read(0x0460, emu.memType.nesMemory) or 0
+			local jblocked_v = emu.read(0x0477, emu.memType.nesMemory) or 0
+			local hblocked_v = emu.read(0x0475, emu.memType.nesMemory) or 0
+			local fblocked_v = emu.read(0x0479, emu.memType.nesMemory) or 0
+			local ninjajumps_v = emu.read(0x047B, emu.memType.nesMemory) or 0
             -- Dump collMap row 8 of all 4 rooms (entries $80..$8F) where the
             -- ship-section spike-collision probes typically land at this scroll
             -- depth.  Format: ""r0:[hex16]|r1:[hex16]|r2:[hex16]|r3:[hex16]"".
@@ -1144,15 +1215,16 @@ emu.addEventCallback(function()
                     cm_str = cm_str .. string.format(""%02X"", emu.read(base + k, emu.memType.nesMemory) or 0)
                 end
             end
-            traceFp:write(string.format(""%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%s,%s,%d,%d,%d,%d,%d,%d\n"",
-                frameIdx, cursor, px, py, lastA and 1 or 0, curA and 1 or 0,
-                rawX, rawY, scrollX, scrollY,
+            traceFp:write(string.format(""%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%s,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n"",
+				frameIdx, cursor, samplePx, samplePy, lastA and 1 or 0, curA and 1 or 0,
+				sampleRawX, sampleRawY, scrollX, scrollY,
                 vel_y, table_idx, gravity_mod, dashing, gamemode, scroll_y_subpx,
                 framerate_v, tgt_scroll_y, cp_y, scroll_y_raw, cube_data0,
                 cubeDataDeathPC and string.format(""%04X"", cubeDataDeathPC) or """",
                 cubeDataDeathCtx or """",
                 cm_str, mini_flag, cp_gravity,
-                nocamlock, nocamlockforced, min_scroll_y, dual_v))
+                nocamlock, nocamlockforced, min_scroll_y, dual_v,
+				orbed_v, jblocked_v, hblocked_v, fblocked_v, ninjajumps_v))
             traceFp:flush()
             -- Reset sticky death PC after we've logged it once with cube_data=1.
             if cube_data0 == 0 then
@@ -1201,16 +1273,29 @@ emu.addEventCallback(function()
             local cp_tidx = rd8(0x79); local cp_cube = rd8(0x7B)
             local dash = rd8(0x4D4); local orbAct = rd8(0x4C6)
             local orbHit = rd8(0x451); local lastIdx = rd8(0x92)
-            local gm = rd8(0x7A)
+			local gm = rd8(0x7A)
+			local orbed = rd8(0x460); local jblock = rd8(0x477)
+			local hblock = rd8(0x475); local fblock = rd8(0x479)
+			local ninja = rd8(0x47B)
+			-- Log the controller bytes the ROM actually consumed as well as the
+			-- replay entries above.  The latter describe scheduling; they are not
+			-- proof of controllingplayer->hold/press inside movement().
+			local joyHold = rd8(0x22); local joyPress = rd8(0x23)
+			local controlling = rd8(0x25); local kandoHack = rd8(0x456)
+			local retro = rd8(0x7204)
 
-            orbDbgFp:write(string.format(
-                ""f=%d sim=%d ENTER mode=%d mini=%d grav=%d dash=%d orbAct=%d orbHit=%d lastSprIdx=%d "" ..
-                ""cpx=0x%04X cpy=0x%04X cpvy=%d cp_tidx=%d cube_data=0x%02X "" ..
-                ""Generic=(%d,%d,%dx%d) Generic2=(%d,%d,%dx%d) press=%d held=%d\n"",
-                frameIdx, cursor, gm, cp_mini, cp_grav, dash, orbAct, orbHit, lastIdx,
-                cpx, cpy, cpvy, cp_tidx, cp_cube,
-                g_x, g_y, g_w, g_h, g2_x, g2_y, g2_w, g2_h,
-                lastA and 1 or 0, curA and 1 or 0))
+			orbDbgFp:write(string.format(
+				""f=%d sim=%d ENTER mode=%d mini=%d grav=%d dash=%d orbAct=%d orbHit=%d lastSprIdx=%d "" ..
+				""cpx=0x%04X cpy=0x%04X cpvy=%d cp_tidx=%d cube_data=0x%02X "" ..
+				""Generic=(%d,%d,%dx%d) Generic2=(%d,%d,%dx%d) press=%d held=%d "" ..
+				""joyHold=0x%02X joyPress=0x%02X controlling=0x%02X kando=%d retro=%d "" ..
+				""orbed=%d j=%d h=%d f=%d ninja=%d\n"",
+				frameIdx, cursor, gm, cp_mini, cp_grav, dash, orbAct, orbHit, lastIdx,
+				cpx, cpy, cpvy, cp_tidx, cp_cube,
+				g_x, g_y, g_w, g_h, g2_x, g2_y, g2_w, g2_h,
+				lastA and 1 or 0, curA and 1 or 0,
+				joyHold, joyPress, controlling, kandoHack, retro,
+				orbed, jblock, hblock, fblock, ninja))
 
             -- Walk all 16 active-sprite slots.  Layout (from famidash.dbg,
             -- expanded by lohi_arr16_decl in arr_macros.h):

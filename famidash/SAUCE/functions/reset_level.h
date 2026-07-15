@@ -108,6 +108,8 @@ void reset_level() {
 	currplayer_last_slope_type = SLOPE_NONE;
 	curr_practice_point = latest_practice_point;
 
+	target_scroll_y = spawn_y_pos;
+
 	#if __VS_SYSTEM
 	if (!coins_inserted) return;
 	#endif
