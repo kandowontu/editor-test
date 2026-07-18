@@ -21774,6 +21774,8 @@ namespace FamidashEditor
                 int startY_px;
                 int groundRowsToReserve = (groundBitmap != null && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                 bool hasGround = (groundBitmap != null && groundTileRows > 0);
+                (int effectiveScrollYHi, int effectiveScrollYLo) = SharedPhysics.ResolveNesInitialScroll(
+                    loadedScrollYPositionHi, loadedScrollYPositionLow);
 
                 if (startPosMarkerX.HasValue && startPosMarkerY.HasValue)
                 {
@@ -21788,9 +21790,7 @@ namespace FamidashEditor
                     // Defaults match LEVELS/export_levels.py: spawnHi=0xB0 scrollHi=0x02 scrollLo=0xEF.
                     int nesYOffset = (57 - mapHeight + groundRowsToReserve) * 16;
                     int nesSpawnHi = (loadedSpawnYPositionHi ?? 0xB0) & 0xFF;
-                    int nesScrollHi = (loadedScrollYPositionHi ?? 0x02) & 0xFF;
-                    int nesScrollLo = (loadedScrollYPositionLow ?? 0xEF) & 0xFF;
-                    int nesScrollLinear = nesScrollHi * 240 + nesScrollLo;
+                    int nesScrollLinear = effectiveScrollYHi * 240 + effectiveScrollYLo;
                     startY_px = nesSpawnHi + nesScrollLinear - nesYOffset;
                     int maxY = Math.Max(0, (mapHeight * 16 - 16));
                     if (startY_px < 0) startY_px = 0;
@@ -21835,8 +21835,8 @@ namespace FamidashEditor
                         engine.PreferCoins = preferCoins;
                         engine.UseBFS = preferCoins; // BFS always runs first; UseBFS=true prevents heuristic fallback
                         engine.Progress = progress;
-                        engine.ConfigScrollYHi = loadedScrollYPositionHi;
-                        engine.ConfigScrollYLo = loadedScrollYPositionLow;
+                        engine.ConfigScrollYHi = effectiveScrollYHi;
+                        engine.ConfigScrollYLo = effectiveScrollYLo;
                         engine.ConfigSpawnYLo = loadedSpawnYPositionLow;
                         engine.UseNesSpawnScrollDefaults = !(startPosMarkerX.HasValue && startPosMarkerY.HasValue);
                         _activePathfinderEngine = engine;

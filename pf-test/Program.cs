@@ -18,7 +18,8 @@ using FamidashEditor;
 // Parse --coins flag (can appear anywhere in args)
 bool preferCoins = args.Any(a => a.Equals("--coins", StringComparison.OrdinalIgnoreCase));
 bool useBfs = args.Any(a => a.Equals("--bfs", StringComparison.OrdinalIgnoreCase));
-bool useProbe = args.Any(a => a.Equals("--probe", StringComparison.OrdinalIgnoreCase));
+string? probeArg = args.FirstOrDefault(a => a.StartsWith("--probe", StringComparison.OrdinalIgnoreCase));
+bool useProbe = probeArg != null;
 string? tasInputFile = null;
 int tasPreRollFrames = 60; // default: TAS starts at 1 second (60 frames) into gameplay
 foreach (var a in args)
@@ -35,10 +36,18 @@ if (!verbose)
 // Filter out named flags before positional parsing
 var positionalArgs = args.Where(a => !a.StartsWith("--") && !a.Equals("-v", StringComparison.OrdinalIgnoreCase)).ToArray();
 int? cliStartMode = null;
+int? cliSpawnYLo = null;
 foreach (var a in args)
 {
     if (a.StartsWith("--mode=", StringComparison.OrdinalIgnoreCase))
         cliStartMode = int.Parse(a.Substring(7));
+    else if (a.StartsWith("--spawn-y-lo=", StringComparison.OrdinalIgnoreCase))
+    {
+        string value = a.Substring(13);
+        cliSpawnYLo = value.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+            ? Convert.ToInt32(value.Substring(2), 16)
+            : int.Parse(value);
+    }
 }
 
 string tmxPath = positionalArgs.Length > 0 ? positionalArgs[0] : @"..\famidash\LEVELS\LEVEL DATA\lvlset_HUGE\everyend.tmx";
@@ -120,6 +129,15 @@ if (useProbe)
     Console.WriteLine($"groundRows={groundRows} hasGround={level.HasGroundLayer}");
     var map = new SharedPhysics.CollisionMap(tiles, mapWidth, mapH, groundRows);
     int playerX = 29832, playerY = 519;
+    if (probeArg != null && probeArg.StartsWith("--probe=", StringComparison.OrdinalIgnoreCase))
+    {
+        string[] probeParts = probeArg.Substring(8).Split(',');
+        if (probeParts.Length == 2)
+        {
+            playerX = int.Parse(probeParts[0]);
+            playerY = int.Parse(probeParts[1]);
+        }
+    }
     int rowBottomY = playerY + 15 - 2;
     int rowTopY = playerY + 2;
     int leftX = playerX + 3;
@@ -145,9 +163,6 @@ if (useProbe)
     Probe("TR", rightX, rowTopY);
     bool fs = SharedPhysics.CheckFloorSpikes(map, playerX, playerY, 15, 15, false, out int dx, out int dy);
     Console.WriteLine($"CheckFloorSpikes: {fs} at ({dx},{dy})");
-    Console.WriteLine("\nDirect tiles[r*W+col] for rows 32-38:");
-    for (int r = 32; r <= 38; r++)
-        Console.WriteLine($"  r={r}: 1864={tiles[r*mapWidth+1864]}, 1865={tiles[r*mapWidth+1865]}, 1866={tiles[r*mapWidth+1866]}");
     return 0;
 }
 var spriteAnchors = new Dictionary<int, (int, int)>();
@@ -203,9 +218,24 @@ if (File.Exists(cfgPath))
         // Load MaxFallSpeed from config if present (overrides metadata)
         if (root.TryGetProperty("MaxFallSpeed", out var mfsProp) && mfsProp.ValueKind == JsonValueKind.Number)
             maxFallSpeed = mfsProp.GetInt32();
-        // Load StartSpeed from config if present (overrides metadata)
-        if (root.TryGetProperty("StartSpeed", out var ssProp) && ssProp.ValueKind == JsonValueKind.Number)
-            startSpeedUiIndex = ssProp.GetInt32();
+        // Match the editor's per-level startup settings. These must override
+        // metadata too; otherwise the standalone runner can report a pass while
+        // the editor starts from a different spawn/camera state.
+        if (root.TryGetProperty("StartingSpeed", out var ssProp) && ssProp.ValueKind == JsonValueKind.Number)
+        {
+            int metadataSpeed = ssProp.GetInt32();
+            startSpeedUiIndex = metadataSpeed == 1 ? 0 : metadataSpeed == 0 ? 1 : metadataSpeed;
+        }
+        if (root.TryGetProperty("StartingGameMode", out var gmProp) && gmProp.ValueKind == JsonValueKind.Number)
+            startGameMode = gmProp.GetInt32();
+        if (root.TryGetProperty("SpawnYPositionHi", out var spawnHiProp) && spawnHiProp.ValueKind == JsonValueKind.Number)
+            metaSpawnYHi = spawnHiProp.GetInt32();
+        if (root.TryGetProperty("SpawnYPositionLow", out var spawnLoProp) && spawnLoProp.ValueKind == JsonValueKind.Number)
+            metaSpawnYLo = spawnLoProp.GetInt32();
+        if (root.TryGetProperty("ScrollYPositionHi", out var scrollHiProp) && scrollHiProp.ValueKind == JsonValueKind.Number)
+            metaScrollYHi = scrollHiProp.GetInt32();
+        if (root.TryGetProperty("ScrollYPositionLow", out var scrollLoProp) && scrollLoProp.ValueKind == JsonValueKind.Number)
+            metaScrollYLo = scrollLoProp.GetInt32();
 
         Console.WriteLine($"Config: {cfgPath} ({spritePixelOffsets.Count} offsets, {spriteAnchors.Count} anchors)");
     }
@@ -266,8 +296,7 @@ int groundTileRows = 3;
 int groundRowsToReserve = (hasGround && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
 int nesYOffset = (57 - level.Height + groundRowsToReserve) * 16;
 int nesSpawnHi = (metaSpawnYHi ?? 0xB0) & 0xFF;
-int nesScrollHi = (metaScrollYHi ?? 0x02) & 0xFF;
-int nesScrollLo = (metaScrollYLo ?? 0xEF) & 0xFF;
+(int nesScrollHi, int nesScrollLo) = SharedPhysics.ResolveNesInitialScroll(metaScrollYHi, metaScrollYLo);
 int nesScrollLinear = nesScrollHi * 240 + nesScrollLo;
 int startX_px = 0;
 int startY_px = nesSpawnHi + nesScrollLinear - nesYOffset;
@@ -297,6 +326,10 @@ engine.JumpTimingBias = jumpTimingBias;
 engine.PreferCoins = preferCoins;
 engine.UseBFS = useBfs || preferCoins; // Editor: UseBFS = preferCoins (BFS collects all coins in a single pass)
 engine.Verbose = verbose;
+engine.ConfigScrollYHi = metaScrollYHi;
+engine.ConfigScrollYLo = metaScrollYLo;
+engine.ConfigSpawnYLo = cliSpawnYLo ?? metaSpawnYLo;
+engine.UseNesSpawnScrollDefaults = true;
 
 if (preferCoins)
     Console.WriteLine("Coin collection mode ENABLED");
@@ -347,8 +380,8 @@ if (tasInputFile != null)
 TextWriter? originalErr = null;
 if (!verbose)
 {
-    originalErr = Console.Error;
-    Console.SetError(TextWriter.Null);
+	originalErr = Console.Error;
+	Console.SetError(TextWriter.Null);
 }
 
 engine.Run(startX_px, startY_px, startSpeedUiIndex, startGameMode, false, false);

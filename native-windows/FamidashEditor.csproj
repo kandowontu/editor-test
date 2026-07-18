@@ -11,6 +11,11 @@
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- Pathfinder BFS is allocation-heavy and already parallel. Server GC
+         lets its independent heaps collect concurrently without changing any
+         simulation or path-selection behavior. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <!-- Disable ReadyToRun for faster publish times - single-file exe is already optimized -->
     <PublishReadyToRun>false</PublishReadyToRun>
     <!-- Exclude unnecessary satellite assemblies to reduce size -->

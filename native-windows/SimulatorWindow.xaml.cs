@@ -1440,8 +1440,7 @@ namespace FamidashEditor
             // Match NES exactly: PF_top_px = nesSpawnHi + nesScrollLinear - nesYOffset.
             // Use NES default scroll (0x02EF -> linear 719) when not provided, matching
             // export_levels.py defaults.
-            int nesScrollHi = (configScrollYHi ?? 0x02) & 0xFF;
-            int nesScrollLo = (configScrollYLo ?? 0xEF) & 0xFF;
+            (int nesScrollHi, int nesScrollLo) = SharedPhysics.ResolveNesInitialScroll(configScrollYHi, configScrollYLo);
             int nesScrollLinear = nesScrollHi * 240 + nesScrollLo;
             int gRTR = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
             int nesYOffset = (57 - mapHeight + gRTR) * 16;
@@ -1457,8 +1456,7 @@ namespace FamidashEditor
             if (!configSpawnYHi.HasValue && !configSpawnYLo.HasValue &&
                 !configScrollYHi.HasValue && !configScrollYLo.HasValue)
                 return null;
-            int hi = (configScrollYHi.HasValue ? configScrollYHi.Value : 0x02) & 0xFF;
-            int lo = (configScrollYLo.HasValue ? configScrollYLo.Value : 0xEF) & 0xFF;
+            (int hi, int lo) = SharedPhysics.ResolveNesInitialScroll(configScrollYHi, configScrollYLo);
             // Linearize NES nametable scroll (each 0x100 block = 240 valid pixels, F0-FF skipped)
             int linearScroll = hi * 240 + lo;
             int linearMax = 2 * 240 + 239; // 719 = linearize(0x02EF), the default bottom scroll
@@ -3479,11 +3477,14 @@ namespace FamidashEditor
                 int playerX_px = (playerX_fixed >> 8) + 1;
                 int playerY_px = NesPlayerY_px(playerY_fixed);
                 
-                // Use actual collision hitbox size, not visual size
-                int hitboxWidth = miniMode ? 8 : 15;
-                int hitboxHeight = miniMode ? 7 : 15;
-                
-                playerY_px += GetMiniSpriteOffsetY();
+                // sprite_collide uses WAVE_WIDTH/HEIGHT only for wave. Snake
+                // uses the cube sprite box, despite using 8x8 for background
+                // collision later in x_movement.
+                bool wave = currentGameMode == 6;
+                int hitboxWidth = wave ? 8 : (miniMode ? 8 : 15);
+                int hitboxHeight = wave ? 8 : (miniMode ? 7 : 15);
+
+                playerY_px += wave ? 4 : GetMiniSpriteOffsetY();
                 
                 // Player bounding box for collision
                 int playerLeft_px = playerX_px;
@@ -4056,13 +4057,13 @@ namespace FamidashEditor
                 return;
 
             int mode = currentGameMode == 9 ? 7 : currentGameMode;
-            bool waveOrSnake = currentGameMode == 6 || currentGameMode == 10;
+            bool wave = currentGameMode == 6;
             bool isMini = currplayer_mini != 0;
-            int hitboxW = waveOrSnake ? 8 : (isMini ? 8 : 15);
-            int hitboxH = waveOrSnake ? 8 : (isMini ? 7 : 15);
+            int hitboxW = wave ? 8 : (isMini ? 8 : 15);
+            int hitboxH = wave ? 8 : (isMini ? 7 : 15);
             int playerX = (playerX_fixed >> 8) + 1;
             int playerY = playerY_fixed >> 8;
-            playerY += waveOrSnake ? 4 : GetMiniSpriteOffsetY();
+            playerY += wave ? 4 : GetMiniSpriteOffsetY();
 
             bool pressed = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0) > 0;
             bool held = IsXDownAsync() || keyXHeld;
@@ -7229,8 +7230,40 @@ namespace FamidashEditor
         private void ApplyNesIntroFreezePrestepForSimulator()
         {
             // Match PathfinderEngine's verified NES intro-freeze final pre-step.
-            // Applies only to cube/robot while not in dual mode.
             if (dual) return;
+
+            if (currentGameMode == 5)
+            {
+                int tableIdx = miniMode ? 4 : 0;
+                int spiderGravityStep = GameModePhysics.SPIDER_GRAVITY(tableIdx);
+                int maxFallSpeed = GameModePhysics.SPIDER_MAX_FALLSPEED(tableIdx);
+                if (gravityFlipped)
+                {
+                    spiderGravityStep = -spiderGravityStep;
+                    maxFallSpeed = -maxFallSpeed;
+                }
+
+                int clampMaxY = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
+                SharedPhysics.CommonGravityRoutine(
+                    ref playerVelY_fixed,
+                    ref playerY_fixed,
+                    spiderGravityStep,
+                    maxFallSpeed,
+                    currplayer_gravity,
+                    dashing[currplayer],
+                    gravityMultiplier,
+                    simTimeScale,
+                    isFullSpeed,
+                    playerVelX_fixed,
+                    clampMaxY);
+                playerX_fixed += playerVelX_fixed;
+                ApplySimulatorNesCameraScroll();
+
+                if (invincibleCounter > 0)
+                    invincibleCounter--;
+                return;
+            }
+
             if (currentGameMode != 0 && currentGameMode != 4) return;
 
             int gravityStep = SharedPhysics.GetCubeGravity(miniMode);
@@ -12595,7 +12628,7 @@ namespace FamidashEditor
                                 int playerX_px_fwd = preAdvancePlayerX_fixed >> 8;
                                 int playerY_px_fwd = NesPlayerBgCollisionY_px(playerY_fixed);
                                 int hitboxW_fwd, hitboxH_fwd, hitboxOffsetY_fwd;
-                                if (currentGameMode == 6) // Wave: NES WAVE_WIDTH=8, WAVE_HEIGHT=8
+                                if (currentGameMode == 6 || currentGameMode == 10) // Wave/snake background collision box
                                 {
                                     hitboxW_fwd = 8;
                                     hitboxH_fwd = 8;

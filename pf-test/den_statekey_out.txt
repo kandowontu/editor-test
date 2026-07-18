@@ -1,0 +1,19 @@
+Metadata file: C:\Editor Test\lvlset_HUGE_metadata.json5 (level: denouement)
+  Searched 28 levels in official_levels, 'denouement' not found
+  Found level 'denouement' in community_levels at index 115: speed=4 maxFall=7 gameMode=6 spawnYHi= spawnYLo= scrollYHi= scrollYLo=
+Metadata: startingSpeed=4 (uiIndex=4) for 'denouement'
+Metadata: maxFallSpeed=0x7 for 'denouement'
+Metadata: startingGameMode=6 for 'denouement'
+Loading sim-famidash\LEVELS\LEVEL DATA\lvlset_D\denouement.tmx...
+Map: 520x27  tiles=14040  sprites=14040
+Config: C:\Users\kando\Documents\Famidash Editor\denouement.tmx.cfg (6 offsets, 0 anchors)
+Spawn: spawnHi=0xB0 scrollHi=0x02 scrollLo=0xEF scrollLin=719 nesYOffset=528 -> startY_px=367
+Start: (0, 367)  speed=4  maxFall=0x7  bias=0.50  mode=6
+Coin collection mode ENABLED
+BFS exploration mode ENABLED
+  Progress: 0%     Progress: 1%     Progress: 2%     Progress: 3%   
+Result: FAILED
+Message: BFS failed ~ best path to X=315px (3%) [0.1s]
+Time: 0.1s
+Path points: 59
+Trace: C:\Users\kando\AppData\Local\Temp\famidash_pf_trace_sim_famidash_LEVELS_LEVEL_DATA_lvlset_D_denouement_tmx_20260717_044849_624.csv

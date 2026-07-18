@@ -70,6 +70,12 @@ if (currplayer_mini != 0)
             int offsetY = (playerY_fixed >> 8) + (gravityInverted ? -2 : 1);
             SpiderEject_Fresh(offsetY);
 
+            // bg_coll_U_D_checks can set cube_data death as a side effect while
+            // still returning no solid ejection.  Do not let a same-frame input
+            // teleport the simulator away after that NES death has occurred.
+            if (deathTriggered)
+                return;
+
             // Update the global onGround flag based on whether we're grounded
             // If velocity is 0 after eject, we hit something and are grounded
             onGround = (playerVelY_fixed == 0);
@@ -279,8 +285,11 @@ if (currplayer_mini != 0)
         private void SpiderUpWait_Fresh(int playerXBias = 0)
         {
             bool isMini = miniMode;
-            int hitboxW = isMini ? 8 : 15;
-            int hitboxH = isMini ? 7 : 15;
+            // This wait is entered from sprite_collide, which uses the 8x8 box
+            // only for wave. Snake intentionally inherits the cube dimensions.
+            bool wave = currentGameMode == 6;
+            int hitboxW = wave ? 8 : (isMini ? 8 : 15);
+            int hitboxH = wave ? 8 : (isMini ? 7 : 15);
             int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
             int playerX_px = (playerX_fixed >> 8) + playerXBias;
             int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
@@ -335,8 +344,9 @@ if (currplayer_mini != 0)
         private void SpiderDownWait_Fresh(int playerXBias = 0)
         {
             bool isMini = (miniMode);
-            int hitboxW = isMini ? 8 : 15;
-            int hitboxH = isMini ? 7 : 15;
+            bool wave = currentGameMode == 6;
+            int hitboxW = wave ? 8 : (isMini ? 8 : 15);
+            int hitboxH = wave ? 8 : (isMini ? 7 : 15);
             int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
             int playerX_px = (playerX_fixed >> 8) + playerXBias;
             int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
@@ -431,6 +441,9 @@ if (currplayer_mini != 0)
                         int tileId = tiles[tileIdx];
                         var collision = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(tileId));
                         
+                        if (CheckSpiderEjectDirectionalDeath(collision, probeX, checkY_px, isTop: false, useEjectProbes))
+                            continue;
+
                         if (IsSolidCollisionForSpider(collision, probeX, checkY_px))
                         {
                             var (colLeft, colTop, colRight, colBottom) = SharedPhysics.GetCollisionBounds(collision);
@@ -458,8 +471,9 @@ if (currplayer_mini != 0)
         /// </summary>
         private (bool collided, int ejectAmount) BgCollU_Spider(int playerX_px, int playerY_px, int width, int height, int groundRowsToReserve, bool useEjectProbes = false)
         {
-            // Check top of hitbox
-            int checkY_px = playerY_px;
+            // Ordinary bg_coll_U uses Generic.y + 1.  bg_coll_U_spider, used by
+            // the teleport scan, uses Generic.y with no bias.
+            int checkY_px = playerY_px + (useEjectProbes ? 1 : 0);
             
             // Convert world Y to tile Y (accounting for ground offset)
             int tileY = (checkY_px / TILE) + groundRowsToReserve;
@@ -496,6 +510,9 @@ if (currplayer_mini != 0)
                         int tileId = tiles[tileIdx];
                         var collision = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(tileId));
                         
+                        if (CheckSpiderEjectDirectionalDeath(collision, probeX, checkY_px, isTop: true, useEjectProbes))
+                            continue;
+
                         if (IsSolidCollisionForSpider(collision, probeX, checkY_px))
                         {
                             var (colLeft, colTop, colRight, colBottom) = SharedPhysics.GetCollisionBounds(collision);
@@ -510,6 +527,33 @@ if (currplayer_mini != 0)
             }
             
             return (false, 0);
+        }
+
+        private bool CheckSpiderEjectDirectionalDeath(MetatileCollision collision, int probeX,
+            int probeY, bool isTop, bool useEjectProbes)
+        {
+            // Only ordinary bg_coll_U/bg_coll_D run bg_coll_U_D_checks.  The
+            // two-probe spider wait helpers share the solid lookup but do not
+            // need a separate simulator death side effect here.
+            if (!useEjectProbes || MainWindow.Option_NoDeath)
+                return false;
+
+            int localX = probeX & 0x0F;
+            int localY = probeY & 0x0F;
+            bool killed = isTop
+                ? collision == MetatileCollision.COL_DEATH_TOP && localY < 0x06 && localX >= 0x05 && localX <= 0x07
+                : collision == MetatileCollision.COL_DEATH_BOTTOM && localY > 0x0A && localX >= 0x05 && localX <= 0x07;
+
+            if (!killed)
+                return false;
+
+            deathTriggered = true;
+            deathTileX = probeX;
+            deathTileY = probeY;
+            paused = true;
+            _ = StopMusicAsync();
+            AppendSimDebug($"[SPIDER_EJECT] Directional death side effect at ({probeX},{probeY})");
+            return true;
         }
         
         /// <summary>

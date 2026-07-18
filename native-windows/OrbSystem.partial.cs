@@ -224,6 +224,7 @@ namespace FamidashEditor
             int pendingOrbType = -1;
             bool pendingIsMulti = false;
             bool pendingShouldActivate = false;
+            bool pendingAlreadyActivated = false;
 
             // Scan all sprites for orb collisions
             for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
@@ -296,6 +297,9 @@ namespace FamidashEditor
                     pendingOrbType = spriteType;
                     pendingIsMulti = isMultiOrb;
                     pendingShouldActivate = true;
+                    pendingAlreadyActivated = !isMultiOrb &&
+                        orbActivated.TryGetValue(idx, out bool alreadyActivated) &&
+                        alreadyActivated;
                 }
             }
             
@@ -308,8 +312,13 @@ namespace FamidashEditor
                 // This prevents residual slope exit velocity from corrupting the orb velocity
                 ClearSlopeStuff();
                 
-                // Activate the orb!
-                ActivateOrb(pendingOrbType, gamemode, gravityInverted, mini, ref velocityY);
+                // NES continues dispatching activated sprites during dual, but
+                // blue and green orb handlers suppress their gravity/velocity
+                // effect once activesprites_activated[index] is nonzero.
+                bool suppressActivatedBlueGreen = pendingAlreadyActivated &&
+                    (pendingOrbType == BLUE_ORB || pendingOrbType == GREEN_ORB);
+                if (!suppressActivatedBlueGreen)
+                    ActivateOrb(pendingOrbType, gamemode, gravityInverted, mini, ref velocityY);
                 
                 // Set buffer state that would have been set during the scan
                 if (canBuffer)
@@ -319,7 +328,7 @@ namespace FamidashEditor
                 if (!pendingIsMulti)
                 {
                     playerProcessedOrbs[currplayer].Add(pendingOrbIdx);
-                    if (!dual) orbActivated[pendingOrbIdx] = true;
+                    orbActivated[pendingOrbIdx] = true;
 
                     // Also mark all OTHER currently-overlapping tiles of the same
                     // sprite type as processed.  Multi-tile orbs that lack

@@ -1,0 +1,20 @@
+Metadata file: C:\Editor Test\famidash\LEVELS\metadata\lvlset_HUGE_metadata.json5 (level: dastardly)
+  Searched 27 levels in official_levels, 'dastardly' not found
+  Found level 'dastardly' in community_levels at index 59: speed=1 maxFall=6 gameMode=0 spawnYHi=112 spawnYLo=0 scrollYHi=2 scrollYLo=48
+Metadata: startingSpeed=1 (uiIndex=0) for 'dastardly'
+Metadata: maxFallSpeed=0x6 for 'dastardly'
+Metadata: startingGameMode=0 for 'dastardly'
+Metadata: spawnY=0x7000 for 'dastardly'
+Loading .\famidash\LEVELS\LEVEL DATA\lvlset_HUGE\dastardly.tmx...
+Map: 1108x27  tiles=29916  sprites=29916
+Config: C:\Users\kando\Documents\Famidash Editor\dastardly.tmx.cfg (16 offsets, 0 anchors)
+Spawn: spawnHi=0x70 scrollHi=0x02 scrollLo=0x30 scrollLin=528 nesYOffset=528 -> startY_px=112
+Start: (0, 112)  speed=0  maxFall=0x7  bias=0.50  mode=0
+Coin collection mode ENABLED
+BFS exploration mode ENABLED
+  Progress: 0%     Progress: 1%     Progress: 2%     Progress: 3%     Progress: 4%     Progress: 5%     Progress: 6%     Progress: 7%     Progress: 8%     Progress: 9%     Progress: 10%     Progress: 11%     Progress: 12%     Progress: 13%     Progress: 14%     Progress: 15%     Progress: 16%     Progress: 17%     Progress: 18%     Progress: 19%     Progress: 20%   
+Result: FAILED
+Message: BFS failed ~ best path to X=3665px (20%) [23.3s]
+Time: 23.3s
+Path points: 1639
+Trace: 

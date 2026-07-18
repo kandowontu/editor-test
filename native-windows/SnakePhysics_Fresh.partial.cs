@@ -6,60 +6,62 @@ namespace FamidashEditor
     public partial class SimulatorWindow
     {
         /// <summary>
-        /// Snake mode - Wave physics where X press activates gravity dash
-        /// First X press: invert gravity once and set dashing=1 for straight dash
-        /// Wave movement converted to vertical, then wave_eject handles collisions
+        /// Exact GAMEMODE_SNAKE path through wave_movement().
+        /// A fresh held press invokes the synthetic gravity-dash controller;
+        /// holding by itself does not reverse the normal wave velocity.
         /// </summary>
         private void SnakePhysics_Fresh()
         {
-            // Check for X press to activate gravity dash (using keyXPressedCount like other modes)
             int pressCount = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
-            if (pressCount > 0)
-            {
-                // On X press: invert gravity once and activate dash
-                // NES: common_dash_orb_routine() flips currplayer_gravity
-                currplayer_gravity = (byte)(currplayer_gravity == 0 ? 0xFF : 0);
-                gravityReversed = (currplayer_gravity != 0);
-                gravityFlipped = gravityReversed;
-                dashing[currplayer] = 1;  // Set to 1 for gravity dash
-                Interlocked.Exchange(ref keyXPressedCount, 0);  // Consume the press
-                
-                // Update icon flip and checkbox when gravity reverses (marshal to UI thread)
-                try { Dispatcher?.BeginInvoke(new Action(() => { UpdatePlayerIconFlip(); InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
-            }
-            
-            // Wave movement calculation (from gamemode_wave.h)
-            // tmp1 = dashing
+            bool pressed = pressCount > 0;
+            bool holding = IsXDownAsync() || keyXHeld;
+
+            // NES snapshots tmp1 before sprite_gamemode_controller_check can
+            // change dashing on this frame.
             int tmp1 = dashing[currplayer];
-            
+
             switch (tmp1)
             {
                 case 0:
-                    // Normal wave movement - convert horizontal velocity to vertical
-                    // vel_y = !mini ? (gravity ? -vel_x : vel_x) : (gravity ? -(vel_x << 1) : (vel_x << 1))
-                    if (currplayer_mini == 0)
+                    int snakeVelX = currplayer_mini == 0
+                        ? playerVelX_fixed
+                        : playerVelX_fixed << 1;
+                    playerVelY_fixed = currplayer_gravity != 0
+                        ? -snakeVelX
+                        : snakeVelX;
+
+                    // collided = DASH_GRAVITY_ORB followed by the controller-only
+                    // handler.  It acts on a fresh press, flips gravity, zeros Y,
+                    // and sets horizontal dash mode 1.
+                    if (holding && pressed)
                     {
-                        playerVelY_fixed = currplayer_gravity != 0 ? -playerVelX_fixed : playerVelX_fixed;
+                        currplayer_gravity = (byte)(currplayer_gravity == 0 ? 0xFF : 0);
+                        gravityReversed = currplayer_gravity != 0;
+                        gravityFlipped = gravityReversed;
+                        playerVelY_fixed = 0;
+                        dashing[currplayer] = 1;
+                        Interlocked.Exchange(ref keyXPressedCount, 0);
+                        try { Dispatcher?.BeginInvoke(new Action(() => { UpdatePlayerIconFlip(); InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
+                    }
+
+                    if (currplayer_slope_frames == 0 && currplayer_was_on_slope_counter == 0)
+                    {
+                        if (isFullSpeed)
+                            playerY_fixed += playerVelY_fixed;
+                        else
+                            playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
                     }
                     else
                     {
-                        playerVelY_fixed = currplayer_gravity != 0 ? -(playerVelX_fixed << 1) : (playerVelX_fixed << 1);
-                    }
-                    
-                    // Invert velocity if not holding X (normal snake behavior)
-                    // NES: wave inverts on hold, but snake does NOT invert on hold
-                    bool holding = IsXDownAsync() || keyXHeld;
-                    if (!holding)
-                    {
-                        playerVelY_fixed = -playerVelY_fixed;
+                        playerVelY_fixed = 0;
                     }
                     break;
-                    
+
                 case 1:
-                    // Gravity dash - move straight
-                    playerVelY_fixed = 1;  // Minimal velocity for straight movement
+                    // Horizontal dash does not move Y.
+                    playerVelY_fixed = 1;
                     break;
-                    
+
                 case 2:
                     playerVelY_fixed = -playerVelX_fixed;
                     if (isFullSpeed)
@@ -89,23 +91,8 @@ namespace FamidashEditor
                         playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
                     break;
             }
-            
-            // Apply velocity if not on slope
-            if (currplayer_slope_frames == 0 && currplayer_was_on_slope_counter == 0)
-            {
-                if (isFullSpeed)
-                    playerY_fixed += playerVelY_fixed;
-                else
-                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
-            }
-            else
-            {
-                playerVelY_fixed = 0;
-            }
-            
-            // Collision detection (offset collision 2 pixels based on vel_y direction)
-            int offsetY = (playerY_fixed >> 8) + ((playerVelY_fixed < 0) ? 2 : -2);
-            WaveEject_Fresh(offsetY);
+
+            WaveEject_Fresh(playerY_fixed >> 8);
             
             // Record position for trail (skip during pathfinder speculative simulation)
             if (!pfSimulating)

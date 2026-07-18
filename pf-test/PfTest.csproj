@@ -9,6 +9,11 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- BFS creates a very high volume of short-lived state clones. Use the
+         multicore GC; this changes only allocation/collection scheduling and
+         does not alter search keys, frontier selection, or simulated paths. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <DefineConstants>$(DefineConstants);DISABLE_DEBUG_LOGGING</DefineConstants>

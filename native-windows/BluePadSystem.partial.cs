@@ -159,17 +159,20 @@ namespace FamidashEditor
                     if (isBottomPad && padLeft >= 4500 && padLeft <= 4560)
                         AppendSimDebug($"[BPAD_DBG] idx={idx} sid=0x{sid:X2} pad=({padLeft},{playerTop})-({padRight},{playerBottom}) spr=({spriteLeft},{spriteTop})-({spriteRight},{spriteBottom}) xO={xOverlap} yO={yOverlap} tX={storageTileX} tY={storageTileY} grR={groundRowsLocal} hw={hw} hh={hh} hxo={hxoff} hyo={hyoff} pxO={pxOff} pyO={pyOff} gInv={gravityInverted}");
 
-                    if (xOverlap && yOverlap)
-                    {
-                        // NES marks pad activated on any collision, even
-                        // when gate mismatch skips the flip.
-                        bool gateOk = !((isBottomPad && gravityInverted) || (isTopPad && !gravityInverted));
+					if (xOverlap && yOverlap)
+					{
+						// Both NES blue-pad handlers call clear_slope_stuff()
+						// before their gravity gate.  Even an already-correct
+						// gravity contact cancels pending slope state.
+						ClearSlopeStuff();
 
-                        if (gateOk)
-                        {
-                            ClearSlopeStuff();
+						// NES marks pad activated on any collision, even
+						// when gate mismatch skips the flip.
+						bool gateOk = !((isBottomPad && gravityInverted) || (isTopPad && !gravityInverted));
 
-                            gravityInverted = !gravityInverted;
+						if (gateOk)
+						{
+							gravityInverted = !gravityInverted;
                             gravityFlipped = gravityInverted;
                             gravityReversed = gravityInverted;
 

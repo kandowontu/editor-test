@@ -15,7 +15,7 @@ namespace FamidashEditor
         private void ApplyGravity(int gravity, int maxFallSpeed)
         {
             // Apply gravity acceleration with multiplier from gravity mod portals
-            int tmpaccel = (int)(gravity * gravityMultiplier);
+            int tmpaccel = SharedPhysics.ApplyNesGravityModifier(gravity, gravityMultiplier);
             
             // Check if at max fall speed
             bool atMaxFall = gravityFlipped ? 
