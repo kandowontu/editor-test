@@ -69,33 +69,40 @@ if (currplayer_mini != 0)
             CubeEject_Fresh();
             
             // Read input
-            bool holdJump = IsXDownAsync() || keyXHeld;
+            bool holdJump = IsXDownAsync() || keyXHeld || upHeld;
             int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);
             bool pressJump = pressCount > 0;
             
             // Reset after cube_eject from the resulting zero velocity.
-            if (playerVelY_fixed == 0)
+            bool ninjaGrounded = playerVelY_fixed == 0;
+            if (ninjaGrounded)
             {
                 ninjajumps[currplayer] = 3;
                 AppendSimDebug($"[NINJA] Grounded - reset jumps to 3");
             }
 
-            // Match the current NES build: landing resets the counter, but a held
-            // input alone does not auto-jump; ninja jumps require a fresh press.
-            if (pressJump && ninjajumps[currplayer] > 0 && !ninjaJumpedThisFrame &&
-                !orbed[currplayer] && dashing[currplayer] == 0) {
+            // Current gamemode_cube.h gives grounded Ninja the same held-input
+            // buffer as cube. Air jumps use the fresh-press branch and decrement
+            // ninjajumps; J/F blocks also force that branch.
+            bool bufferedGroundJump = holdJump && !jblocked && !fblocked &&
+                ninjaGrounded && !orbed[currplayer];
+            bool freshNinjaJump = !bufferedGroundJump && pressJump &&
+                (jblocked || fblocked ||
+                 (ninjajumps[currplayer] > 0 && !ninjaJumpedThisFrame && !orbed[currplayer]));
+            if (bufferedGroundJump || freshNinjaJump) {
                 int baseJumpIdx = (currplayer_mini != 0 ? 4 : 0);
                 bool jumpGravityInverted = (currplayer_gravity != 0);
                 int jumpGravityMultiplier = jumpGravityInverted ? -1 : 1;
                 playerVelY_fixed = GameModePhysics.JUMP_VEL(baseJumpIdx) * jumpGravityMultiplier;
-                
-                ninjajumps[currplayer]--;
+
+                if (freshNinjaJump)
+                    ninjajumps[currplayer] = (ninjajumps[currplayer] - 1) & 0xFF;
                 
                 // NES slope_jump_check: add extra velocity when jumping off a slope
                 SlopeJumpCheck_Fresh();
                 
                 ninjaJumpedThisFrame = true;
-                AppendSimDebug($"[NINJA] Jump! Remaining={ninjajumps[currplayer]}, vel={playerVelY_fixed}");
+                AppendSimDebug($"[NINJA] Jump! buffered={bufferedGroundJump}, remaining={ninjajumps[currplayer]}, vel={playerVelY_fixed}");
             }
             
             // NES x_movement_coll: decrement slope_frames + apply_slope_vel

@@ -90,7 +90,9 @@ internal static class SharedPhysics
 
 	internal static (int Hi, int Lo) ResolveNesInitialScroll(int? configuredHi, int? configuredLo)
 	{
-		int hi = (configuredHi ?? NES_DEFAULT_SCROLL_Y_HI) & 0xFF;
+		// The current init_rld hard-codes spawn_scroll_y_pos+1 to $02; the
+		// compact level header contains only the low byte.
+		int hi = NES_DEFAULT_SCROLL_Y_HI;
 		int lo = (configuredLo ?? NES_DEFAULT_SCROLL_Y_LO) & 0xFF;
 		int linear = hi * 240 + lo;
 		// Famidash's three-screen vertical nametable range ends at $02EF.
@@ -122,6 +124,20 @@ internal static class SharedPhysics
 	internal static int NesPlayerBgCollisionY_px(int playerY_fixed, int camY_fixed)
 	{
 		return playerY_fixed >> 8;
+	}
+
+	// spider_up_wait changes currplayer_y in eight-pixel steps.  Each pass copies
+	// the current currplayer_y high byte into Generic.y before bg_coll_U_spider,
+	// and eject_U is formed from that current scan phase.  Full solids use the $F0 base;
+	// partial blocks/slabs use $F8.  The caller applies the unsigned byte with
+	// currplayer_y -= eject_U, so return the equivalent positive move-down.
+	internal static int NesSpiderScanUpEject(MetatileCollision collision, int currentScanWorldY_px, int nesCoordOffset)
+	{
+		int tmp8 = (currentScanWorldY_px + nesCoordOffset) & 0x0F;
+		bool fullSolid = collision == MetatileCollision.COL_NO_SIDE ||
+			collision == MetatileCollision.COL_ALL ||
+			collision == MetatileCollision.COL_FLOOR_CEIL;
+		return fullSolid ? 0x10 - tmp8 : 0x08 - (tmp8 & 0x07);
 	}
 
 	internal const int CUBE_GRAVITY_NORMAL = 107;
@@ -1085,24 +1101,17 @@ internal static class SharedPhysics
 			}
 			break;
 		case MetatileCollision.COL_BOTTOM_LEFT_SPIKE:
-			if (flag)
-			{
-				topOffsetPx = 8;
-				return true;
-			}
-			break;
+		case MetatileCollision.COL_BOTTOM_RIGHT_SPIKE:
+			// NES bg_coll_mini_blocks treats the lower half of both variants as
+			// a full-width platform.  LEFT/RIGHT selects only the spike's lethal
+			// X range in the upper half; it does not narrow the solid base.
+			topOffsetPx = 8;
+			return true;
 		case MetatileCollision.COL_RIGHT:
 		case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
 			if (flag2)
 			{
 				topOffsetPx = 0;
-				return true;
-			}
-			break;
-		case MetatileCollision.COL_BOTTOM_RIGHT_SPIKE:
-			if (flag2)
-			{
-				topOffsetPx = 8;
 				return true;
 			}
 			break;
@@ -2332,6 +2341,13 @@ internal static class SharedPhysics
 		{
 			return true;
 		}
+		// NES bg_coll_death includes bg_coll_slope in its center-point chain.
+		// This runs before x_movement_coll can eject or otherwise change the
+		// sampled Y, so a later generic slope-penetration check is not equivalent.
+		if (IsSlopeTile(collision) && SlopeCalc(num, num2, collision).hit)
+		{
+			return true;
+		}
 		return false;
 	}
 
@@ -2874,17 +2890,24 @@ internal static class SharedPhysics
 			int tileY = FloorDiv16(checkBaseY);
 			MetatileCollision tileCollision = GetTileCollision(in map, tileX, tileY);
 			FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=CheckSlopesDown.tile i={i} probeX={num} tileX={tileX} tileY={tileY} col={(int)tileCollision} probeY={checkBaseY} xInTile={num & 0xF} yInTile={checkBaseY & 0xF}");
-			if (tileCollision < MetatileCollision.COL_SLOPE_RD45 || tileCollision > MetatileCollision.COL_SLOPE_LU66_TOP)
+			// bg_coll_D calls bg_coll_return_slope_D for every nonzero collision.
+			// A non-slope probe still runs the left/right direction filter and can
+			// restore currplayer_slope_type to last_slope_type.
+			if (tileCollision == MetatileCollision.COL_NONE)
 			{
 				continue;
 			}
 			processedSlopeTile = true;
-			(bool hit, int ejection, int slopeType) tuple = SlopeCalc(num, checkBaseY, tileCollision);
+			bool isSlopeTile = tileCollision >= MetatileCollision.COL_SLOPE_RD45 &&
+				tileCollision <= MetatileCollision.COL_SLOPE_LU66_TOP;
+			(bool hit, int ejection, int slopeType) tuple = isSlopeTile
+				? SlopeCalc(num, checkBaseY, tileCollision)
+				: (false, 0, 0);
 			bool item4 = tuple.hit;
 			int num2 = tuple.ejection;
 			int num3 = tuple.slopeType;
 			// NES bg_coll_slope resets slope_type to 0 when geometry misses and no active slope counter
-			if (!item4 && slopeWasOnCounter == 0)
+			if (isSlopeTile && !item4 && num3 != 0 && slopeWasOnCounter == 0)
 			{
 				num3 = 0;
 				item2 = 0;
@@ -3003,17 +3026,24 @@ internal static class SharedPhysics
 			int tileY = FloorDiv16(checkBaseY);
 			MetatileCollision tileCollision = GetTileCollision(in map, tileX, tileY);
 			FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=CheckSlopesUp.tile i={i} probeX={num} tileX={tileX} tileY={tileY} col={(int)tileCollision} probeY={checkBaseY}");
-			if (tileCollision < MetatileCollision.COL_SLOPE_RD45 || tileCollision > MetatileCollision.COL_SLOPE_LU66_TOP)
+			// As in bg_coll_D, collision.h invokes the slope return/filter for every
+			// nonzero tile. This ordering matters when the left probe is a regular
+			// solid/death tile and the right probe is a 66-degree solid half.
+			if (tileCollision == MetatileCollision.COL_NONE)
 			{
 				continue;
 			}
 			processedSlopeTile = true;
-			(bool hit, int ejection, int slopeType) tuple = SlopeCalc(num, checkBaseY, tileCollision);
+			bool isSlopeTile = tileCollision >= MetatileCollision.COL_SLOPE_RD45 &&
+				tileCollision <= MetatileCollision.COL_SLOPE_LU66_TOP;
+			(bool hit, int ejection, int slopeType) tuple = isSlopeTile
+				? SlopeCalc(num, checkBaseY, tileCollision)
+				: (false, 0, 0);
 			bool item4 = tuple.hit;
 			int num2 = tuple.ejection;
 			int num3 = tuple.slopeType;
 			// NES bg_coll_slope resets slope_type to 0 when geometry misses and no active slope counter
-			if (!item4 && slopeWasOnCounter == 0)
+			if (isSlopeTile && !item4 && num3 != 0 && slopeWasOnCounter == 0)
 			{
 				num3 = 0;
 				item2 = 0;

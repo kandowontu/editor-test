@@ -13,9 +13,9 @@
 #define TOTAL_LEVEL_COUNT (OFFICIAL_LEVEL_COUNT+COMMUNITY_LEVEL_COUNT)
 
 #if __HUGE_ROM
-#define MAX_ICONS 25 //total icons
+#define MAX_ICONS 23 //total icons
 #else
-#define MAX_ICONS 26 //total icons
+#define MAX_ICONS 24 //total icons
 #endif
 #define MAX_FIREBALLS 20
 #define MAX_PRACTICE_POINTS 8
@@ -27,9 +27,14 @@
 #define MOUSEBANK 96
 #define LETTERBANK 111
 #define MENUBANK 98
+
+#define DIFFICULTY_FACE_BANK 100
+
 #define MENUICONBANK 102
 #define LEVELCOMPLETEBANK 106
 #define PRACTICECOMPLETEBANK 110
+
+#define DEMONFACE_HUGE_BANK 86
 
 #define SPIKESA 0
 #define SPIKESB 2
@@ -40,6 +45,8 @@
 #define BLOCKSD 12
 #define SAWBLADESA 14
 #define SLOPESA 16
+#define SLOPESB 88
+#define SLOPESD 90
 
 #define DECO1 28
 #define DECOCLOUD 32
@@ -55,11 +62,23 @@
 #define SCROLL_BANK	"XCD_BANK_04"
 #define SPRITE_RENDER_BANK "XCD_BANK_04"
 #define PLAYER_RENDER_BANK "XCD_BANK_05"
-#define RESETLEVEL_BANK "XCD_BANK_06"
+#define RESETLEVEL_BANK "XCD_BANK_04"
 #endif
 #define GROUND_BANK "XCD_BANK_06"
 #if !__HUGE_ROM
 #define LVLDONE_BANK "XCD_BANK_06"
+#define LVL_NAME_BANK "XCD_BANK_06"
 #else
 #define LVLDONE_BANK "XCD_BANK_08"
+#define LVL_NAME_BANK "XCD_BANK_08"
 #endif	
+
+#if __THE_ALBUM
+#define BGMTEST_BANK "XCD_BANK_06"
+#else
+#if __HUGE_ROM
+#define BGMTEST_BANK "XCD_BANK_09"
+#else
+#define BGMTEST_BANK "XCD_BANK_05"
+#endif
+#endif

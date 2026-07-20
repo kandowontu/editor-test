@@ -1572,9 +1572,8 @@ namespace FamidashEditor
                 if (!string.IsNullOrEmpty(songId)) sb.AppendLine($"\t\t\tsongID: \"{songId}\",");
                 sb.AppendLine($"\t\t\tstartingGameMode: {startingGameMode},");
                 sb.AppendLine($"\t\t\tstartingSpeed: {startingSpeedJson},");
-                // Source/game metadata now uses a flag. Omission means the
-                // default 0x06; only 0x07 emits the enabled flag. The separate
-                // ROM build/test writer intentionally retains legacy maxFallSpeed.
+                // Source/game metadata uses a flag. Omission means the default
+                // 0x06; only 0x07 emits the enabled flag.
                 if (maxFallSpeed == 7)
                 {
                     sb.AppendLine("\t\t\tmaxFallSpeed_is_7: 0x01,");

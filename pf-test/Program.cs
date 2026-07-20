@@ -526,8 +526,7 @@ static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode, int? spawn
                             speed = sp.GetInt32();
                         // Current source metadata uses a boolean-like numeric flag.
                         // Only exactly 1 selects 0x07; zero, absent, or any other
-                        // value uses the NES default 0x06. The editor's generated
-                        // ROM-test metadata deliberately remains in the old format.
+                        // value uses the NES default 0x06.
                         if (entry.TryGetProperty("maxFallSpeed_is_7", out var mf7)
                             && mf7.ValueKind == JsonValueKind.Number
                             && mf7.GetInt32() == 1)

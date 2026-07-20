@@ -177,7 +177,9 @@ namespace FamidashEditor
         // SWING_MAX_FALLSPEED
         public static int SWING_MAX_FALLSPEED(int table_idx)
         {
-            return 0x430; // Same for normal and mini
+            // Current NES 60 fps table: index 4 = full, index 6 = mini.
+            bool mini = (table_idx & 4) != 0;
+            return mini ? 0x352 : 0x300;
         }
         #endregion
 

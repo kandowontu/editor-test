@@ -1046,8 +1046,14 @@ emu.addEventCallback(function()
 	local clockPx = scrollX + (clockRawX >> 8) + 8
 	local clockPy = scrollY + (clockRawY >> 8) + 8 - nesYOffset
 
-    -- Detect level start / respawn: prev was 0/uninitialized, now in-game.
-    if (prevPx <= 0 or px < prevPx - 16) and px > 0 then
+	-- Detect level start / respawn from the same stable coordinate used by the
+	-- replay clock.  player_x[0] can briefly lag by more than 16 pixels on an
+	-- overloaded sprite/spider-orb frame even though currplayer_x is monotonic;
+	-- treating that lag as a respawn resets the replay in the middle of a level.
+	local resetPx = px
+	local resetDual = emu.read(0x0096, emu.memType.nesMemory) or 0
+	if resetDual == 0 and clockRawX ~= 0 then resetPx = clockPx end
+	if (prevPx <= 0 or resetPx < prevPx - 16) and resetPx > 0 then
         cursor = 1
         armed = true
         frameIdx = 0
@@ -1107,7 +1113,7 @@ emu.addEventCallback(function()
             physDbgFp:flush()
         end
     end
-    prevPx = px
+	prevPx = resetPx
 
 	-- In single-player, trace/draw the live coordinate as well.  This avoids a
 	-- false one-frame backward spike while player_x[0] is awaiting its commit.

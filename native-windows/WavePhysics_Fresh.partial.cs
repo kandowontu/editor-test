@@ -178,6 +178,17 @@ if (currplayer_mini != 0)
             bool isMini = (miniMode);
             bool gravityInverted = gravityFlipped;
 
+            // sprite_collide assigns WAVE_WIDTH/HEIGHT only to mode 6.  Snake
+            // enters wave_movement with the cube box still in Generic, and that
+            // routine overwrites only x/y before wave_eject.  Preserve the NES
+            // dimensions here instead of forcing snake through the 8x8 box.
+            bool isSnake = currentGameMode == 10;
+            Generic_x = (playerX_fixed >> 8) + 4;
+            int miniBaseAdj = (currplayer_mini != 0) ? 0 : 4;
+            Generic_y = (playerY_fixed >> 8) + miniBaseAdj;
+            Generic_width = isSnake ? (isMini ? 8 : 15) : 8;
+            Generic_height = isSnake ? (isMini ? 7 : 15) : 8;
+
             // Check slopes BEFORE wave collision
             // NES: bg_coll_U/bg_coll_D each have a slope section that runs
             // regardless of velocity.  wave_eject calls bg_coll_U when moving
@@ -270,17 +281,6 @@ if (currplayer_mini != 0)
                 }
             }
 
-            // Set up Generic struct for collision detection
-            // NES: Generic.x = high_byte(currplayer_x) + 4 (always +4)
-            // NES (gamemode_wave.h L41):
-            //   Generic.y = high_byte(currplayer_y) + (currplayer_mini ? 0 : 4)
-            // NES: WAVE_WIDTH = 0x08, WAVE_HEIGHT = 0x08 (always 8×8)
-            Generic_x = (playerX_fixed >> 8) + 4;
-            int miniBaseAdj = (currplayer_mini != 0) ? 0 : 4;
-            Generic_y = (playerY_fixed >> 8) + miniBaseAdj;
-            Generic_width = 8;
-            Generic_height = 8;
-            
             AppendSimDebug($"[WAVE_EJECT] Generic=({Generic_x},{Generic_y}) {Generic_width}x{Generic_height} velY=0x{playerVelY_fixed:X} miniBaseAdj={miniBaseAdj}");
             
             // Check collision based on VELOCITY direction

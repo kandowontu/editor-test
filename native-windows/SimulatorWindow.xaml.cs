@@ -1422,8 +1422,10 @@ namespace FamidashEditor
         public void SetSpawnScrollConfig(int? spawnHi, int? spawnLo, int? scrollHi, int? scrollLo)
         {
             configSpawnYHi = spawnHi;
-            configSpawnYLo = spawnLo;
-            configScrollYHi = scrollHi;
+            // Current compact NES headers no longer store either byte. Their
+            // runtime values are fixed to $00 and $02 respectively.
+            configSpawnYLo = null;
+            configScrollYHi = null;
             configScrollYLo = scrollLo;
         }
 
@@ -1435,7 +1437,7 @@ namespace FamidashEditor
         {
             if (!configSpawnYHi.HasValue) return null;
             int hi = configSpawnYHi.Value & 0xFF;
-            int lo = (configSpawnYLo.HasValue ? configSpawnYLo.Value : 0) & 0xFF;
+            int lo = 0;
             int nesSpawnY = (hi << 8) | lo; // NES 16-bit fixed-point (8 frac bits)
             // Match NES exactly: PF_top_px = nesSpawnHi + nesScrollLinear - nesYOffset.
             // Use NES default scroll (0x02EF -> linear 719) when not provided, matching
@@ -2253,9 +2255,9 @@ namespace FamidashEditor
             {
                 int playerX_px = (playerX_fixed >> 8) + 1;
                 int playerY_px = NesPlayerY_px(playerY_fixed);
-                // NES sprite_collide (sprite_loading.h L1149-1156): wave/snake uses
-                // Generic = WAVE_WIDTH(8) x WAVE_HEIGHT(8); other modes use CUBE dims.
-                bool isWaveGmp = (currentGameMode == 6 || currentGameMode == 10);
+                // NES sprite_collide gives the 8x8 box only to wave. Snake is
+                // intentionally in the cube-dimensions branch.
+                bool isWaveGmp = currentGameMode == 6;
                 int hitboxW = isWaveGmp ? 8 : (miniMode ? 8 : 15);
                 int hitboxH = isWaveGmp ? 8 : (miniMode ? 7 : 15);
 
@@ -2277,13 +2279,28 @@ namespace FamidashEditor
 
                     if (sid == 0x00 || sid == 0x01 || sid == 0x02 || sid == 0x03 || sid == 0x04 || sid == 0x17 || sid == 0x24 || sid == 0x4B || sid == 0x58 || sid == 0x6A || sid == 0x6B || sid == 0x6C)
                     {
-                        if (processedGameModePortals.Contains(idx)) continue;
+                        bool cameraRampPortal = sid == 0x00 || sid == 0x04;
+                        // Cube/robot handlers reset exitPortalTimer on every
+                        // overlap, including frames after activation.
+                        if (processedGameModePortals.Contains(idx) && !cameraRampPortal) continue;
 
                         if (!SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                             continue;
 
-                        // Mark as processed so we don't re-check this portal
-                        processedGameModePortals.Add(idx);
+                        if (cameraRampPortal)
+                        {
+                            _sim_exitPortalTimer = 10;
+                            // spcl_cube/spcl_robot clear the two animation-frame
+                            // counters on every overlap without clearing the robot
+                            // jump-duration counters used by physics.
+                            robotJumpFrame[0] = 0;
+                            robotJumpFrame[1] = 0;
+                        }
+
+                        // Cube/robot portals never set activesprites_activated on
+                        // NES; all other game-mode portals are one-shot.
+                        if (!cameraRampPortal)
+                            processedGameModePortals.Add(idx);
 
                         int oldMode = currentGameMode;
                         int newMode = sid switch {
@@ -3591,6 +3608,8 @@ namespace FamidashEditor
                                 // handler's "high_byte(y) -= eject_U" uses the SAME eject_U
                                 // already consumed by the scan, so no second eject is needed.
                                 SpiderUpWait_Fresh(playerXBias: 1);
+								if (deathTriggered)
+									return;
                                 playerVelY_fixed = 0;
                                 
                                 // Set orbed flag
@@ -3619,6 +3638,8 @@ namespace FamidashEditor
                                 // Scan downward for floor
                                 // Same as UP: scan already positions player at floor surface.
                                 SpiderDownWait_Fresh(playerXBias: 1);
+								if (deathTriggered)
+									return;
                                 playerVelY_fixed = 0;
                                 
                                 // Set orbed flag
@@ -4280,6 +4301,11 @@ namespace FamidashEditor
 
         private void ApplySimulatorNesCubeRobotYScroll()
         {
+            // process_y_scroll decrements this global before applying its
+            // cube/robot camera-step limit.
+            if (_sim_exitPortalTimer != 0)
+                _sim_exitPortalTimer--;
+
             int screenY_fixed = playerY_fixed - cameraY_fixed;
             int scrollYLinear = (cameraY_fixed >> 8) + _sim_nesCoordOffset;
             int minCameraY_fixed = (_sim_minScrollYLin - _sim_nesCoordOffset) << 8;
@@ -4291,6 +4317,12 @@ namespace FamidashEditor
                     (scrollYLinear == _sim_minScrollYLin && _sim_scrollYSubpx != 0))
                 {
                     int needed_fixed = 0x4000 - screenY_fixed;
+                    if (_sim_exitPortalTimer != 0)
+                    {
+                        int maxStepPx = 11 - _sim_exitPortalTimer;
+                        if ((needed_fixed >> 8) >= maxStepPx)
+                            needed_fixed = maxStepPx << 8;
+                    }
                     int low = needed_fixed & 0xFF;
                     int high = (needed_fixed >> 8) & 0xFF;
                     int sub = _sim_scrollYSubpx - low;
@@ -4317,6 +4349,12 @@ namespace FamidashEditor
             else if ((screenY_fixed >> 8) >= 0xA0 && scrollYLinear < 719)
             {
                 int needed_fixed = screenY_fixed - 0xA000;
+                if (_sim_exitPortalTimer != 0)
+                {
+                    int maxStepPx = 11 - _sim_exitPortalTimer;
+                    if ((needed_fixed >> 8) >= maxStepPx)
+                        needed_fixed = maxStepPx << 8;
+                }
                 int low = needed_fixed & 0xFF;
                 int high = (needed_fixed >> 8) & 0xFF;
                 int sub = _sim_scrollYSubpx + low;
@@ -4520,6 +4558,7 @@ namespace FamidashEditor
         private int _sim_nesCoordOffset; // PF→NES linear-Y offset for nametable distortion
         private int _sim_minScrollYLin;
         private int _sim_scrollYSubpx;
+        private byte _sim_exitPortalTimer;
 
         private int NesNtCameraTarget_fixed(int portalWorldY_px)
         {
@@ -7572,6 +7611,7 @@ namespace FamidashEditor
                 wasZeroedByCollisionLastFrame = true;
                 onGround = true;
                 _sim_scrollYSubpx = 0;
+                _sim_exitPortalTimer = 0;
 
                 try { ApplyNesIntroFreezePrestepForSimulator(); } catch { }
 
@@ -11989,11 +12029,19 @@ namespace FamidashEditor
                 // CRITICAL: Determine if at 100% speed to use pure integer math (no floating-point)
                 isFullSpeed = (simTimeScale == 1.0);
                 speedMultiplierLocal = tabSpeedMultiplier; // atomic read of volatile-like field
+                // A fresh NES UFO start has one already-completed reset tick whose
+                // X movement used the reset/default speed. The first visible
+                // sprite pass can hit a speed portal at X=0 (Chromatic Expedition),
+                // but that new speed owns the following tick, not this X phase.
+                bool useNesUfoResetSpeed = simTickCount == 1 && !dual && currentGameMode == 3;
+                int movementSpeed_fixed = useNesUfoResetSpeed
+                    ? CUBE_SPEED_X1
+                    : currentSpeed_fixed;
                 // Use exact integer math when at 100% speed to ensure determinism
                 if (isFullSpeed)
-                    attemptedPlayerX_fixed = playerX_fixed + (currentSpeed_fixed * speedMultiplierLocal);
+                    attemptedPlayerX_fixed = playerX_fixed + (movementSpeed_fixed * speedMultiplierLocal);
                 else
-                    attemptedPlayerX_fixed = playerX_fixed + (int)Math.Round((currentSpeed_fixed * speedMultiplierLocal) * simTimeScale);
+                    attemptedPlayerX_fixed = playerX_fixed + (int)Math.Round((movementSpeed_fixed * speedMultiplierLocal) * simTimeScale);
                 attemptedPlayerCenter_fixed = attemptedPlayerX_fixed + centerOffset_fixed;
 
                 // -- Dash end check (before sprite_collide, matching NES state_game.h line 372-374) --
@@ -12132,11 +12180,17 @@ namespace FamidashEditor
                                     // the player overlaps it. Wave physics fix
                                     // depends on this re-fire.
                                     AppendSimDebug($"[SPEED_P1] slot={slot_sp1} sid=0x{sid:X2} VelX -> 0x{spd:X4}");
-                                    // Recompute X advance with new speed so this frame uses it (matching PF)
+                                    // Recompute X advance with the new speed. A
+                                    // fresh UFO start retains the reset-speed X
+                                    // phase for this one tick; the portal speed is
+                                    // already stored for the next tick.
+                                    int portalMovementSpeed_fixed = useNesUfoResetSpeed
+                                        ? CUBE_SPEED_X1
+                                        : currentSpeed_fixed;
                                     if (isFullSpeed)
-                                        attemptedPlayerX_fixed = playerX_fixed + (currentSpeed_fixed * speedMultiplierLocal);
+                                        attemptedPlayerX_fixed = playerX_fixed + (portalMovementSpeed_fixed * speedMultiplierLocal);
                                     else
-                                        attemptedPlayerX_fixed = playerX_fixed + (int)Math.Round((currentSpeed_fixed * speedMultiplierLocal) * simTimeScale);
+                                        attemptedPlayerX_fixed = playerX_fixed + (int)Math.Round((portalMovementSpeed_fixed * speedMultiplierLocal) * simTimeScale);
                                     attemptedPlayerCenter_fixed = attemptedPlayerX_fixed + centerOffset_fixed;
                                 }
                             }

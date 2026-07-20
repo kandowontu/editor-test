@@ -17,10 +17,8 @@
 			startingBackgroundColor: 0x12,
 			startingGroundColor: 0x02,
 			//spawnYPositionHi: 0x30,		;default #$B000
-			//spawnYPositionLow: 0x00,
-			//scrollYPositionHi: 0x02,		;default $02EF, less to go up
 			//scrollYPositionLow: 0x30,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			parallaxDisable: true,
 			objectOffsets: [
 				{
@@ -78,47 +76,6 @@
 			parallaxDisable: true
 		},
 		{
-			level: "decode",
-			lowerText: "DECODE",
-			decoType: "DECOCLOUD",
-			spikeSet: "B",
-			blockSet: "B",
-			sawSet: "A",
-			difficulty: "EASYDEMON",
-			stars: 10,
-			songID: "song_endgame",
-			startingGameMode: 0,
-			startingSpeed: 0,
-			startingBackgroundColor: 0x16,
-			startingGroundColor: 0x06,
-			parallaxDisable: true,
-			objectOffsets: [
-				{
-					coordinates: [
-						[314, 10],	[324, 10],	[330, 9],	[335, 11],	[337, 10],		//deco
-						[341, 11],	[346, 10],	[352, 10],	[360, 9],		//deco
-					],
-					offsetY: +8
-				},
-			]
-		},
-		{
-			level: "clutterfunk2",
-			lowerText: "CLUTTERFUNK 2",
-			decoType: "DECO1",
-			spikeSet: "C",
-			blockSet: "B",
-			sawSet: "A",
-			difficulty: "EASYDEMON",
-			stars: 10,
-			songID: "song_clutterfunk_2",
-			startingGameMode: 0,
-			startingSpeed: 0,
-			startingBackgroundColor: 0x0F,
-			startingGroundColor: 0x0F,
-			parallaxDisable: true
-		},
-		{
 			level: "speedracer",
 			lowerText: "SPEED RACER",
 			decoType: "EXTRASPRITES1",
@@ -155,7 +112,7 @@
             startingBackgroundColor: 0x0F,
             startingGroundColor: 0x0F,
             parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -211,7 +168,7 @@
 			startingBackgroundColor: 0x07,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -272,7 +229,7 @@
 			startingBackgroundColor: 0x17,
 			startingGroundColor: 0x17,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -342,7 +299,7 @@
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -396,7 +353,7 @@
 			startingBackgroundColor: 0x06,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -455,7 +412,7 @@
 			startingBackgroundColor: 0x03,
 			startingGroundColor: 0x03,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
                 {
                     coordinates: [
@@ -532,7 +489,7 @@
             startingSpeed: 0,
             startingBackgroundColor: 0x01,
             startingGroundColor: 0x01,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
             parallaxDisable: true,
 			objectOffsets: [
 				{
@@ -599,7 +556,7 @@
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -648,7 +605,7 @@
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 		},
 		{
 			level: "jawbreaker",
@@ -665,8 +622,39 @@
 			startingBackgroundColor: 0x01,
 			startingGroundColor: 0x01,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 		},
+		{
+            level: "denouement",
+			lowerText: "DENOUEMENT",
+            decoType: "DECO1",
+            spikeSet: "A",
+            blockSet: "B",
+            sawSet: "A",
+            difficulty: "INSANEDEMON",
+            stars: 10,
+            songID: "song_glory",
+            startingGameMode: 6,
+            startingSpeed: 4,
+            startingBackgroundColor: 0x03,
+            startingGroundColor: 0x0F,
+            parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
+			objectOffsets: [
+				{
+					coordinates: [
+						[23, 18], [23, 21], [59, 20], [184, 16],
+					],
+					offsetX: +8
+				},
+				{
+					coordinates: [
+						[24, 19], [24, 22],
+					],
+					offsetY: -8
+				},
+			]
+        },
 		{
 			level: "acropolis",
 			lowerText: "ACROPOLIS",
@@ -681,7 +669,7 @@
 			startingSpeed: 1,
 			startingBackgroundColor: 0x00,
 			startingGroundColor: 0x00,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 		},
 		{
 			level: "windylandscape",
@@ -715,7 +703,7 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x00,
 			startingGroundColor: 0x0F,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -802,7 +790,7 @@
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 		},
 		{
 			level: "silentclubstep",
@@ -847,11 +835,7 @@
 			difficulty: "IMPOSSIBLEDEMON",
 			stars: 10,
 			songID: "song_slow_down",
-			//spawnYPositionHi: 0x30,
-			//spawnYPositionLow: 0x00,
-			//scrollYPositionHi: 0x02,
-			//scrollYPositionLow: 0x30,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			startingGameMode: 4,
 			startingSpeed: 1,
 			startingBackgroundColor: 0x30,
@@ -895,12 +879,12 @@
 			difficulty: "IMPOSSIBLEDEMON",
 			stars: 10,
 			songID: "song_time_machine",
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			startingGameMode: 0,
 			startingSpeed: 0,
 			startingBackgroundColor: 0x1C,
 			startingGroundColor: 0x0F,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 					coordinates: [
@@ -978,7 +962,6 @@
 			stars: 10,
 			songID: "song_flow",
 			spawnYPositionHi: 0xFF,
-			spawnYPositionLow: 0xFF,
 			startingGameMode: 4,
 			startingSpeed: 1,
 			startingBackgroundColor: 0x0F,
@@ -1080,7 +1063,7 @@
 			startingBackgroundColor: 0x02,
 			startingGroundColor: 0x02,
 			parallaxDisable: true,
-			maxFallSpeed: 0x07,
+			maxFallSpeed_is_7: 0x01,
 			objectOffsets: [
 				{
 						coordinates: [61, 22],		//yellow gravity portal

@@ -1,5 +1,6 @@
 {
 	songModule: "music_master.fms",
+	linkerConfig: "mmc3.cfg",
 	songs: [
 		{
 			fmsSongName: "emehT uneM",
@@ -50,6 +51,11 @@
 			vsSystemEnabled: false
 		},
 		{
+			fmsSongName: "Aether [New]",
+			lowerText: "AETHER NEW",
+			originalArtistText: "JUMPER",
+		},
+		{
 			fmsSongName: "Astronomical Expedition",
 			upperText: "ASTRONOMICAL",
 			lowerText: "EXPEDITION",
@@ -59,6 +65,34 @@
 			fmsSongName: "C Madness",
 			lowerText: "C MADNESS",
 			originalArtistText: "FOREVERBOUND",
+		},
+		{
+			fmsSongName: "Carefree Victory (Remix)",
+			upperText: "CAREFREE",
+			lowerText: "VICTORY REMIX",
+			originalArtistText: "MARK HADLEY",
+		},
+		{
+			fmsSongName: "Speed Racer",
+			lowerText: "CHAOZ IMPACT",
+			originalArtistText: "PARAGONX9",
+		},
+		{
+			fmsSongName: "Clownparty Remix",
+			upperText: "CLOWNPARTY",
+			lowerText: "REMIX",
+			originalArtistText: "WATERFLAME",
+		},
+		{
+			fmsSongName: "clutterfunk 2",
+			lowerText: "CLUTTERFUNK 2",
+			originalArtistText: "WATERFLAME",
+			/* no vs system to speak of */
+		},
+		{
+			fmsSongName: "Cosmic Dolphin",
+			lowerText: "COSMIC DOLPHIN",
+			originalArtistText: "MEGAWOLF77",
 		},
 		{
 			fmsSongName: "Deep Swim",
@@ -78,6 +112,21 @@
 			originalArtistText: "WATERFLAME",
 		},
 		{
+			fmsSongName: "endgame",
+			lowerText: "ENDGAME",
+			originalArtistText: "WATERFLAME",
+			vsSystemEnabled: true,
+			nsfData: {
+				trackLabel: "Decode ~ Endgame",
+				trackAuthor: {
+					original: "Waterflame",
+					cover: "Vikrinox"
+				},
+				durationNTSC: 79283,
+				durationPAL: 95280
+			}
+		},
+		{
 			fmsSongName: "Ground to ReTraY",
 			upperText: "GROUND TO",
 			lowerText: "RETRAY",
@@ -89,9 +138,37 @@
 			originalArtistText: "KIYNARIA"
 		},
 		{
+			fmsSongName: "Mario Kart 7 - Rainbow Road (Remix)",
+			upperText: "MARIO KART 7",
+			lowerText: "RAINBOW ROAD",
+			originalArtistText: "ACKATOS",
+		},
+		{
+			fmsSongName: "midnight",
+			lowerText: "MIDNIGHT",
+			originalArtistText: "CORNANDBEANS",
+		},
+		{
 			fmsSongName: "Nine Circles",
 			lowerText: "NINE CIRCLES",
 			originalArtistText: "RUKKUS",
+		},
+		{
+			fmsSongName: "Solar Wind",
+			lowerText: "SOLAR WIND",
+			originalArtistText: "JUMPER",
+		},
+		{
+			fmsSongName: "Somewhere in a Forest",
+			upperText: "SOMEWHERE",
+			lowerText: "IN A FOREST",
+			originalArtistText: "CAM TOBY TEM",
+		},
+		{
+			fmsSongName: "stalemate greif cut",
+			upperText: "STALEMATE",
+			lowerText: "GREIF CUT",
+			originalArtistText: "KAYOSZX",
 		},
 		{
 			fmsSongName: "Sunslammer",

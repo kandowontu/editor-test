@@ -98,14 +98,14 @@ void state_soundtest() {
 				}
 			}
 		}			
-	__A__ = idx16_load_hi_NOC(xbgmtextsUpper, song);
-	if (__A__) draw_padded_text(xbgmtextsUpper[song], xbgmtextsUpperSize[song], 18, NTADR_A(7, 8));
+	__A__ = xbgmtextsUpper_hi[song];
+	if (__A__) draw_padded_text((void *)lohi_arr16_load(xbgmtextsUpper, song), xbgmtextsUpperSize[song], 18, NTADR_A(7, 8));
 	else one_vram_buffer_horz_repeat('$', 17, NTADR_A(7, 8));
-	__A__ = idx16_load_hi_NOC(xbgmtextsLower, song);
-	if (__A__) draw_padded_text(xbgmtextsLower[song], xbgmtextsLowerSize[song], 18, NTADR_A(7, 9));
+	__A__ = xbgmtextsLower_hi[song];
+	if (__A__) draw_padded_text((void *)lohi_arr16_load(xbgmtextsLower, song), xbgmtextsLowerSize[song], 18, NTADR_A(7, 9));
 	else one_vram_buffer_horz_repeat('$', 17, NTADR_A(7, 9));
-	__A__ = idx16_load_hi_NOC(xbgmtextsOriginalArtist, song);
-	if (__A__) draw_padded_text(xbgmtextsOriginalArtist[song], xbgmtextsOriginalArtistSize[song], 18, NTADR_A(7, 14));
+	__A__ = xbgmtextsOriginalArtist_hi[song];
+	if (__A__) draw_padded_text((void *)lohi_arr16_load(xbgmtextsOriginalArtist, song), xbgmtextsOriginalArtistSize[song], 18, NTADR_A(7, 14));
 	else one_vram_buffer_horz_repeat('$', 17, NTADR_A(7, 14));
 	
 	draw_padded_text(sfxtexts[sfx & 0x7F], sfxtextSizes[sfx], 18, NTADR_A(7, 19));
@@ -283,3 +283,45 @@ void end_level_debug() {
 				famistudio_music_stop();
 }				
 
+
+
+void set_completion_data() {
+	if (!DEBUG_MODE && !kandokidshack && !kandokidshack3 && !kandokidshack4) {
+		if (!practice_point_count) {
+			if (!invisblocks) {
+				LEVELCOMPLETE[level] = 1;
+				if (coins & COIN_1) coin1_obtained[level] = 1;
+				if (coins & COIN_2) coin2_obtained[level] = 1;
+				if (coins & COIN_3) coin3_obtained[level] = 1;
+				level_completeness_normal[level] = 100;
+			}
+			else {
+				invisible_LEVELCOMPLETE[level] = 1;
+				if (coins & COIN_1) invisible_coin1_obtained[level] = 1;
+				if (coins & COIN_2) invisible_coin2_obtained[level] = 1;
+				if (coins & COIN_3) invisible_coin3_obtained[level] = 1;
+				invisible_level_completeness_normal[level] = 100;
+			}			
+		} else {
+			if (!invisblocks) level_completeness_practice[level] = 100;
+			else invisible_level_completeness_practice[level] = 100;
+		}
+	}
+}
+
+void set_lvldone_palette() {
+	mmc3_set_1kb_chr_bank_0(LEVELCOMPLETEBANK);
+	mmc3_set_1kb_chr_bank_1(PRACTICECOMPLETEBANK);
+	mmc3_set_1kb_chr_bank_2(LEVELCOMPLETEBANK+2);
+	mmc3_set_1kb_chr_bank_3(LEVELCOMPLETEBANK+3);
+	mmc3_set_2kb_chr_bank_1(MOUSEBANK);
+
+	// Set palettes back to natural colors since we aren't fading back in
+	pal_bright(4);
+	pal_bg(paletteMenu);
+	pal_col(0x0A,0x2A);
+	pal_col(0x0B,0x21);
+	pal_set_update();
+    //pal_spr(paletteMenu);
+	pal_spr(paletteDefaultSP);
+}

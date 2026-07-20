@@ -470,8 +470,8 @@ namespace FamidashEditor
             switch (collision)
             {
                 case MetatileCollision.COL_SLOPE_LU45:
-                    // NES: wave mode (non-mini) skips LU45 slopes
-                    if (currentGameMode == 6 && currplayer_mini == 0)
+                    // NES: wave and snake (non-mini) skip LU45 slopes.
+                    if ((currentGameMode == 6 || currentGameMode == 10) && currplayer_mini == 0)
                         return false;
                     tmp7 = temp_x & 0x0f;
                     tmp4 = (temp_y & 0x0f) ^ 0x0f;
@@ -554,10 +554,10 @@ namespace FamidashEditor
                     break;
                     
                 case MetatileCollision.COL_SLOPE_RD66_BOT:
-                    currplayer_slope_type = SLOPE_66DEG | SLOPE_RISING;
                     if ((temp_x & 0x0f) >= 0x08) return true;
                     tmp7 = (((temp_x & 0x0f) << 1) & 0x0f) ^ 0x0f;
                     tmp4 = temp_y & 0x0f;
+                    currplayer_slope_type = SLOPE_66DEG | SLOPE_RISING;
                     break;
                     
                 case MetatileCollision.COL_SLOPE_LD66_TOP:
@@ -568,10 +568,10 @@ namespace FamidashEditor
                     break;
                     
                 case MetatileCollision.COL_SLOPE_LD66_BOT:
-                    currplayer_slope_type = SLOPE_66DEG;
                     if ((temp_x & 0x0f) < 0x08) return true;
                     tmp7 = ((temp_x & 0x0f) << 1) & 0x0f;
                     tmp4 = temp_y & 0x0f;
+                    currplayer_slope_type = SLOPE_66DEG;
                     break;
                     
                 case MetatileCollision.COL_SLOPE_RU66_TOP:
@@ -582,15 +582,15 @@ namespace FamidashEditor
                     break;
                     
                 case MetatileCollision.COL_SLOPE_RU66_BOT:
-                    currplayer_slope_type = SLOPE_66DEG | SLOPE_RISING | SLOPE_UPSIDEDOWN;
                     if ((temp_x & 0x0f) >= 0x08) return true;
                     tmp7 = (((temp_x & 0x0f) << 1) & 0x0f) ^ 0x0f;
                     tmp4 = (temp_y & 0x0f) ^ 0x0f;
+                    currplayer_slope_type = SLOPE_66DEG | SLOPE_RISING | SLOPE_UPSIDEDOWN;
                     break;
                     
                 case MetatileCollision.COL_SLOPE_LU66_TOP:
-                    // NES: wave mode (mini) skips LU66 slopes
-                    if (currentGameMode == 6 && currplayer_mini != 0)
+                    // NES: wave and snake (mini) skip LU66 slopes.
+                    if ((currentGameMode == 6 || currentGameMode == 10) && currplayer_mini != 0)
                         return false;
                     if ((temp_x & 0x0f) >= 0x08) return false;
                     tmp7 = ((temp_x & 0x07) << 1) & 0x0f;
@@ -599,13 +599,13 @@ namespace FamidashEditor
                     break;
                     
                 case MetatileCollision.COL_SLOPE_LU66_BOT:
-                    // NES: wave mode (mini) skips LU66 slopes
-                    if (currentGameMode == 6 && currplayer_mini != 0)
+                    // NES: wave and snake (mini) skip LU66 slopes.
+                    if ((currentGameMode == 6 || currentGameMode == 10) && currplayer_mini != 0)
                         return false;
-                    currplayer_slope_type = SLOPE_66DEG | SLOPE_UPSIDEDOWN;
                     if ((temp_x & 0x0f) < 0x08) return true;
                     tmp7 = ((temp_x & 0x0f) << 1) & 0x0f;
                     tmp4 = (temp_y & 0x0f) ^ 0x0f;
+                    currplayer_slope_type = SLOPE_66DEG | SLOPE_UPSIDEDOWN;
                     break;
                     
                 default:
@@ -622,7 +622,7 @@ namespace FamidashEditor
                 // Cube/Robot/Ninja: if A/UP held → make_cube_jump_higher = 1
                 //                   else → slope_frames = 1, was_on_slope_counter = 3
                 // Other modes: use a_check_lookup table for unstick logic
-                if (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 11) // Cube, Robot, Ninja, Football
+                if (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) // Cube, Robot, Ninja
                 {
                     if (IsXDownAsync() || keyXHeld || upHeld) // NES: controllingplayer->hold & (PAD_A | PAD_UP)
                     {
@@ -679,12 +679,6 @@ namespace FamidashEditor
         /// </summary>
         private bool bg_coll_return_slope_D(int temp_x, int temp_y, MetatileCollision collision, int tmp2)
         {
-            // Fix 33: Save slope counters before bg_coll_slope may modify them.
-            // When pathfinder is active and direction filter rejects, restore them
-            // to prevent phantom apply_slope_vel events that PF doesn't produce.
-            int saved_slope_frames = currplayer_slope_frames;
-            int saved_was_on_slope_counter = currplayer_was_on_slope_counter;
-            
             bool tmp1 = bg_coll_slope(temp_x, temp_y, collision);
             
             AppendSimDebug($"[SLOPE] Filter: tmp2={tmp2}, tmp1={tmp1}, slopeType={currplayer_slope_type:X2}, hasRISING={(currplayer_slope_type & SLOPE_RISING) != 0}");
@@ -696,12 +690,6 @@ namespace FamidashEditor
                 {
                     AppendSimDebug($"[SLOPE] Filter: LEFT rejects RISING slope");
                     currplayer_slope_type = currplayer_last_slope_type;
-                    // Fix 33: Undo slope counter writes from bg_coll_slope on direction rejection
-                    if (pathfinderEnabled)
-                    {
-                        currplayer_slope_frames = saved_slope_frames;
-                        currplayer_was_on_slope_counter = saved_was_on_slope_counter;
-                    }
                     return false;
                 }
             }
@@ -712,12 +700,6 @@ namespace FamidashEditor
                 {
                     AppendSimDebug($"[SLOPE] Filter: RIGHT rejects non-RISING slope");
                     currplayer_slope_type = currplayer_last_slope_type;
-                    // Fix 33: Undo slope counter writes from bg_coll_slope on direction rejection
-                    if (pathfinderEnabled)
-                    {
-                        currplayer_slope_frames = saved_slope_frames;
-                        currplayer_was_on_slope_counter = saved_was_on_slope_counter;
-                    }
                     return false;
                 }
             }
@@ -754,9 +736,9 @@ namespace FamidashEditor
             int cameraX_px = cameraX_fixed >> 8;
             int screenX = playerX_px - cameraX_px;
             
-            // Wave/Snake use different Generic values than cube/ship/etc
-            // NES: wave_movement sets Generic.x = playerX + 4, Generic.y = playerY + (mini?0:4)
-            //       Generic.width = 8, Generic.height = 8
+            // Wave/Snake use different Generic x/y than cube/ship/etc.
+            // Only wave gets the fixed 8x8 dimensions in sprite_collide;
+            // snake retains the cube dimensions through wave_eject.
             // NES: bg_coll_D slope section uses temp_x based on Generic.x directly.
             bool isWaveMode = (currentGameMode == 6 || currentGameMode == 10);
             
@@ -764,15 +746,19 @@ namespace FamidashEditor
             
             if (isWaveMode)
             {
-                // Match NES wave Generic setup
-                // NES: WAVE_HEIGHT = 0x08 for all wave modes (mini and non-mini)
                 int waveMiniBaseAdj = (currplayer_mini != 0) ? 0 : 4;
                 int genericY = playerY_px + waveMiniBaseAdj;
-                const int genericHeight = 8; // NES WAVE_HEIGHT = 0x08
+                bool isSnake = currentGameMode == 10;
+                int genericHeight = isSnake
+                    ? ((currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H)
+                    : 8;
+                int genericWidth = isSnake
+                    ? ((currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W)
+                    : 8;
                 int miniYAdj = (currplayer_mini != 0) ? ((0x10 - genericHeight) >> 1) : 0;
                 
                 checkBaseX = playerX_px + 4;  // NES: Generic.x = playerX + 4 for wave/snake
-                checkWidth = 8;               // NES: Generic.width = 8 for wave
+                checkWidth = genericWidth;
                 checkBaseY = genericY + genericHeight - 2 + miniYAdj;
                 hitboxH = genericHeight;
             }
@@ -831,7 +817,10 @@ namespace FamidashEditor
                         
                         AppendSimDebug($"[SLOPE] Check: tmp2={tmp2}, tempX={temp_x}, tempY={temp_y}, tile=[{tileX},{tileY}], arrayY={tileArrayY}, idx={tileIdx}, tileVal=0x{tileValue:X2}, collision={collision}");
                         
-                        if (collision >= MetatileCollision.COL_SLOPE_RD45 && collision <= MetatileCollision.COL_SLOPE_LU66_TOP)
+                        // collision.h calls bg_coll_return_slope_D for every
+                        // nonzero collision, not only slopes. The direction
+                        // filter's state change is observable by probe two.
+                        if (collision != MetatileCollision.COL_NONE)
                         {
                             // bg_coll_return_slope_D()
                             if (bg_coll_return_slope_D(temp_x, temp_y, collision, tmp2))
@@ -855,9 +844,6 @@ namespace FamidashEditor
         /// </summary>
         private bool bg_coll_return_slope_U(int temp_x, int temp_y, MetatileCollision collision, int tmp2)
         {
-            int saved_slope_frames = currplayer_slope_frames;
-            int saved_was_on_slope_counter = currplayer_was_on_slope_counter;
-            
             bool tmp1 = bg_coll_slope(temp_x, temp_y, collision);
             
             AppendSimDebug($"[SLOPE_U] Filter: tmp2={tmp2}, tmp1={tmp1}, slopeType={currplayer_slope_type:X2}, hasRISING={(currplayer_slope_type & SLOPE_RISING) != 0}");
@@ -868,11 +854,6 @@ namespace FamidashEditor
                 if ((currplayer_slope_type & SLOPE_RISING) != 0)
                 {
                     currplayer_slope_type = currplayer_last_slope_type;
-                    if (pathfinderEnabled)
-                    {
-                        currplayer_slope_frames = saved_slope_frames;
-                        currplayer_was_on_slope_counter = saved_was_on_slope_counter;
-                    }
                     return false;
                 }
             }
@@ -882,11 +863,6 @@ namespace FamidashEditor
                 if ((currplayer_slope_type & SLOPE_RISING) == 0)
                 {
                     currplayer_slope_type = currplayer_last_slope_type;
-                    if (pathfinderEnabled)
-                    {
-                        currplayer_slope_frames = saved_slope_frames;
-                        currplayer_was_on_slope_counter = saved_was_on_slope_counter;
-                    }
                     return false;
                 }
             }
@@ -929,15 +905,19 @@ namespace FamidashEditor
             
             if (isWaveMode)
             {
-                // NES: WAVE_HEIGHT = 0x08 for all wave modes (mini and non-mini)
-                // NES bg_coll_U: centering ((0x10-height)>>1) is applied UNCONDITIONALLY
                 int waveMiniBaseAdj = (currplayer_mini != 0) ? 0 : 4;
                 int genericY = playerY_px + waveMiniBaseAdj;
-                const int genericHeight = 8; // NES WAVE_HEIGHT = 0x08
+                bool isSnake = currentGameMode == 10;
+                int genericHeight = isSnake
+                    ? ((currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H)
+                    : 8;
+                int genericWidth = isSnake
+                    ? ((currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W)
+                    : 8;
                 int centerAdj = (0x10 - genericHeight) >> 1; // Always applied for bg_coll_U
                 
                 checkBaseX = playerX_px + 4;
-                checkWidth = 8;
+                checkWidth = genericWidth;
                 // NES bg_coll_U: Generic.y + (0x10-height)>>1 + (mini?1:2) + (ship?1:0)
                 // Wave is not ship, so ship offset = 0
                 checkBaseY = genericY + centerAdj + (currplayer_mini != 0 ? 1 : 2);
@@ -986,7 +966,8 @@ namespace FamidashEditor
                         
                         AppendSimDebug($"[SLOPE_U] Check: tmp2={tmp2_dir}, tempX={temp_x_val}, tempY={temp_y_val}, tile=[{tileX},{tileY}], tileVal=0x{tileValue:X2}, collision={coll}");
                         
-                        if (coll >= MetatileCollision.COL_SLOPE_RD45 && coll <= MetatileCollision.COL_SLOPE_LU66_TOP)
+                        // Match bg_coll_U's `if (collision)` gate exactly.
+                        if (coll != MetatileCollision.COL_NONE)
                         {
                             if (bg_coll_return_slope_U(temp_x_val, temp_y_val, coll, tmp2_dir))
                             {

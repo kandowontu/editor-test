@@ -1,7 +1,9 @@
 CODE_BANK_PUSH(LVLDONE_BANK)
 
+void set_lvldone_palette();
 void checkcointimer();
 void checkcoinproceed();
+void set_completion_data();
 void lvl_done_update();
 
 #include "defines/charmap/bgm_charmap.h"
@@ -18,21 +20,8 @@ void state_lvldone() {
 
 	oam_clear();
 
-	mmc3_set_1kb_chr_bank_0(LEVELCOMPLETEBANK);
-	mmc3_set_1kb_chr_bank_1(PRACTICECOMPLETEBANK);
-	mmc3_set_1kb_chr_bank_2(LEVELCOMPLETEBANK+2);
-	mmc3_set_1kb_chr_bank_3(LEVELCOMPLETEBANK+3);
-	mmc3_set_2kb_chr_bank_1(MOUSEBANK);
-
-	// Set palettes back to natural colors since we aren't fading back in
-	pal_bright(4);
-	pal_bg(paletteMenu);
-	pal_col(0x0A,0x2A);
-	pal_col(0x0B,0x21);
-	pal_set_update();
-    //pal_spr(paletteMenu);
-	pal_spr(paletteDefaultSP);
-
+	crossPRGBankJump0(set_lvldone_palette);
+	
 	// Make a nametable for the chain
     vram_adr(NAMETABLE_C);
 	vram_fill(0xfe, 0x3c0);
@@ -81,17 +70,7 @@ void state_lvldone() {
 	#endif
 	current_state = 0;
 	
-	if (!DEBUG_MODE && !kandokidshack && !kandokidshack3 && !kandokidshack4 && !practice_point_count) {
-		LEVELCOMPLETE[level] = 1;
-		
-		if (coins & COIN_1) coin1_obtained[level] = 1;
-		if (coins & COIN_2) coin2_obtained[level] = 1;
-		if (coins & COIN_3) coin3_obtained[level] = 1;
-
-		level_completeness_normal[level] = 100;
-	} else {
-		level_completeness_practice[level] = 100;
-	}
+	crossPRGBankJump0(set_completion_data);
 
 	#include "defines/charmap/endlevel_charmap.h"
 
@@ -129,7 +108,7 @@ void state_lvldone() {
 			
 			if (high_byte(tmp6) < 10) {
 				current_state = 1;
-				tmp5 = -0x0600;
+				high_byte(tmp5) = -0x06;
 			}
 			break;
 		case 1:
@@ -138,7 +117,7 @@ void state_lvldone() {
 			set_scroll_y(high_byte(tmp6));
 			if (high_byte(tmp6) < 5 && !(high_byte(tmp5) & 0x80)) {
 				current_state = 2;
-				tmp5 = -0x0300;
+				high_byte(tmp5) = -0x03;
 			}
 			break;
 		case 2:
@@ -157,23 +136,43 @@ void state_lvldone() {
 			kandokidshack2 = 0;
 
 			tmp2 = 0;
-			do {
-				// kandokidshack = kandokidshack + coin1_obtained[tmp2] + coin2_obtained[tmp2] + coin3_obtained[tmp2];
-				__A__ = tmp2; __asm__("tay");
-				__A__ = kandokidshack;
-				__asm__("clc \n adc %v, y", coin1_obtained);
-				__asm__("clc \n adc %v, y", coin2_obtained);
-				__asm__("clc \n adc %v, y", coin3_obtained);
-				kandokidshack = __A__;
-				
-				if (LEVELCOMPLETE[tmp2]) kandokidshack2 += stars_list[tmp2];
-				tmp2++;
+
+			if (!invisblocks) {
+				do {
+					// kandokidshack = kandokidshack + coin1_obtained[tmp2] + coin2_obtained[tmp2] + coin3_obtained[tmp2];
+					__A__ = tmp2; __asm__("tay");
+					__A__ = kandokidshack;
+					__asm__("clc \n adc %v, y", coin1_obtained);
+					__asm__("clc \n adc %v, y", coin2_obtained);
+					__asm__("clc \n adc %v, y", coin3_obtained);
+					kandokidshack = __A__;
+					if (LEVELCOMPLETE[tmp2]) kandokidshack2 += stars_list[tmp2];
+					tmp2++;
+				}
+				#ifdef FLAG_ENABLE_TEST_LEVELS
+				while (tmp2 < 255);
+				#else
+				while (tmp2 < LEVEL_COUNT2);
+				#endif
 			}
-			#ifdef FLAG_ENABLE_TEST_LEVELS
-			while (tmp2 < 255);
-			#else
-			while (tmp2 < LEVEL_COUNT2);
-			#endif
+			else {
+				do {
+					// kandokidshack = kandokidshack + coin1_obtained[tmp2] + coin2_obtained[tmp2] + coin3_obtained[tmp2];
+					__A__ = tmp2; __asm__("tay");
+					__A__ = kandokidshack;
+					__asm__("clc \n adc %v, y", invisible_coin1_obtained);
+					__asm__("clc \n adc %v, y", invisible_coin2_obtained);
+					__asm__("clc \n adc %v, y", invisible_coin3_obtained);
+					kandokidshack = __A__;
+					if (invisible_LEVELCOMPLETE[tmp2]) kandokidshack2 += stars_list[tmp2];
+					tmp2++;
+				}
+				#ifdef FLAG_ENABLE_TEST_LEVELS
+				while (tmp2 < 255);
+				#else
+				while (tmp2 < LEVEL_COUNT2);
+				#endif
+			}
 
 			tmp2 = 0;
 			current_state = 4;

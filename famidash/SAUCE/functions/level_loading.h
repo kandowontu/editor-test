@@ -71,36 +71,12 @@ void unrle_first_screen(){ // run-length decode the first screen of a level
 			increment_attempt_count();
 		}
 	#endif
-	cube_data[0] = 0;
-	cube_data[1] = 0;
-	coins = 0;
-	scroll_x = 0;
-	drawing_frame = 0;
-	gravity_mod = 0;
-	disco_sprites = 0;
-
-	outline_color = 0x30;	
-	dual = twoplayer ? 1 : 0;
-	player_gravity[0] = GRAVITY_DOWN;
 
 
-	player_y[0] = spawn_y_pos;
-	player_y[1] = spawn_y_pos;
-	currplayer_y = spawn_y_pos;
-
-	target_scroll_y = spawn_y_pos;
-
-	player_gravity[1] = twoplayer ? GRAVITY_DOWN : GRAVITY_UP;
-
-	currplayer_gravity = GRAVITY_DOWN;
-
-	tmp1 = 0;
-	do {
-		activesprites_active[tmp1] = 0;
-		activesprites_anim_frame[tmp1] = 0;
-	} while (++tmp1 < max_loaded_sprites);
 
 	mmc3_set_prg_bank_1(level_data_bank);
+
+
 
 	// If practice mode has set a scroll position to restart from
 	// Then we dummy unrle, and adjust the parallax to match
@@ -144,8 +120,8 @@ void unrle_first_screen(){ // run-length decode the first screen of a level
 		parallax_scroll_x = 0;
 		parallax_scroll_column = 0;
 		parallax_scroll_column_start = 0;
-		mmc3_set_prg_bank_1(GET_BANK(draw_screen));
 		i = 0;
+		mmc3_set_prg_bank_1(GET_BANK(draw_screen));
 	}
 	
 
@@ -156,14 +132,14 @@ void unrle_first_screen(){ // run-length decode the first screen of a level
 		uint32_inc(scroll_x);
 	} while (i != 0);
 
-	level_resetting_flag = 2;
-	if (!level_resetting_flag) timewarp_done = 0;
+//	level_resetting_flag = 2;
+//	if (!level_resetting_flag) timewarp_done = 0;   how was this a fix? this cant ever be false...
 
 	init_sprites();
 	
 	set_scroll_x(scroll_x);
 	set_scroll_y(scroll_y);
-	if (!practice_point_count) {
+//	if (!practice_point_count) {
 		#if !__VS_SYSTEM
 			multi_vram_buffer_horz((const char*)attempttext,sizeof(attempttext)-1,NTADR_C(6, 15));
 		#endif
@@ -178,6 +154,6 @@ void unrle_first_screen(){ // run-length decode the first screen of a level
 			display_attempt_counter(0xF5, NTADR_C(20, 15));
 			
 			
-	}
+//	}
 	
 }

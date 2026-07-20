@@ -16,7 +16,7 @@ void cube_movement(){
 	tmpfallspeed = CUBE_MAX_FALLSPEED(currplayer_table_idx);
 	tmpgravity = CUBE_GRAVITY(currplayer_table_idx);
 
-	if (max_fallspeed == 0x07) {
+	if (max_fallspeed_7) {
 			tmpfallspeed += DASH_END_VEL_RESET(currplayer_table_idx);
 	}
 
@@ -47,7 +47,7 @@ void cube_movement(){
 				if (ninjajumps[currplayer]) idx8_store(cube_data, currplayer, cube_data[currplayer] & 1);
 			}
 
-			if((controllingplayer->hold & (PAD_A | PAD_UP)) && (!jblocked[currplayer] && !fblocked[currplayer] && !kandokidshack && gamemode == GAMEMODE_CUBE)) {			//no jblock - hold A to buffer jump
+			if((controllingplayer->hold & (PAD_A | PAD_UP)) && (!jblocked[currplayer] && !fblocked[currplayer] && !kandokidshack && (gamemode == GAMEMODE_CUBE || (gamemode == GAMEMODE_NINJA && currplayer_vel_y == 0)))) {			//no jblock - hold A to buffer jump
 				if (!orbed[currplayer]) {
 					jumps++;
 

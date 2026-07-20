@@ -1,5 +1,6 @@
 {
 	songModule: "music_master.fms",
+	linkerConfig: "mmc3.cfg",
 	songs: [
 		{
 			fmsSongName: "Menu Theme (2.2)",
@@ -178,12 +179,6 @@
 			lowerText: "SNOW",
 			originalArtistText: "WATERFLAME"
 		},
-		{
-			fmsSongName: "Somewhere in a Forest",
-			upperText: "SOMEWHERE",
-			lowerText: "IN A FOREST",
-			originalArtistText: "CAM TOBY TEM",
-		},	
 		{
 			fmsSongName: "Stereo madness 2",
 			upperText: "STEREO ",

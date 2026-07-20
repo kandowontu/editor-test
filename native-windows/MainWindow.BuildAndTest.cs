@@ -308,7 +308,9 @@ namespace FamidashEditor
             if (!string.IsNullOrEmpty(songId)) sb.AppendLine($"\t\t\tsongID: \"{songId}\",");
             sb.AppendLine($"\t\t\tstartingGameMode: {startingGameMode},");
             sb.AppendLine($"\t\t\tstartingSpeed: {startingSpeedJson},");
-            if (maxFallSpeed != 6) sb.AppendLine($"\t\t\tmaxFallSpeed: 0x{maxFallSpeed:X2},");
+            // The current ROM exporter packs this as a one-bit flag. Omission is
+            // the default 0x06 terminal speed; 1 selects 0x07.
+            if (maxFallSpeed == 7) sb.AppendLine("\t\t\tmaxFallSpeed_is_7: 0x01,");
             sb.AppendLine($"\t\t\tstartingBackgroundColor: 0x{(bgColor ?? 0x12):X2},");
             sb.AppendLine($"\t\t\tstartingGroundColor: 0x{(groundColor ?? 0x02):X2},");
             if (spawnHi.HasValue)  sb.AppendLine($"\t\t\tspawnYPositionHi: 0x{spawnHi.Value:X2},");

@@ -7,6 +7,14 @@ import subprocess
 import re
 from collections.abc import Iterable
 
+# same as in UTILS/cmpdbgfiles.py
+cfgCommentRemoveRegex = [re.compile(r'(?m:^(.*?)(#.*?)$)'), r'\0']
+cfgPartsRegex = re.compile(r'(?ms:^(?P<name>\w+) \{$(?P<data>.*?)^\})')
+cfgLineRegex = re.compile(r'(?P<name>\w+):\s*(?P<data>(?:\s*(?:\w+)\s*=\s*(?:\S+?)\s*(?:,|))+);')
+cfgDataRegex = re.compile(r'(?:(\w+)\s*=\s*(\S+?)(?:\s*,|\s*$))')
+
+cfgDataBankRegex = re.compile(r'DAT_BANK_([\dA-F]+)')
+
 famistudioHelpRegex = r"FamiStudio (?P<version>.+) Command-Line Usage"
 
 instSizeRegex = "Info: Instruments size : (?P<instSize>.+) bytes\\."
@@ -35,6 +43,7 @@ datBankSegPrefix = "DAT_BANK_"
 dmcBankMetaUnused = 63  # a special dmc bank for shit to go unused
 musicFolder = pathlib.Path(sys.path[0]).resolve()
 tmpFolder = (musicFolder.parent / "TMP").resolve()
+cfgFolder = (musicFolder.parent / "CONFIG").resolve()
 
 # Because itertools is old af sometimes
 def batched(iterable, n, *, strict=False):
@@ -106,6 +115,35 @@ def processNSFTrackAuthorMetadata(author : str | dict) -> str:
     print(f"Warning: Invalid NSF author metadata structure '{author}'")
     return "[ERROR]"
 
+# same as in UTILS/cmpdbgfiles.py
+def readCfgFile (filename : pathlib.Path) -> dict:
+    outdict = {}
+    text = filename.read_text()
+
+    text = re.sub(*cfgCommentRemoveRegex, text)
+
+    for i in re.finditer(cfgPartsRegex, text):
+        part = {}
+        
+        for line in re.finditer(cfgLineRegex, i['data']):
+            lineData = {}
+            for statement in re.finditer(cfgDataRegex, line['data']):
+                lineData[statement[1]] = statement[2]
+            part[line['name']] = lineData
+
+        outdict[i['name']] = part
+
+    return outdict
+
+def ld65ProcessNumeral (string : str) -> int:
+    if len(string) == 0:
+        return 0
+    elif string[0] == "$":
+        return int(string[1:], base=16)
+    elif string[0] == "0":
+        return int(string, base=8)
+    return int(string, base=10)
+
 def processMetadata(metadata : dict) -> dict:
     songlist = [i for i in metadata['songs'] if 'fmsSongName' in i.keys()] # filter out commented out songs
 
@@ -168,9 +206,10 @@ def processMetadata(metadata : dict) -> dict:
     # Convert to C
     outputStringsList = [f'const char musicSoundTestString{i:02X}[{len(s):2}] = "{s}";' for i, s in enumerate(processedTextList)]
 
-    pointerArrays = {key: 
-            [f'\tmusicSoundTestString{i:02X},' if i != None else '\tNULL,' for i in idxLists[key]]
-        for key in textKeyList}
+    pointerArrays = {inner_key: 
+            [f'.byte\t{prefix}_musicSoundTestString{i:02X}' if i != None else '.byte\t0' for i in idxLists[key]]
+                for key in textKeyList
+                for inner_key, prefix in ((f'{key}_lo', '<'), (f'{key}_hi', '>'))}
 
     sizeArrays = {key: 
             [f'\tsizeof(musicSoundTestString{i:02X}),' if i != None else '\t0,' for i in idxLists[key]]
@@ -207,6 +246,16 @@ def processMetadata(metadata : dict) -> dict:
     durationNTSCList = [i['durationNTSC'] * (2 if loopList[idx] else 1) if 'durationNTSC' in i.keys() else defTime for idx, i in enumerate(nsfMetaList)]
     durationPALList = [i['durationPAL'] * (2 if loopList[idx] else 1) if 'durationPAL' in i.keys() else defTime  for idx, i in enumerate(nsfMetaList)]
 
+    # Get the total amount of DAT banks
+    cfgData = readCfgFile(cfgFolder / metadata['linkerConfig'])
+    segments = cfgData.get('SEGMENTS', {})
+    datSegmentNames = [i for i in segments.keys() if re.match(cfgDataBankRegex, i)]
+    datBankNames = {i: segments[i]['load'] for i in datSegmentNames}
+    banks = cfgData.get('MEMORY', {})
+    datBankBankProperties = {k : banks[v].get('bank', 0) for k, v in datBankNames.items()}
+    datBankProcessedBankProps = {k : ld65ProcessNumeral(v) for k, v in datBankBankProperties.items()}
+    lastDatBank = max(datBankProcessedBankProps.values())
+
     return {
         'filteredSongList': songlist,
         'soundTestData': {
@@ -237,7 +286,9 @@ def processMetadata(metadata : dict) -> dict:
         },
         'dpcmAlignerName': metadata['dpcmAligner'],
         'songModule': metadata['songModule'],
-        'extendedMetadata': extMeta
+        'extendedMetadata': extMeta,
+        'lastDatBank': lastDatBank,
+        'datBankBankInfo': datBankProcessedBankProps
     }
 
 def parseFSTextFile(file : pathlib.Path | list[str], indent = 0, indentArr = None):
@@ -297,8 +348,12 @@ def exportMusicBank(bin_, fsCmd, modulePath, exportPath, dpcmidx, dpcmAlignerNam
         output = proc.stdout.decode()
         checkErr(proc)
 
+        bank_size_rgx = re.search(totalSizeRegex, output)
+        bank_size = int(bank_size_rgx['totalSize'])
+        bank_size_string = bank_size_rgx.group()
+
         print(f"== Info on bank {bank}:")
-        print("\t" + re.search(totalSizeRegex, output).group())
+        print("\t" + bank_size_string)
 
         # Run the asm file through a few regexes:
         captData = []
@@ -327,7 +382,8 @@ def exportMusicBank(bin_, fsCmd, modulePath, exportPath, dpcmidx, dpcmAlignerNam
         return [
             list(exportPath.glob(f"{asmExportStem}*.dmc")),   # 0: dpcmFiles
             list(re.findall(youMustSetRegex, output)),        # 1: optionsToSet
-            list(names)                                       # 2: masterSonglist
+            list(names),                                      # 2: masterSonglist
+            (bank, bank_size)                                 # 3: bankSize
         ]
 
 if __name__ == "__main__":
@@ -412,16 +468,6 @@ if __name__ == "__main__":
     dpcmAlignerName = processed_metadata['dpcmAlignerName']
 
     songNames = [song['Name'] for song in fsTxtData['Song']]
-    if dpcmAlignerName == "dpcm_BIG":
-    # special case if aligner is dpcm_BIG
-        lastDatBank = 0x73    
-    elif dpcmAlignerName == "dpcm_HUGE":
-    # special case if aligner is dpcm_BIG
-        lastDatBank = 0xEF
-    elif dpcmAlignerName == "dpcm_ALBUM":
-        lastDatBank = 0x3B
-    else:
-        lastDatBank = 0x33
     
     neededSongNames = sorted(i['fmsSongName'] for i in processed_metadata['filteredSongList'])
     if any(i not in songNames for i in neededSongNames):
@@ -493,13 +539,14 @@ if __name__ == "__main__":
     timeStart = time.time_ns()
 
     with multiprocessing.Pool() as pool:
-        dpcmFiles, optionsToSet, masterSonglist = zip(*pool.starmap(exportMusicBank, 
+        dpcmFiles, optionsToSet, masterSonglist, bankSizes = zip(*pool.starmap(exportMusicBank, 
             [[bins[bank], fsCmd, modulePath, exportPath, dpcmidx, dpcmAlignerName, bank] for bank in range(len(bins))]))
 
     # Flatten lists
     dpcmFiles = list(itertools.chain.from_iterable(dpcmFiles))
     optionsToSet = list(itertools.chain.from_iterable(optionsToSet))
     masterSonglist = list(itertools.chain.from_iterable(masterSonglist))
+    bankSizes = dict(bankSizes)
 
     masterSonglist.append(finalSongInListName)
 
@@ -507,13 +554,13 @@ if __name__ == "__main__":
 
     # Check the DPCM files for being identical
     print("\n==== Checking if the DPCM files are identical...")
-    
     dpcmFiles = [{
         "path": i,
         **re.search(dpcmFileNameRegex, i.name).groupdict()
     } for i in dpcmFiles]
     dpcmError = False
     dpcmBanks = list(set([i['dpcmBank'] for i in dpcmFiles]))
+    dpcmBankSizes = dict()
     for bank in dpcmBanks:
         bankDpcmError = False
         dpcmFilesOfBank = [file for file in dpcmFiles if file['dpcmBank'] == bank]
@@ -523,8 +570,10 @@ if __name__ == "__main__":
                 bankDpcmError = True
                 dpcmError = True
         if not bankDpcmError:
-            (exportPath / f"{exportStemPrefix}_bank{bank}.dmc").unlink(missing_ok = True)
-            dpcmFilesOfBank[0]['path'].rename(exportPath / f"{exportStemPrefix}_bank{bank}.dmc")
+            new_file_location = exportPath / f"{exportStemPrefix}_bank{bank}.dmc"
+            new_file_location.unlink(missing_ok = True)
+            dpcmFilesOfBank[0]['path'].rename(new_file_location)
+            dpcmBankSizes[bank] = new_file_location.stat().st_size
             dpcmFilesOfBank.pop(0)
         [i['path'].unlink(missing_ok = True) for i in dpcmFilesOfBank]
 
@@ -533,7 +582,8 @@ if __name__ == "__main__":
         exit(4)    
 
     dpcmBanks = sorted(list(map(int, dpcmBanks)))
-    
+    dpcmBankSizes = {int(k) : v for k, v in dpcmBankSizes.items()}
+
     print("\n==== Exporting miscellaneous files...")
     print("== musicPlayRoutines.s")
     # Export bank lengths table
@@ -564,31 +614,30 @@ if __name__ == "__main__":
 
     # Export segment assignment
     print("== music_data_header.s")
-    lastAfterDatBank = lastDatBank + 1
+    lastAfterDatBank = processed_metadata['lastDatBank'] + 1
     firstDmcBank = lastAfterDatBank - len([i for i in dpcmBanks if i != dmcBankMetaUnused])
     firstMusBank = firstDmcBank - len(bins)
 
     header_music_bank_data = []
-    for i in range(1, len(bins)):   # The first music bank is special
+    for i in range(len(bins)):
         header_music_bank_data += [
             f'.segment "{datBankSegPrefix}{i+firstMusBank:02X}"',
-            f'\t.include "{exportStemPrefix}_{i}.s"'
+            f'\t.include "{exportStemPrefix}_{i}.s"\t; Approx. size: {bankSizes[i]} bytes',
+            f'\t.align 8192',
         ]
 
     if (len(dpcmBanks)):
         header_dmc_bank_data = [
-            '', '; DMC banks',
-            f'.segment "{datBankSegPrefix}{firstDmcBank:02X}"',
-            '\tfirstDMCBankPtr := *',
-            f'\t.incbin "{exportStemPrefix}_bank{dpcmBanks[0]}.dmc"',
+            '', '; DMC banks'
         ]
-        for i, bank in enumerate(dpcmBanks[1:], 1):
+        for i, bank in enumerate(dpcmBanks):
             if bank != dmcBankMetaUnused:
                 header_dmc_bank_data += [
                     f'.segment "{datBankSegPrefix}{i+firstDmcBank:02X}"',
-                    f'\t.incbin "{exportStemPrefix}_bank{bank}.dmc"'
+                    f'\t.incbin "{exportStemPrefix}_bank{bank}.dmc"\t; Size: {dpcmBankSizes[bank]} bytes',
+                    f'\t.align 8192',
                 ]
-        header_dmc_bank_constant = ['FIRST_DMC_BANK = .bank(firstDMCBankPtr)']
+        header_dmc_bank_constant = [f'FIRST_DMC_BANK = {processed_metadata['datBankBankInfo'][f"{datBankSegPrefix}{firstDmcBank:02X}"]}']
     else:
         header_dmc_bank_data = []
         header_dmc_bank_constant = []
@@ -596,49 +645,55 @@ if __name__ == "__main__":
     header_data = [
         '; Generated by export.py using data in metadata.json',
         '', '; Music data banks',
-        f'.segment "{datBankSegPrefix}{firstMusBank:02X}"',
-        '\tfirstMusicBankPtr := *',
-        f'\t.include "{exportStemPrefix}_0.s"',
         *header_music_bank_data,
         *header_dmc_bank_data,
         *processed_metadata['pcmMetadata']['headerData'],
-        '', '; Constants',
-        'FIRST_MUSIC_BANK = .bank(firstMusicBankPtr)',
+        '', '; Constants fetched automatically from linker config',
+        f'FIRST_MUSIC_BANK = {processed_metadata['datBankBankInfo'][f"{datBankSegPrefix}{firstMusBank:02X}"]}',
         *header_dmc_bank_constant,
         ''
     ]
 
     (exportPath / "music_data_header.s").write_text("\n".join(header_data))
 
-    print(f"== {exportStemPrefix}_soundTestTables.h")
+    print(f"== {exportStemPrefix}_soundTestTables.h, {exportStemPrefix}_soundTestTables.s")
     processed_soundtest_metadata = processed_metadata['soundTestData']
 
-    mainArrays = []
-    vsArrays = []
+    mainNameCArrays = []
+    mainSizeCArrays = []
+    vsCArrays = []
+
+    asmArrayExports = []
+    mainAsmArrays = []
 
     for key in processed_soundtest_metadata['musicPtrs'].keys():
-        arrName = key[0].upper() + key[1:-4] # remove the Text at the end
-        mainArrays += [
-            '', f'const char* const xbgmtexts{arrName}[] = {{',
+        arrName = key[0].upper() + key[1:-7] + key[-3:] # remove the Text in the middle
+        asmArrayExports.append(f'_xbgmtexts{arrName}')
+        mainAsmArrays += [
+            '', f'_xbgmtexts{arrName}:',
             *processed_soundtest_metadata['musicPtrs'][key],
-            '};',
+        ]
+        mainNameCArrays.append(f'extern const uint8_t xbgmtexts{arrName}[];')
+        vsCArrays.append(f'const uint8_t xbgmtexts{arrName}[] = {{}};')
+
+    for key in processed_soundtest_metadata['musicSizes'].keys():
+        arrName = key[0].upper() + key[1:-4] # remove the Text at the end
+        mainSizeCArrays += [
             '', f'const uint8_t xbgmtexts{arrName}Size[] = {{',
             *processed_soundtest_metadata['musicSizes'][key],
             '};',
             ''
         ]
-        vsArrays += [
-            f'const char* const xbgmtexts{arrName}[] = {{}};',
-            f'const uint8_t xbgmtexts{arrName}Size[] = {{}};',
-        ]
+        vsCArrays.append(f'const uint8_t xbgmtexts{arrName}Size[] = {{}};')
 
     soundTestTextData = [
         '// Generated by export.py using data in metadata.json',
         '', '#if !__VS_SYSTEM',
         '', *processed_soundtest_metadata['musicSoundTestStrings'],
-        '', *mainArrays,
+        '', *mainNameCArrays,
+        '', *mainSizeCArrays,
         '', '#else',
-        '', *vsArrays,
+        '', *vsCArrays,
         '', '#endif',
         '', '', '',
         'CODE_BANK_PUSH("RODATA")',
@@ -655,6 +710,21 @@ if __name__ == "__main__":
         ''
     ]
     (exportPath / f"{exportStemPrefix}_soundTestTables.h").write_text("\n".join(soundTestTextData))
+
+    soundTestAsmTableData = [
+        ';;; Generated by export.py using data in metadata.json',
+        '', '.if !VS_SYSTEM',
+        '', '.segment _BGMTEST_BANK',
+        '',
+        f'.repeat {len(processed_soundtest_metadata['musicSoundTestStrings'])}, I',
+        '.import .ident(.sprintf("_musicSoundTestString%02X", I))',
+        '.endrepeat',
+        '', f'.export {", ".join(asmArrayExports)}'
+        '', *mainAsmArrays,
+        '', '.endif',
+        ''
+    ]
+    (exportPath / f"{exportStemPrefix}_soundTestTables.s").write_text("\n".join(soundTestAsmTableData))
 
     print(f"== sfx_soundTestTables.h")
     soundTestSfxTextData = [

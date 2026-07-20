@@ -565,7 +565,9 @@ namespace FamidashEditor
             }
             
             // Point 3: right
-            temp_x = Generic_x + 4 + Generic_width;
+            // NES resets temp_x to Generic.x + Generic.width for the third
+            // probe; the +4 inset applies only to the first probe.
+            temp_x = Generic_x + Generic_width;
             bg_collision_sub();
             if (CheckCollisionAtPoint(temp_x, temp_y, (MetatileCollision)collision))
             {

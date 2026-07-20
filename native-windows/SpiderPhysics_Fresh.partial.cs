@@ -105,6 +105,8 @@ if (currplayer_mini != 0)
                     
                     // Scan upward for ceiling (positions player at ceiling surface)
                     SpiderUpWait_Fresh();
+					if (deathTriggered)
+						return;
                     
                     playerVelY_fixed = 0;
                     try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
@@ -134,6 +136,8 @@ if (currplayer_mini != 0)
                     
                     // Scan downward for floor (positions player at floor surface)
                     SpiderDownWait_Fresh();
+					if (deathTriggered)
+						return;
                     
                     playerVelY_fixed = 0;
                     try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
@@ -314,7 +318,16 @@ if (currplayer_mini != 0)
                 if (screenY_px <= 0x07)
                 {
                     AppendSimDebug($"[SPIDER_UP] Hit top boundary at screenY={screenY_px}");
-                    break;
+					if (!MainWindow.Option_NoDeath)
+					{
+						deathTriggered = true;
+						deathTileX = playerX_fixed >> 8;
+						deathTileY = playerY_fixed >> 8;
+						paused = true;
+						_ = StopMusicAsync();
+						return;
+					}
+					break;
                 }
                 
                 // Check for ceiling collision
@@ -371,7 +384,16 @@ if (currplayer_mini != 0)
                 if (screenY_px >= 0xF8)
                 {
                     AppendSimDebug($"[SPIDER_DOWN] Hit bottom boundary at screenY={screenY_px}");
-                    break;
+					if (!MainWindow.Option_NoDeath)
+					{
+						deathTriggered = true;
+						deathTileX = playerX_fixed >> 8;
+						deathTileY = playerY_fixed >> 8;
+						paused = true;
+						_ = StopMusicAsync();
+						return;
+					}
+					break;
                 }
                 
                 // Check for floor collision
@@ -411,6 +433,8 @@ if (currplayer_mini != 0)
             // Check if beyond map bottom (ground layer = solid)
             if (tileY >= mapHeight)
             {
+				if (!useEjectProbes)
+					return (false, 0);
                 int groundTop_world = (mapHeight - groundRowsToReserve) * TILE;
                 int eject = checkY_px - groundTop_world;
                 return (true, eject);
@@ -481,6 +505,8 @@ if (currplayer_mini != 0)
             // Check if above map top (solid ceiling)
             if (tileY < 0)
             {
+				if (!useEjectProbes)
+					return (false, 0);
                 int eject = 0 - checkY_px;
                 return (true, eject);
             }
@@ -515,6 +541,12 @@ if (currplayer_mini != 0)
 
                         if (IsSolidCollisionForSpider(collision, probeX, checkY_px))
                         {
+							if (!useEjectProbes)
+							{
+								int scanEject = SharedPhysics.NesSpiderScanUpEject(
+									collision, playerY_px, _sim_nesCoordOffset);
+								return (true, scanEject);
+							}
                             var (colLeft, colTop, colRight, colBottom) = SharedPhysics.GetCollisionBounds(collision);
                             int tileTopLeft_world = (tileY - groundRowsToReserve) * TILE;
                             int collisionBottom_world = tileTopLeft_world + colBottom;

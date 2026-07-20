@@ -211,7 +211,7 @@ shiftBy4table:
 
 .global _level_list_lo, _level_list_hi, _level_list_bank, _sprite_list_lo, _sprite_list_hi, _sprite_list_bank
 .import _current_deco_type, _current_spike_set, _current_block_set, _current_saw_set
-.import _song, _speed, _lastgcolortype, _lastbgcolortype, _spawn_y_pos, _spawn_scroll_y_pos, _max_fallspeed
+.import _song, _speed, _lastgcolortype, _lastbgcolortype, _spawn_y_pos, _spawn_scroll_y_pos, _max_fallspeed_7
 .import _level_data_bank, _sprite_data_bank, _force_platformer
 .import _discomode
 
@@ -235,7 +235,8 @@ _init_rld:
 	JSR mmc3_set_prg_bank_1
 
 	LDY #$00			;-  For both (zp),y addressing and rld_column
-	STY	_no_parallax	;__	Reset bit-value variables
+	STY	_no_parallax	;	Reset bit-value variables
+	STY	_max_fallspeed_7;__
 	STY rld_column		;__ Reset scrolling
 
 	; Read header
@@ -267,44 +268,43 @@ _init_rld:
 	STA	_gamemode		;	Get just the gamemode
 	INY					;__
 
-	LDA (ptr1),y		;spawn y position high byte
-	sta _spawn_y_pos+1
-	iny	
-	LDA (ptr1),y		;spawn y position low byte
-	sta _spawn_y_pos
-	iny
+	LDA (ptr1),y		;
+	STA _spawn_y_pos+1	;	Spawn Y position (high byte)
+	INY					;__
 	
-	LDA (ptr1),y		;spawn scroll y position high byte
-	sta _spawn_scroll_y_pos+1
-	iny	
-	LDA (ptr1),y		;spawn scroll y position low byte
-	sta _spawn_scroll_y_pos
-	iny
-	
-	LDA (ptr1),y		;max fall speed high byte
-	sta _max_fallspeed
-	iny
+;	LDA (ptr1),y		;	Spawn scroll Y position, high byte
+	LDA #$02			;	(no levels need this setting, at least yet)
+	STA _spawn_scroll_y_pos+1
+;	INY					;__
 
+	LDA (ptr1),y		;	Spawn scroll Y position,  low byte
+	STA _spawn_scroll_y_pos
+	INY					;__
+	
 	LDA (ptr1),y		;__	Force platformer, Parallax disable
 	LSR					;__	Parallax disable in carry
 	ROL _force_platformer	;__	Store where it needs to go
 	STA _no_parallax	;	The rest is force platformer, store it
 	INY					;__
 
-	LDA (ptr1),y			;
-	STA _current_deco_type	;	Deco type
-	INY						;__
+	LDA (ptr1),y		;__	Max Fall Speed is 7?, Deco type
+	ASL					;__	Max Fall Speed switch in carry
+	ROL _max_fallspeed_7;__	Store where it needs to go
+	LSR					;	The rest is Deco Type, store it
+	STA _current_deco_type;__
+	INY
 	
-	LDA (ptr1),y			;
-	STA _current_spike_set	;	Spike set
-	INY						;__
+	LDA (ptr1),y			;	Spike Set, Block Set
+	TAX						;__
+	LSR						;
+	LSR						;
+	LSR						;	Spike set
+	LSR						;
+	STA _current_spike_set	;__
 
-	LDA (ptr1),y			;
-	STA _current_block_set	;	Block set
-	INY						;__
-
-	LDA (ptr1),y			;
-	STA _current_saw_set	;__	Saw set
+	TXA						;
+	AND #$0F				;	Block set
+	STA _current_block_set	;__
 
 	TYA						;
 	SEC						;
@@ -3913,8 +3913,8 @@ SSDPCM_getbyte:
 ; void update_level_completeness();
 .segment "CODE_2"
 
-.import _level, _practice_point_count
-.import _level_completeness_normal
+.import _level, _practice_point_count, _make_cube_jump_higher, _minicoins, _wrap_mode, _forced_trails
+.import _level_completeness_normal, _invisible_level_completeness_normal, _invisblocks
 
 .export _update_level_completeness
 .proc _update_level_completeness
@@ -3925,6 +3925,8 @@ SSDPCM_getbyte:
 	levelLengthHi = tmp1
 
 	percentage = tmp2
+
+
 
 	start:
 		LDY	_level
@@ -4021,6 +4023,17 @@ SSDPCM_getbyte:
 		ADC _level				;
 		TAX						;__
 
+		lda _invisblocks
+		beq noinvis
+		TYA						;
+		CMP _invisible_level_completeness_normal, X
+		BCC :+					;	Update value if bigger than last one
+			STA _invisible_level_completeness_normal, X
+		:						;__
+		RTS
+
+
+noinvis:
 		TYA						;
 		CMP _level_completeness_normal, X
 		BCC :+					;	Update value if bigger than last one

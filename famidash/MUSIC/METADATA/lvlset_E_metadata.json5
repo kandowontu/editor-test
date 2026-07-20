@@ -1,5 +1,6 @@
 {
 	songModule: "music_master.fms",
+	linkerConfig: "mmc3.cfg",
 	songs: [
 		{
 			fmsSongName: "Menu Theme E Side",
@@ -57,7 +58,12 @@
 			upperText: "SCHEMING",
 			lowerText: "WEASEL",
 			originalArtistText: "KEVIN MACLEOD",
-		},	
+		},
+		{
+			fmsSongName: "Apoplexy",
+			lowerText: "APOPLEXY",
+			originalArtistText: "BEE HUNTER",
+		},
 		{
 			fmsSongName: "atthespeedoflightfull",
 			upperText: "AT THE SPEED",
@@ -73,12 +79,6 @@
 			fmsSongName: "Speed Racer",
 			lowerText: "CHAOZ IMPACT",
 			originalArtistText: "PARAGONX9",
-		},
-		{
-			fmsSongName: "clutterfunk 2",
-			lowerText: "CLUTTERFUNK 2",
-			originalArtistText: "WATERFLAME",
-			/* no vs system to speak of */
 		},
 		{
 			fmsSongName: "Cryogenic",
@@ -115,6 +115,11 @@
 			upperText: "FRACTURE",
 			lowerText: "WCROPOLIX CUT",
 			originalArtistText: "RUKKUS",
+		},
+		{
+			fmsSongName: "Glory",
+			lowerText: "GLORY",
+			originalArtistText: "FYREMANMUSIC",
 		},
 		{
 			fmsSongName: "Golden Haze NOT RETRAY",

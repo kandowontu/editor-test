@@ -187,7 +187,7 @@ def export_bg(folder: pathlib.PurePath, levels: Iterable[dict], include_path : p
 			inputFileType = "CSV"
 		level_widths.append(math.ceil(len(lines[0]) * 16 / 100))	# the width of the level in tiles
 		rle_data = vertical_rle_with_single_tile(lines)
-		cached_data_path = (include_path / "EXPORTS" / f"{level}.lz.bin")
+		cached_data_path = (include_path / "EXPORTS" / "level" / f"{level}.lz.bin")
 		if (level in size_cache):
 			level_cache = size_cache[level]
 		else:
@@ -221,23 +221,24 @@ def export_bg(folder: pathlib.PurePath, levels: Iterable[dict], include_path : p
 			level_cache = {}
 		header = [
 			f"<sprite_data_{level}",
-			f">sprite_data_{level}",
-			f"<(.bank(sprite_data_{level}))",
+			f">(sprite_data_{level}) & $1F | $A0",
+			f"<(sprite_data_{level} >> 13)",
 			metadata.get('songID', 0),
 			f"({metadata.get('startingSpeed', 0)} << 4) | {metadata.get('startingGameMode', 0)}",
-			f"(${metadata.get('spawnYPositionHi', 0xB0):02X})",  # <- spawn position here
-			f"(${metadata.get('spawnYPositionLow', 0x00):02X})",  # <- spawn position here
-			f"(${metadata.get('scrollYPositionHi', 0x02):02X})",  # <- scroll position here
-			f"(${metadata.get('scrollYPositionLow', 0xEF):02X})",  # <- scroll position here
-			f"(${metadata.get('maxFallSpeed', 0x06):02X})",  # <- max fall speed here
+			f"(${metadata.get('spawnYPositionHi', 0xB0):02X})",
+			f"(${metadata.get('scrollYPositionLow', 0xEF):02X})",
 			" | ".join([
 				f"({int(bool(metadata.get(name)))} << {idx})"
 				for idx, name in enumerate(['forcePlatformer', 'parallaxDisable'])
-			]),  # <- bitfield separate line
-			f"_{metadata.get('decoType', 'NONE')}",
-			getPropFormatted(metadata, 'spikeSet', 'SPIKES', ('A', 'B', 'C'), "_"),
-			getPropFormatted(metadata, 'blockSet', 'BLOCKS', ('A', 'B', 'C', 'D'), "_"),
-			getPropFormatted(metadata, 'sawSet', 'SAWBLADES', ('A',), "_"),
+			]),
+			" | ".join([
+				f"({metadata.get('maxFallSpeed_is_7', 0)} << 7)",
+				f"_{metadata.get('decoType', 'NONE')}",			
+			]),
+			" | ".join([
+				f"({getPropFormatted(metadata, 'spikeSet', 'SPIKES', ('A', 'B', 'C'), "_")} << 4)",
+				getPropFormatted(metadata, 'blockSet', 'BLOCKS', ('A', 'B', 'C', 'D'), "_"),
+			]),
 			f"${metadata.get('startingBackgroundColor', 0):02X}",
 			f"${metadata.get('startingGroundColor', 0):02X}",
 			str(len(lines)),
@@ -250,15 +251,10 @@ def export_bg(folder: pathlib.PurePath, levels: Iterable[dict], include_path : p
 			"Song ID",
 			"Starting game mode and speed",
 			"Spawn Y Position (high byte)",
-			"Spawn Y Position (low byte)",
-			"Y Scroll Position (high byte)",
 			"Y Scroll Position (low byte)",
-			"Max Fall Speed (high byte)",
-			", ".join(["Disable parallax", "Force platformer"][::-1]),
-			"Deco type",
-			"Spike set",
-			"Block set",
-			"Sawblade set",
+			", ".join(["Force platformer", "Disable parallax"]),
+			", ".join(["Max Fall Speed is 7?", "Deco type"]),
+			", ".join(["Spike Set", "Block Set"]),
 			"Starting background color",
 			"Starting ground color",
 			"Level height"
@@ -367,7 +363,7 @@ def export_bg(folder: pathlib.PurePath, levels: Iterable[dict], include_path : p
 
 	return (banked_level_data, level_widths, level_chunk_list)
 		
-def export_spr(folder: pathlib.PurePath, levels: Iterable[dict], globalOffsetSettings: Iterable[dict]):
+def export_spr(folder: pathlib.PurePath, levels: Iterable[dict], include_path : pathlib.Path, globalOffsetSettings: Iterable[dict]):
 	all_data = []
 	overflows = []
 
@@ -431,6 +427,8 @@ def export_spr(folder: pathlib.PurePath, levels: Iterable[dict], globalOffsetSet
 			with open(*filter(lambda x : x.name.lower() == f"{level}_SP.csv".lower(), all_level_files)) as f:
 				lines = list(csv.reader(f))
 			inputFileType = "CSV"
+		output_data_path = (include_path / "EXPORTS" / "sprite" / f"{level}.bin")
+
 		level_data = []
 		rows = len(lines)
 		columns = len(lines[0])
@@ -463,24 +461,29 @@ def export_spr(folder: pathlib.PurePath, levels: Iterable[dict], globalOffsetSet
 						x += offsetA[0] + offsetB[0]
 						y += offsetA[1] + offsetB[1]
 					
-					level_data.append(
+					level_data += \
 						[x & 0xFF, (x >> 8) & 0xFF,
 						 y & 0xFF, (y >> 8) & 0xFF,
-						 obj_id])
+						 obj_id]
 			
 		if overflowStart > 0:
 			overflows.append([level, overflowStart, -1])
             
-		level_data.append([0xff]) # add terminator byte
-		all_data.append((level, len(level_data) * 5 - 4, level_data, num))
-		print(f"Sprite data for {level} from {inputFileType} is {len(level_data) * 5 - 4} bytes long")
+		level_data.append(0xff) # add terminator byte
+		length = len(level_data)
+
+		output_data_path.write_bytes(bytearray(level_data))
+
+		all_data.append((level, length, output_data_path, num))
+		print(f"Sprite data for {level} from {inputFileType} is {length} bytes long")
 
 	banked_data = []
-	for (id, length, data, num) in all_data:
-		out_str = []
-		out_str.append(f"sprite_data_{id}:")
-		for sprite in data:
-			out_str.append(f"  .byte {','.join([f'${x:02x}' for x in sprite])}")
+	for (id, length, output_data_path, num) in all_data:
+		out_str = [
+			f"\tsprite_data_{id}:\t; Size: {length}",
+			f'\t\t.incbin "{output_data_path.relative_to(include_path).as_posix()}"'
+			""
+		]
 		banked_data.append((length, "\n".join(out_str), f"sprite_data_{id}", "sprite", [num, ]))
 
 	if (len(overflows) > 0):
@@ -496,31 +499,22 @@ def binpack_and_write_data(bg_exp_data : tuple, spr_exp_data : tuple, include_pa
 		banked_data = binpacking.to_constant_volume(bg_exp_data[0] + spr_exp_data[0], 8192, 0)
 	else:
 		banked_data = []
-	lvl_file = ["", ";;; Generated by export_levels.py", ""]
-	spr_data = []
+	lvl_file = ["", ";;; Generated by export_levels.py", "", '.segment "LVL_BANK"']
 	for i, bank in enumerate(banked_data):
 		real_sum_size = sum(list(zip(*bank))[0])
-		print(f"Bank DAT_BANK_{i:02X}: {real_sum_size}/8192 bytes")
-		if (any([i[3] == "level" for i in bank])):
-			lvl_file.append("")
-			lvl_file.append(f'.segment "DAT_BANK_{i:02X}"\t; Total bank size: {real_sum_size} bytes')
+		print(f"Bank {i:02X}: {real_sum_size}/8192 bytes")
+		lvl_file.append("")
+		lvl_file.append(f'; Data bank {i:02X}, total bank size: {real_sum_size} bytes')
 		for size, data, label, data_type, metadata in bank:
 			print(f"\t{label}: {size}")
-			if (data_type == "level"):
-				lvl_file.append(data)
-			elif (data_type == "sprite"):
-				spr_data.append((metadata[0], i, data))
-	
+			lvl_file.append(data)
+		lvl_file += ("\t.align 8192", "")
+
+	lvl_file += ['', f'LEVEL_BANK_COUNT = {len(banked_data)}', '']
+
 	# Write the level data
 	(include_path / "all_level_data.s").write_text("\n".join(lvl_file))
 
-	# Pack the sprite data
-	spr_file = ["", ";;; Generated by export_levels.py", ""]
-	spr_data.sort()
-	for id, bank, data in spr_data:
-		spr_file += ["", f'.segment "DAT_BANK_{bank:02X}"', data]
-	# Write the sprite data
-	(include_path / "all_sprite_data.s").write_text("\n".join(spr_file))
 
 def generate_menutext(filteredMetadata : dict, include_path : pathlib.Path):
 	upperTextList = [i.get('upperText') for i in filteredMetadata]
@@ -532,11 +526,15 @@ def generate_menutext(filteredMetadata : dict, include_path : pathlib.Path):
 	upperIdxList = [totalTextSet.index(i) if i else None for i in upperTextList]
 	lowerIdxList = [totalTextSet.index(i) if i else None for i in lowerTextList]
 
+	# Convert to asm
+	upperLoArrayList = [f'.byte\t<_levelText{i:02X}' if i != None else '.byte\t0' for i in upperIdxList]
+	upperHiArrayList = [f'.byte\t>_levelText{i:02X}' if i != None else '.byte\t0' for i in upperIdxList]
+	lowerLoArrayList = [f'.byte\t<_levelText{i:02X}' if i != None else '.byte\t0' for i in lowerIdxList]
+	lowerHiArrayList = [f'.byte\t>_levelText{i:02X}' if i != None else '.byte\t0' for i in lowerIdxList]
+
 	# Convert to C
 	outputStringsList = [f'const char levelText{i:02X}[{len(s):2}] = "{s}";' for i, s in enumerate(totalTextSet)]
-	upperArrayList = [f'\tlevelText{i:02X},' if i != None else '\tNULL,' for i in upperIdxList]
 	upperSizeArrayList = [f'\tsizeof(levelText{i:02X}),' if i != None else '\t0,' for i in upperIdxList]
-	lowerArrayList = [f'\tlevelText{i:02X},' if i != None else '\tNULL,' for i in lowerIdxList]
 	lowerSizeArrayList = [f'\tsizeof(levelText{i:02X}),' if i != None else '\t0,' for i in lowerIdxList]
 
 	(include_path / 'menutext.h').write_text("\n".join([
@@ -545,22 +543,37 @@ def generate_menutext(filteredMetadata : dict, include_path : pathlib.Path):
 		'',
 		*outputStringsList,
 		'', '',
-		'const char* const levelTextsUpper[] = {',
-		*upperArrayList,
-		'};',
-		'',
+		'extern const uint8_t levelTextsUpper_lo[];',
+		'extern const uint8_t levelTextsUpper_hi[];',
+		'extern const uint8_t levelTextsLower_lo[];',
+		'extern const uint8_t levelTextsLower_hi[];',
+		'', '',
 		'const uint8_t levelTextsUpperSize[] = {',
 		*upperSizeArrayList,
-		'};',
-		'', '',
-		'const char* const levelTextsLower[] = {',
-		*lowerArrayList,
 		'};',
 		'',
 		'const uint8_t levelTextsLowerSize[] = {',
 		*lowerSizeArrayList,
 		'};',
 		''
+		]))
+
+	(include_path / "menutext.s").write_text("\n".join([
+		'',
+		';;; Exported by export_levels.py',
+		'',
+		'.segment _LVL_NAME_BANK',
+		'',
+		'.export _levelTextsUpper_lo, _levelTextsUpper_hi, _levelTextsLower_lo, _levelTextsLower_hi',
+		'',
+		f'.repeat {len(totalTextSet)}, I',
+		'.import .ident(.sprintf("_levelText%02X", I))',
+		'.endrepeat'
+		'', '',
+		'_levelTextsUpper_lo:', *upperLoArrayList, '',
+		'_levelTextsUpper_hi:', *upperHiArrayList, '',
+		'_levelTextsLower_lo:', *lowerLoArrayList, '',
+		'_levelTextsLower_hi:', *lowerHiArrayList, '',
 		]))
 
 def generate_level_list(filteredMetadata : dict, include_path : pathlib.Path):
@@ -596,20 +609,20 @@ def generate_level_table(levels, bg_exp_data, include_path):
 		hi_widths_enabled = max(bg_exp_data[1]) >= 0x10000
 	else:
 		mid_widths_enabled = hi_widths_enabled = False
-	
+
 	level_list_lo = '\n'.join(
 		[f"\t.byte .lobyte(level_data_{x})" for x in levels])
 	level_list_hi = '\n'.join(
-		[f"\t.byte .hibyte(level_data_{x})" for x in levels])
+		[f"\t.byte .hibyte(level_data_{x}) & $1F | $A0" for x in levels])
 	level_list_bank = '\n'.join(
-		[f"\t.byte .lobyte(.bank(level_data_{x}))" for x in levels])
+		[f"\t.byte .lobyte(level_data_{x} >> 13)" for x in levels])
 
 	level_chunk_list_lo = '\n'.join(
 		[f"\t.byte .lobyte(level_data_{x})" for x in bg_exp_data[2]])
 	level_chunk_list_hi = '\n'.join(
-		[f"\t.byte .hibyte(level_data_{x})" for x in bg_exp_data[2]])
+		[f"\t.byte .hibyte(level_data_{x}) & $1F | $A0" for x in bg_exp_data[2]])
 	level_chunk_list_bank = '\n'.join(
-		[f"\t.byte .lobyte(.bank(level_data_{x}))" for x in bg_exp_data[2]])
+		[f"\t.byte .lobyte(level_data_{x} >> 13)" for x in bg_exp_data[2]])
 
 	level_lengths_lo = "\n".join(
 		[f"\t.byte .lobyte(${bg_exp_data[1][x]:06X})\t\t; {levels[x]}" 
@@ -722,7 +735,7 @@ def main():
 
 	if len(levels) > 0:
 		bg_exp_data = export_bg(args.csvFolder, filteredMetadata, include_path)
-		spr_exp_data = export_spr(args.csvFolder, filteredMetadata, globalObjectOffsetSettings)
+		spr_exp_data = export_spr(args.csvFolder, filteredMetadata, include_path, globalObjectOffsetSettings)
 	else:
 		bg_exp_data = [[], [], []]
 		spr_exp_data = [[], None]
