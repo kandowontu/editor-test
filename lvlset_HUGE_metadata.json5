@@ -2440,6 +2440,56 @@
 			]
 		},
 		{
+            level: "illusion",
+			lowerText: "ILLUSION",
+            decoType: "DECO1",
+            spikeSet: "A",
+            blockSet: "B",
+            sawSet: "A",
+            difficulty: "HARD",
+            stars: 4,
+            songID: "song_menu_theme",
+            startingGameMode: 0,
+            startingSpeed: 0,
+            startingBackgroundColor: 0x0F,
+            startingGroundColor: 0x0F,
+            parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
+			maxFallSpeed: 0x07,
+			objectOffsets: [
+				{
+					coordinates: [
+						[165, 23], [168, 24], [237, 24], [281, 23], [303, 24],
+					],
+					offsetX: +8,
+				},
+				{
+					coordinates: [
+						[169, 25],
+					],
+					offsetX: -8,
+				},
+				{
+					coordinates: [
+						[627, 21],
+					],
+					offsetX: +16,
+				},
+				{
+					coordinates: [
+						[169, 25], [529, 23], [628, 22],
+					],
+					offsetY: -8,
+				},
+				{
+					coordinates: [
+						[628, 23],
+					],
+					offsetX: +3,
+				},
+			]
+        },
+		{
 			level: "lookatthislevel",
 			upperText: "LOOK AT",
 			lowerText: "THIS LEVEL",
@@ -2635,7 +2685,7 @@
 				},
 				{
 					coordinates: [
-						[133, 22], [168, 23], [264, 18], [359, 9], [387, 8], [479, 26], [480, 26], [484, 26], [554, 18], [623, 17], [796, 15], [797, 20], [862, 21],
+						[50, 23], [133, 22], [168, 23], [264, 18], [359, 9], [387, 8], [479, 26], [480, 26], [484, 26], [554, 18], [623, 17], [796, 15], [797, 20], [862, 21],
 					],
 					offsetX: +16
 				},
@@ -2726,6 +2776,61 @@
 					offsetX: +8
 				},
 			]	
+		},
+		{ 
+			level: "outerspace",
+			lowerText: "OUTERSPACE",
+			decoType: "DECO1",
+			spikeSet: "A",
+			blockSet: "B",
+			sawSet: "A",
+			difficulty: "HARD",
+			stars: 5,
+			songID: "song_menu_theme",
+			startingGameMode: 0,
+			startingSpeed: 0,
+			startingBackgroundColor: 0x04,
+			startingGroundColor: 0x04,
+			parallaxDisable: true,
+			objectOffsets: [
+				{
+					coordinates: [259, 21],
+					offsetY: -8, 
+					offsetX: -8
+				},
+				{
+					coordinates: [
+						[455, 24],
+						[425, 21],
+						[506, 23],
+						[330, 23],
+						[354, 21],
+						[386, 21]
+					],
+					offsetY: -8 
+				},
+				{
+					coordinates: [
+						[296, 21],
+						[365, 22],
+						[442, 22],
+						[436, 22],
+						[409, 22],
+						[406, 22],
+						[275, 20],
+						[114, 20],
+						[125, 21],
+						[141, 21],
+						[151, 19],
+						[166, 21],
+						[169, 21],
+						[196, 21],
+						[202, 21],
+						[208, 21]
+					],
+					offsetY: +8 
+				}
+			]
 		},
 		{
 			level: "ultiatedestruction",
@@ -5018,7 +5123,8 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x12,
 			startingGroundColor: 0x02,
-			parallaxDisable: true
+			parallaxDisable: true,
+			maxFallSpeed_is_7: 0x01,
 		},
 		{
 			level: "xx",

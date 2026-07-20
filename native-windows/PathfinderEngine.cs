@@ -9893,7 +9893,11 @@ public class PathfinderEngine
 			{
 				int num24 = (s.Mini ? SharedPhysics.PadOrbHeights_Mini[6][7] : SharedPhysics.PadOrbHeights[6][7]);
 				s.VelY_fixed = (s.GravFlipped ? num24 : (-num24));
-				s.Orbed = true;
+				// Pogo's synthetic black-orb press stores cube_data bit $02 but
+				// does not set orbed[].  AirPressLatch already represents that
+				// cube-data bit for this fresh airborne press.  Setting Orbed here
+				// wrongly suppresses a held cube jump if a cube portal is reached
+				// before the button is released (CarefreeVictory).
 			}
 			else if (!input)
 			{

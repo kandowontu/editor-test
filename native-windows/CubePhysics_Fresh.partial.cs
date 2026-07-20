@@ -168,12 +168,11 @@ namespace FamidashEditor
                         bool isGrounded = (playerVelY_fixed >= -16 && playerVelY_fixed <= 16);
                         
                         bool doJump = false;
-                        // Path 1: hold-to-jump (no jblocked/fblocked, checks orbed)
-                        // During pathfinder replay, use pressJump instead of holdJump.
-                        // The PF's input may have consecutive trues from landing
-                        // predictions; pressJump is consumed once per true→grounded
-                        // transition, preventing stale holds from mis-firing jumps.
-                        bool cubeJumpInput = pathfinderEnabled ? pressJump : holdJump;
+						// NES cube_movement tests the held controller state here. This
+						// remains true when a held pogo press crosses a cube portal and
+						// lands during that same frame; replay must not require a second
+						// fresh edge.
+						bool cubeJumpInput = holdJump;
                         if (cubeJumpInput && !jblocked && !fblocked && isGrounded && !orbed[currplayer] && dashing[currplayer] == 0)
                             doJump = true;
                         // Path 2: press-to-jump (jblocked/fblocked, no orbed check)
