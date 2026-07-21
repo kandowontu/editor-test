@@ -179,6 +179,10 @@ public class PathfinderEngine
 
 		public bool Step2Ever;
 
+		// Search-only provenance. Additive safety seeds remain available, but tied
+		// descendants cannot displace the ordinary beam on a later frame.
+		public bool BfsReserved;
+
 		public int SlopeWasOnCounter;
 
 		public int SlopeFrames;
@@ -382,6 +386,23 @@ public class PathfinderEngine
 		int ProcessKey,
 		int SpriteId,
 		int TargetMode);
+
+	private sealed class BfsRouteArchive
+	{
+		public int Frame;
+		public int SplitY;
+		public int TargetX;
+		public List<SimState> States = new();
+		public int[] Parents = Array.Empty<int>();
+		public bool[] Inputs = Array.Empty<bool>();
+
+		public void ReturnResources()
+		{
+			foreach (SimState state in States)
+				state.ReturnAllSpriteResources();
+			States.Clear();
+		}
+	}
 
 	private sealed class SpriteSet
 	{
@@ -1091,6 +1112,26 @@ public class PathfinderEngine
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static void WrapNesPlayerScreenY(ref SimState s)
+	{
+		// currplayer_y is a 16-bit screen-space fixed-point value on NES. Most
+		// states never approach either end, but an opening spider boundary can be
+		// allowed through state_game's X <= $20 death suppression. Its following
+		// upward movement must then wrap $01.xx -> $FE.xx before process_y_scroll.
+		int screenY_fixed = s.Y_fixed - s.CameraY_fixed;
+		s.Y_fixed = s.CameraY_fixed + (screenY_fixed & 0xFFFF);
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static void ApplyNesPlayerYHighSubtract(ref SimState s, byte amount)
+	{
+		int screenY_fixed = s.Y_fixed - s.CameraY_fixed;
+		int rawScreenY = screenY_fixed & 0xFFFF;
+		int high = unchecked((byte)((rawScreenY >> 8) - amount));
+		s.Y_fixed = s.CameraY_fixed + (high << 8) + (rawScreenY & 0xFF);
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private static int NesSaturatingOffset(int coordinate, int signedOffset)
 	{
 		return Math.Clamp((coordinate & 0xFF) + signedOffset, 0, 0xFF);
@@ -1542,7 +1583,7 @@ public class PathfinderEngine
 			// then x_movement loads the configured speed and advances X. Keep this
 			// hidden tick so the first searchable state has the NES X/Y phase.
 			ProcessSpritesNesOrder(ref s, s.X_fixed >> 8, inputHeld: false,
-				pressEdge: false, queuedPressAtFrameStart: false, out _);
+				pressEdge: false, queuedPressAtFrameStart: false, out _, out _);
 
 			s.VelX_fixed = 0;
 			WaveEject(ref s, input: false, out _);
@@ -3939,9 +3980,118 @@ public class PathfinderEngine
 		return num + num2 + num3 + num4;
 	}
 
+	private static (int Mode, int ScreenY, int VelY, int Motion,
+		int Slope, int Horizontal, int Camera, int P2) BfsTrajectoryPhase(ref SimState s)
+	{
+		int mode = (s.GameMode << 3) |
+			(s.Mini ? 4 : 0) |
+			(s.GravFlipped ? 2 : 0) |
+			(s.DualActive ? 1 : 0);
+		int screenY = SharedPhysics.NesPlayerScreenY_px(
+			s.Y_fixed, s.CameraY_fixed) >> 1;
+		int velY = s.VelY_fixed >> 6;
+		int motion = (s.OnGround ? 1 : 0) |
+			(s.PrevInputHeld ? 2 : 0) |
+			(s.AirPressLatch ? 4 : 0) |
+			(s.Orbed ? 8 : 0) |
+			(s.BlackOrbed ? 16 : 0) |
+			((s.Dashing & 0x07) << 5);
+		int slope = (s.SlopeType & 0xFF) |
+			((s.LastSlopeType & 0xFF) << 8) |
+			((Math.Min(s.SlopeFrames, 7) & 0x07) << 16) |
+			((Math.Min(s.SlopeWasOnCounter, 7) & 0x07) << 19);
+		int horizontal = (s.VelX_fixed & 0xFFFF) |
+			((s.GlobalSpeed_fixed & 0xFFFF) << 16);
+		int camera = (s.CameraY_fixed & 0xFF) |
+			((s.ScrollYSubpx & 0xFF) << 8) |
+			(((s.TargetCameraY_fixed >> 8) & 0x3FF) << 16);
+		int p2 = 0;
+		if (s.DualActive)
+		{
+			int p2ScreenY = SharedPhysics.NesPlayerScreenY_px(
+				s.P2_Y_fixed, s.CameraY_fixed) >> 2;
+			// Keep selection deterministic across processes; System.HashCode is
+			// deliberately randomized and this value participates in BFS ordering.
+			unchecked
+			{
+				p2 = p2ScreenY;
+				p2 = p2 * 397 + (s.P2_VelY_fixed >> 6);
+				p2 = p2 * 397 + s.GameMode;
+				p2 = p2 * 397 + (s.P2_Mini ? 1 : 0);
+				p2 = p2 * 397 + (s.P2_GravFlipped ? 1 : 0);
+				p2 = p2 * 397 + (s.P2_OnGround ? 1 : 0);
+				p2 = p2 * 397 + (s.P2_PrevInputHeld ? 1 : 0);
+				p2 = p2 * 397 + (s.P2_AirPressLatch ? 1 : 0);
+			}
+		}
+		return (mode, screenY, velY, motion, slope, horizontal, camera, p2);
+	}
+
+	private static bool TryFindBfsVerticalRouteSplit(List<SimState> candidates,
+		List<int> candidateIndexes, out int splitY, out int upperCount, out int lowerCount)
+	{
+		splitY = 0;
+		upperCount = 0;
+		lowerCount = 0;
+		if (candidateIndexes.Count < 2048)
+			return false;
+
+		SortedSet<int> occupiedBuckets = new();
+		int minY = int.MaxValue;
+		int maxY = int.MinValue;
+		foreach (int candidateIndex in candidateIndexes)
+		{
+			int candidateY = candidates[candidateIndex].Y_fixed >> 8;
+			occupiedBuckets.Add(candidateY >> 4);
+			minY = Math.Min(minY, candidateY);
+			maxY = Math.Max(maxY, candidateY);
+		}
+
+		int previousBucket = int.MinValue;
+		int bestLowerBucket = 0;
+		int bestUpperBucket = 0;
+		int largestGap = 0;
+		foreach (int bucket in occupiedBuckets)
+		{
+			if (previousBucket != int.MinValue && bucket - previousBucket > largestGap)
+			{
+				largestGap = bucket - previousBucket;
+				bestLowerBucket = previousBucket;
+				bestUpperBucket = bucket;
+			}
+			previousBucket = bucket;
+		}
+
+		if (largestGap >= 3)
+		{
+			// Prefer a real empty corridor gap when one is visible.
+			splitY = ((bestLowerBucket << 4) + 15 + (bestUpperBucket << 4)) >> 1;
+		}
+		else
+		{
+			// At a fork, valid jump arcs can briefly bridge the empty rows even though
+			// the routes are already too far apart to recover from one another.
+			if (maxY - minY < 160)
+				return false;
+			splitY = (minY + maxY) >> 1;
+		}
+		foreach (int candidateIndex in candidateIndexes)
+		{
+			if ((candidates[candidateIndex].Y_fixed >> 8) <= splitY)
+				upperCount++;
+			else
+				lowerCount++;
+		}
+		return upperCount >= 512 && lowerCount >= 512;
+	}
+
 	private void RunBFS(int startX_px, int startY_px, int startSpeedUiIndex, int startGameMode, bool startGravFlipped, bool startMini)
 	{
 		Stopwatch stopwatch = Stopwatch.StartNew();
+		BfsRouteArchive? routeArchive = null;
+		bool routeBacktrackAttempted = false;
+		int backtrackRouteMaxY = int.MaxValue;
+		int backtrackRouteTargetX = -1;
 		if (Verbose)
 		{
 			_log.WriteLine($"[BFS] Starting exhaustive BFS exploration (frontier cap={120000})");
@@ -4253,6 +4403,16 @@ public class PathfinderEngine
 						else
 						{
 							SimState s7 = rState[num160];
+							bool leftArchivedUpperRoute = routeBacktrackAttempted &&
+								backtrackRouteTargetX > 0 &&
+								(s7.X_fixed >> 8) < backtrackRouteTargetX &&
+								(s7.Y_fixed >> 8) > backtrackRouteMaxY;
+							if (leftArchivedUpperRoute)
+							{
+								s7.ReturnAllSpriteResources();
+								num154++;
+								continue;
+							}
 							int num164 = CountBfsCoins(ref s7);
 							int item2 = BfsScore(ref s7, num164);
 							list26.Add(s7);
@@ -4473,6 +4633,53 @@ public class PathfinderEngine
 						_log.WriteLine($"  parent[{num41}] Y={simState3.Y_fixed >> 8} Yfx=0x{simState3.Y_fixed:X} VelY=0x{simState3.VelY_fixed:X} X={simState3.X_fixed >> 8}");
 					}
 				}
+				if (list3.Count == 0 && num5 < 0 && routeArchive != null &&
+					!routeBacktrackAttempted)
+				{
+					routeBacktrackAttempted = true;
+					foreach (SimState state in frontier)
+						state.ReturnAllSpriteResources();
+
+					if (list.Count > routeArchive.Frame)
+						list.RemoveRange(routeArchive.Frame, list.Count - routeArchive.Frame);
+					if (list2.Count > routeArchive.Frame)
+						list2.RemoveRange(routeArchive.Frame, list2.Count - routeArchive.Frame);
+					list.Add(routeArchive.Parents);
+					list2.Add(routeArchive.Inputs);
+					frontier = routeArchive.States;
+					for (int restoredIndex = 0; restoredIndex < frontier.Count; restoredIndex++)
+					{
+						SimState restoredState = frontier[restoredIndex];
+						restoredState.BfsReserved = false;
+						frontier[restoredIndex] = restoredState;
+					}
+					int restoredFrame = routeArchive.Frame;
+					int restoredSplitY = routeArchive.SplitY;
+					backtrackRouteMaxY = restoredSplitY + 32;
+					backtrackRouteTargetX = routeArchive.TargetX;
+					routeArchive = null;
+
+					num3 = frontier.Max(state => state.X_fixed >> 8);
+					num4 = -1;
+					num8 = list.Count - 1;
+					num9 = 0;
+					num10 = frontier[0].X_fixed >> 8;
+					for (int restoredIndex = 1; restoredIndex < frontier.Count; restoredIndex++)
+					{
+						int restoredX = frontier[restoredIndex].X_fixed >> 8;
+						if (restoredX > num10)
+						{
+							num9 = restoredIndex;
+							num10 = restoredX;
+						}
+					}
+					_log.WriteLine($"[BFS_BACKTRACK] dead end at frame {frame}; " +
+						$"restoring {frontier.Count} upper-route states from frame " +
+						$"{restoredFrame} (maxY={backtrackRouteMaxY}, " +
+						$"targetX={backtrackRouteTargetX})");
+					frame = restoredFrame;
+					continue;
+				}
 				if (list3.Count == 0)
 				{
 					_log.WriteLine($"[BFS] ALL DEAD at frame {frame} (X~{num3}px pct={num13}% expanded={frontier.Count * 2} deaths={num15})");
@@ -4631,7 +4838,10 @@ public class PathfinderEngine
 						s3.ScrollYSubpx,
 						s3.NesSprDataPtr,
 						BfsRuntimeHash(ref s3));
-					if (!dictionary.TryGetValue(key, out var value3) || candScore[num62] < candScore[value3])
+					if (!dictionary.TryGetValue(key, out var value3) ||
+						candScore[num62] < candScore[value3] ||
+						(candScore[num62] == candScore[value3] &&
+						 list3[value3].BfsReserved && !s3.BfsReserved))
 					{
 						dictionary[key] = num62;
 					}
@@ -4730,14 +4940,34 @@ public class PathfinderEngine
 						_log.WriteLine($"[GF_PIPE] f={frame} frontGF={num69} gfDied={num17}{text} candGF={num66} dedupGF={num67} gfY=[{((num70 == int.MaxValue) ? "N/A" : num70.ToString())}..{((num71 == int.MinValue) ? "N/A" : num71.ToString())}]");
 					}
 				}
-				List<int> list15 = new List<int>(dictionary.Values);
-				list15.Sort((int a, int b) => candScore[a].CompareTo(candScore[b]));
-				int num75 = (PreferCoins ? 120000 : 1073741823);
+				// Search-safety seeds are additive. Keep their descendants outside the
+				// ordinary 120k selection so they can never consume a slot that the
+				// established beam would otherwise retain (Windy Landscape/Heliopolis).
+				List<int> list15 = new List<int>(dictionary.Count);
+				List<int> inheritedReservedIndexes = new List<int>();
+				foreach (int candidateIndex in dictionary.Values)
+				{
+					if (list3[candidateIndex].BfsReserved)
+						inheritedReservedIndexes.Add(candidateIndex);
+					else
+						list15.Add(candidateIndex);
+				}
+				list15.Sort((int a, int b) =>
+				{
+					return candScore[a].CompareTo(candScore[b]);
+				});
+				inheritedReservedIndexes.Sort((int a, int b) =>
+					candScore[a].CompareTo(candScore[b]));
+				const int BaseCoinFrontierCap = 120000;
+				int num75 = PreferCoins ? BaseCoinFrontierCap : int.MaxValue;
 				int selectedCapacity = Math.Min(dictionary.Count, num75);
 				List<SimState> list16 = new List<SimState>(selectedCapacity);
 				List<int> list17 = new List<int>(selectedCapacity);
 				List<bool> list18 = new List<bool>(selectedCapacity);
-				int num76 = Math.Min(PreferCoins ? (num75 * 3 / 4) : list15.Count,
+				// Preserve the established beam ordering exactly. Long-lived route recovery
+				// is handled by the independent archive below, not by changing which ordinary
+				// candidates this selector retains.
+				int num76 = Math.Min(PreferCoins ? num75 * 3 / 4 : list15.Count,
 					list15.Count);
 				for (int num77 = 0; num77 < num76; num77++)
 				{
@@ -4862,6 +5092,7 @@ public class PathfinderEngine
 							if (!seededTransitionCandidates.Add(seedIndex))
 								continue;
 							SimState seedState = list3[seedIndex];
+							seedState.BfsReserved = true;
 							list16.Add(seedState);
 							list17.Add(list4[seedIndex]);
 							list18.Add(list5[seedIndex]);
@@ -4893,6 +5124,7 @@ public class PathfinderEngine
 						{
 							continue;
 						}
+						seedState.BfsReserved = true;
 						list16.Add(seedState);
 						list17.Add(list4[seedIndex]);
 						list18.Add(list5[seedIndex]);
@@ -4969,6 +5201,129 @@ public class PathfinderEngine
 							if (sizeModeClass == num83)
 							{
 								flag7 = value8 + 1 < list16.Count / 10;
+							}
+						}
+					}
+				}
+				// Exact state tracking can produce more than 120k future-distinct
+				// candidates whose ordinary score is tied. Preserve a bounded sample
+				// of missing trajectory phases after the normal selection. These are
+				// additions above the cap, so no already-retained path is displaced.
+				const int MaxTrajectoryPhaseSeeds = 8192;
+				int trajectoryPhaseSeedsAdded = 0;
+				if (PreferCoins && list15.Count > num76)
+				{
+					var selectedTrajectoryPhases = new HashSet<(int Mode, int ScreenY,
+						int VelY, int Motion, int Slope, int Horizontal, int Camera, int P2)>();
+					foreach (SimState selectedState in list16)
+					{
+						SimState phaseState = selectedState;
+						selectedTrajectoryPhases.Add(BfsTrajectoryPhase(ref phaseState));
+					}
+					for (int seedPos = num76;
+						seedPos < list15.Count && trajectoryPhaseSeedsAdded < MaxTrajectoryPhaseSeeds;
+						seedPos++)
+					{
+						int seedIndex = list15[seedPos];
+						SimState seedState = list3[seedIndex];
+						if (!selectedTrajectoryPhases.Add(BfsTrajectoryPhase(ref seedState)))
+							continue;
+						seedState.BfsReserved = true;
+						list16.Add(seedState);
+						list17.Add(list4[seedIndex]);
+						list18.Add(list5[seedIndex]);
+						trajectoryPhaseSeedsAdded++;
+					}
+				}
+				if (Verbose && trajectoryPhaseSeedsAdded > 0 && frame % 20 == 0)
+				{
+					_log.WriteLine($"[PHASE_SELECT] f={frame} added={trajectoryPhaseSeedsAdded} " +
+						$"ordinaryCap={num75} candidates={list15.Count}");
+				}
+				const int MaxInheritedReserveStates = 8192;
+				int inheritedReserveAdded = 0;
+				if (PreferCoins && inheritedReservedIndexes.Count > 0)
+				{
+					var selectedReservePhases = new HashSet<(int Mode, int ScreenY,
+						int VelY, int Motion, int Slope, int Horizontal, int Camera, int P2)>();
+					foreach (SimState selectedState in list16)
+					{
+						SimState phaseState = selectedState;
+						selectedReservePhases.Add(BfsTrajectoryPhase(ref phaseState));
+					}
+					foreach (int reserveIndex in inheritedReservedIndexes)
+					{
+						if (inheritedReserveAdded >= MaxInheritedReserveStates)
+							break;
+						SimState reserveState = list3[reserveIndex];
+						if (!selectedReservePhases.Add(BfsTrajectoryPhase(ref reserveState)))
+							continue;
+						list16.Add(reserveState);
+						list17.Add(list4[reserveIndex]);
+						list18.Add(list5[reserveIndex]);
+						inheritedReserveAdded++;
+					}
+				}
+				if (Verbose && inheritedReserveAdded > 0 && frame % 20 == 0)
+				{
+					_log.WriteLine($"[RESERVE_SELECT] f={frame} added={inheritedReserveAdded} " +
+						$"available={inheritedReservedIndexes.Count}");
+				}
+
+				// When a capped search is visibly split into separate vertical corridors,
+				// keep an independent snapshot of the upper route. The ordinary search is
+				// unchanged; this snapshot is used only if its locally preferred route later
+				// reaches an all-dead wall. Dastardly's lower bypass remains safe for over a
+				// thousand frames before doing exactly that.
+				const int MaxRouteArchiveStates = 60000;
+				if (PreferCoins && !routeBacktrackAttempted &&
+					list15.Count > BaseCoinFrontierCap &&
+					TryFindBfsVerticalRouteSplit(list3, list15, out int routeSplitY,
+						out int upperRouteCount, out int lowerRouteCount))
+				{
+					SimState routeProbe = list3[list15[0]];
+					if (TryGetUpcomingBfsTransitionPortal(ref routeProbe, 2048,
+						out BfsTransitionPortal routePortal))
+					{
+						List<int> upperRouteIndexes = new(Math.Min(upperRouteCount,
+							MaxRouteArchiveStates));
+						foreach (int candidateIndex in list15)
+						{
+							if ((list3[candidateIndex].Y_fixed >> 8) <= routeSplitY)
+								upperRouteIndexes.Add(candidateIndex);
+						}
+
+						if (upperRouteIndexes.Count >= 2048 && routeArchive == null)
+						{
+							BfsRouteArchive replacement = new()
+							{
+								Frame = list.Count,
+								SplitY = routeSplitY,
+								TargetX = routePortal.X
+							};
+							int archiveCount = Math.Min(MaxRouteArchiveStates,
+								upperRouteIndexes.Count);
+							int[] archiveParents = new int[archiveCount];
+							bool[] archiveInputs = new bool[archiveCount];
+							for (int archivePos = 0; archivePos < archiveCount; archivePos++)
+							{
+								int routePos = (int)((long)archivePos *
+									upperRouteIndexes.Count / archiveCount);
+								int candidateIndex = upperRouteIndexes[routePos];
+								SimState archivedState = list3[candidateIndex].Clone();
+								archivedState.BfsReserved = true;
+								replacement.States.Add(archivedState);
+								archiveParents[archivePos] = list4[candidateIndex];
+								archiveInputs[archivePos] = list5[candidateIndex];
+							}
+							replacement.Parents = archiveParents;
+							replacement.Inputs = archiveInputs;
+							routeArchive = replacement;
+							if (Verbose)
+							{
+								_log.WriteLine($"[ROUTE_ARCHIVE] f={frame} splitY={routeSplitY} " +
+									$"upper={upperRouteCount} lower={lowerRouteCount} " +
+									$"saved={archiveCount} targetX={routePortal.X}");
 							}
 						}
 					}
@@ -5433,6 +5788,7 @@ public class PathfinderEngine
 			ResultMessage = "BFS crashed: " + ex2.GetType().Name + ": " + ex2.Message;
 			Success = false;
 		}
+		routeArchive?.ReturnResources();
 		_bfsSearchActive = false;
 		stopwatch.Stop();
 	}
@@ -9317,6 +9673,7 @@ public class PathfinderEngine
 			s.Orbed = false;
 		}
 		bool orbHitThisFrame = false;
+		bool skullDeathThisFrame = false;
 		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=ProcessSprites.in X={num} Y={NesPlayerY_px(s.Y_fixed, s.CameraY_fixed)} mode={s.GameMode}");
 		if (!_dualP2Guard)
 		{
@@ -9326,7 +9683,8 @@ public class PathfinderEngine
 		}
 		int _dbgVelXBefore = s.VelX_fixed;
 		int _dbgYBeforePS = s.Y_fixed;
-		endLevel = ProcessSpritesNesOrder(ref s, num, input, flag, queuedPressAtFrameStart, out orbHitThisFrame);
+		endLevel = ProcessSpritesNesOrder(ref s, num, input, flag, queuedPressAtFrameStart,
+			out orbHitThisFrame, out skullDeathThisFrame);
 		// NES tests orbed[] after sprite_collide and after cube_eject. Preserve the
 		// sprite-pass latch explicitly: collision/ejection bookkeeping must never
 		// make a held input auto-jump after a spider orb/pad teleport.
@@ -9361,7 +9719,7 @@ public class PathfinderEngine
 			bool died = false;
 			CubeEject(ref s, input, out died);
 			PfSlopeDiag(ref s, "cube/post-eject");
-			if (died)
+			if (died && (x_fixed2 >> 8) > 0x20)
 			{
 				if (_speculativeDepth == 0)
 				{
@@ -9718,7 +10076,12 @@ public class PathfinderEngine
 					s.GravFlipped = true;
 					s.GravMul = -1;
 					if (SpiderScanUp(ref s))
+					{
 						s.DeathType = 12;
+						// spider_movement always executes this after spider_up_wait,
+						// even when the wait exited through its boundary-death guard.
+						ApplyNesPlayerYHighSubtract(ref s, s.EjectU);
+					}
 					s.VelY_fixed = 0;
 				}
 				else
@@ -9726,7 +10089,10 @@ public class PathfinderEngine
 					s.GravFlipped = false;
 					s.GravMul = 1;
 					if (SpiderScanDown(ref s))
+					{
 						s.DeathType = 12;
+						ApplyNesPlayerYHighSubtract(ref s, s.EjectD);
+					}
 					s.VelY_fixed = 0;
 				}
 				s.BlackOrbed = false;
@@ -9916,6 +10282,24 @@ public class PathfinderEngine
 		if (_dualP2Guard)
 		{
 			s.X_fixed = x_fixed2;
+		}
+		// SKULL_ORB sets cube_data's death bit during sprite_collide. The main
+		// game loop observes that bit only after movement has completed, and clears
+		// it instead of killing while player 1 is still within the opening $20 px.
+		if (skullDeathThisFrame)
+		{
+			s.X_fixed = x_fixed2;
+			if ((x_fixed2 >> 8) > 0x20)
+			{
+				if (_speculativeDepth == 0)
+				{
+					_lastDeathReason = "SKULL_ORB";
+					_lastDeathX = s.X_fixed >> 8;
+					_lastDeathY = s.Y_fixed >> 8;
+				}
+				s.DeathType = 9;
+				return false;
+			}
 		}
 		// spider_up_wait/spider_down_wait set cube_data's death bit as soon as
 		// their screen-byte guard reaches <= $07 or >= $F8.  That bit is tested
@@ -10139,26 +10523,43 @@ public class PathfinderEngine
 			if (num53 < 1536)
 			{
 				s.X_fixed = x_fixed2;
-				if (_speculativeDepth == 0)
+				if ((x_fixed2 >> 8) <= 0x20)
 				{
-					_lastDeathReason = "OOB_TOP";
-					_lastDeathX = s.X_fixed >> 8;
-					_lastDeathY = s.Y_fixed >> 8;
+					// state_game clears cube_data's death bit during the protected
+					// opening distance. Keep the post-scan position so collision can
+					// engage normally once the player reaches screen X $10.
+					s.DeathType = 0;
 				}
-				s.DeathType = 11;
-				return false;
+				else
+				{
+					if (_speculativeDepth == 0)
+					{
+						_lastDeathReason = "OOB_TOP";
+						_lastDeathX = s.X_fixed >> 8;
+						_lastDeathY = s.Y_fixed >> 8;
+					}
+					s.DeathType = 11;
+					return false;
+				}
 			}
 			if (num53 > 63744)
 			{
 				s.X_fixed = x_fixed2;
-				if (_speculativeDepth == 0)
+				if ((x_fixed2 >> 8) <= 0x20)
 				{
-					_lastDeathReason = "OOB_BOTTOM";
-					_lastDeathX = s.X_fixed >> 8;
-					_lastDeathY = s.Y_fixed >> 8;
+					s.DeathType = 0;
 				}
-				s.DeathType = 11;
-				return false;
+				else
+				{
+					if (_speculativeDepth == 0)
+					{
+						_lastDeathReason = "OOB_BOTTOM";
+						_lastDeathX = s.X_fixed >> 8;
+						_lastDeathY = s.Y_fixed >> 8;
+					}
+					s.DeathType = 11;
+					return false;
+				}
 			}
 		}
 		else if (num53 < 1536)
@@ -10548,6 +10949,7 @@ public class PathfinderEngine
 		}
 		int clampMaxY = Math.Max(0, mapHeight * 16 - 16) << 8;
 		SharedPhysics.CommonGravityRoutine(ref s.VelY_fixed, ref s.Y_fixed, num, num2, s.GravFlipped ? 255 : 0, s.Dashing, s.GravityMod, 1.0, isFullSpeed: true, s.VelX_fixed, clampMaxY);
+		WrapNesPlayerScreenY(ref s);
 	}
 
 	private void CubeEject(ref SimState s, bool input, out bool died)
@@ -12337,7 +12739,10 @@ public class PathfinderEngine
 				SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=SpiderScanUp.top i={i} Yscr={screenY_px}");
 				return true;
 			}
-			var (flag, num2) = BgCollU_Spider(playerX_px, worldY_px + hitboxOffsetY, width, height, currplayerScreenX_px);
+			UpdateSpiderScanUpEjectSideEffect(ref s, playerX_px,
+				worldY_px + hitboxOffsetY, width, currplayerScreenX_px);
+			var (flag, num2) = BgCollU_Spider(playerX_px, worldY_px + hitboxOffsetY,
+				width, height, currplayerScreenX_px);
 			SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=SpiderScanUp.step i={i} Ywld={worldY_px} Yscr={screenY_px} probeY={worldY_px + hitboxOffsetY} hit={(flag ? 1 : 0)} ej={num2}");
 			if (flag)
 			{
@@ -12376,7 +12781,10 @@ public class PathfinderEngine
 				SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=SpiderScanDown.bottom i={i} Yscr={screenY_px}");
 				return true;
 			}
-			var (flag, num5) = BgCollD_Spider(playerX_px, worldY_px + num2, width, num, currplayerScreenX_px);
+			UpdateSpiderScanDownEjectSideEffect(ref s, playerX_px,
+				worldY_px + num2, width, num, currplayerScreenX_px);
+			var (flag, num5) = BgCollD_Spider(playerX_px, worldY_px + num2,
+				width, num, currplayerScreenX_px);
 			SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=SpiderScanDown.step i={i} Ywld={worldY_px} Yscr={screenY_px} probeY={worldY_px + num2 + num} hit={(flag ? 1 : 0)} ej={num5}");
 			if (flag)
 			{
@@ -12390,7 +12798,66 @@ public class PathfinderEngine
 		return false;
 	}
 
-	private (bool hit, int ejectAmount) BgCollD_Spider(int playerX_px, int playerY_px, int width, int height, int currplayerScreenX_px, bool useEjectProbes = false)
+	private void UpdateSpiderScanUpEjectSideEffect(ref SimState s, int playerX_px,
+		int playerY_px, int width, int currplayerScreenX_px)
+	{
+		int tileRow = playerY_px / 16 + _collisionMap.GroundRowsToReserve;
+		if (tileRow < 0 || tileRow >= _collisionMap.MapHeight)
+			return;
+
+		int[] probeXs = { playerX_px + 3, playerX_px + width - 3 };
+		foreach (int probeX in probeXs)
+		{
+			int tileCol = probeX / 16;
+			if (tileCol < 0 || tileCol >= _collisionMap.MapWidth)
+				continue;
+			int tileIndex = tileRow * _collisionMap.MapWidth + tileCol;
+			MetatileCollision collision = MetatileCollisionTable.GetCollision(
+				(byte)SharedPhysics.MapTileForCollision(_collisionMap.Tiles[tileIndex]));
+			if (collision == MetatileCollision.COL_NONE)
+				continue;
+
+			// bg_coll_return_U writes eject_U for every non-empty collision ID,
+			// even when a half-block/death/slope check ultimately returns false.
+			bool fullSolid = collision == MetatileCollision.COL_NO_SIDE ||
+				collision == MetatileCollision.COL_FLOOR_CEIL ||
+				(collision == MetatileCollision.COL_ALL && currplayerScreenX_px >= 0x10);
+			int tmp8 = (playerY_px + _nesCoordOffset) & 0x0F;
+			s.EjectU = (byte)((fullSolid ? 0xF0 : 0xF8) | tmp8);
+			if (IsSolidForSpider(collision, currplayerScreenX_px, probeX, playerY_px))
+				return;
+		}
+	}
+
+	private void UpdateSpiderScanDownEjectSideEffect(ref SimState s, int playerX_px,
+		int playerY_px, int width, int height, int currplayerScreenX_px)
+	{
+		int probeY = playerY_px + height;
+		int tileRow = probeY / 16 + _collisionMap.GroundRowsToReserve;
+		if (tileRow < 0 || tileRow >= _collisionMap.MapHeight)
+			return;
+
+		int[] probeXs = { playerX_px + 3, playerX_px + width - 3 };
+		foreach (int probeX in probeXs)
+		{
+			int tileCol = probeX / 16;
+			if (tileCol < 0 || tileCol >= _collisionMap.MapWidth)
+				continue;
+			int tileIndex = tileRow * _collisionMap.MapWidth + tileCol;
+			MetatileCollision collision = MetatileCollisionTable.GetCollision(
+				(byte)SharedPhysics.MapTileForCollision(_collisionMap.Tiles[tileIndex]));
+			if (collision == MetatileCollision.COL_NONE)
+				continue;
+
+			// bg_coll_return_D likewise publishes tmp8 before returning its boolean.
+			s.EjectD = (byte)((probeY + _nesCoordOffset) & 0x0F);
+			if (IsSolidForSpider(collision, currplayerScreenX_px, probeX, probeY))
+				return;
+		}
+	}
+
+	private (bool hit, int ejectAmount) BgCollD_Spider(int playerX_px, int playerY_px, int width,
+		int height, int currplayerScreenX_px, bool useEjectProbes = false)
 	{
 		int num = playerY_px + height;
 		int num2 = num / 16 + _collisionMap.GroundRowsToReserve;
@@ -12444,7 +12911,8 @@ public class PathfinderEngine
 		return (hit: false, ejectAmount: 0);
 	}
 
-	private (bool hit, int ejectAmount) BgCollU_Spider(int playerX_px, int playerY_px, int width, int height, int currplayerScreenX_px, bool useEjectProbes = false)
+	private (bool hit, int ejectAmount) BgCollU_Spider(int playerX_px, int playerY_px, int width,
+		int height, int currplayerScreenX_px, bool useEjectProbes = false)
 	{
 		// NES bg_coll_U's solid-top path probes Generic.y + 1. spider_eject
 		// supplies the three edge/center probes but still receives that +1 Y
@@ -12536,7 +13004,8 @@ public class PathfinderEngine
 	}
 
 	// Replicates NES bg_coll_return_D/U chain: bg_coll_U_D_checks || bg_coll_mini_blocks || bg_coll_top_bottom_slabs
-	private static bool IsSolidForSpider(MetatileCollision col, int currplayerScreenX, int probeX, int probeY)
+	private static bool IsSolidForSpider(MetatileCollision col, int currplayerScreenX,
+		int probeX, int probeY)
 	{
 		if (col == MetatileCollision.COL_NONE || SharedPhysics.IsDeathCollision(col) || SharedPhysics.IsSlopeTile(col))
 			return false;
@@ -12941,9 +13410,10 @@ public class PathfinderEngine
 	}
 
 	private bool ProcessSpritesNesOrder(ref SimState s, int currentX_px, bool inputHeld, bool pressEdge,
-		bool queuedPressAtFrameStart, out bool orbHitThisFrame)
+		bool queuedPressAtFrameStart, out bool orbHitThisFrame, out bool skullDeathThisFrame)
 	{
 		orbHitThisFrame = false;
+		skullDeathThisFrame = false;
 		_dualActivatedThisProcessSprites = false;
 		s.GravFlippedAtFrameStart = s.GravFlipped;
 		s.OrbUseFrameStartGravitySign = false;
@@ -13392,6 +13862,30 @@ public class PathfinderEngine
 					// frames; dual mode deliberately permits the other player's pass.
 					if (IsBluePad(sid) || IsGreenPad(sid))
 						s.ProcessedSprites.Add(processKey);
+				}
+				continue;
+			}
+
+			// Death/skull orb. Unlike ordinary orbs it is never consumed: colliding
+			// while activating it only sets cube_data bit $01. The buffered branch
+			// uses cube_data bit $02 (AirPressLatch), exactly like spcl_skl_orb.
+			if (sid == 0x79)
+			{
+				bool xOvO = NesAxisOverlaps(plLeft, hitboxW, sprLeft, sprWidth);
+				bool yOvO = NesAxisOverlaps(orbPlTop, hitboxH, sprTop, sprHeight);
+				if (xOvO && yOvO)
+				{
+					// The source's explicit mode test includes cube, ball, robot,
+					// spider, swing, ninja, pogo, snake, and later modes. Ship, UFO,
+					// and wave use only a fresh press.
+					bool usesBufferedHold = s.GameMode != 1 && s.GameMode != 3 &&
+						s.GameMode != 6 && s.AirPressLatch;
+					if (usesBufferedHold ? inputHeld : pressEdge)
+					{
+						skullDeathThisFrame = true;
+						OrbDbg($"NES_SLOT_SKULL_ACT slot={slot} idx={spr.Index} " +
+							$"press={pressEdge} hold={inputHeld} latch={s.AirPressLatch} gm={s.GameMode}");
+					}
 				}
 				continue;
 			}
@@ -14952,7 +15446,10 @@ public class PathfinderEngine
 			s.GravFlipped = true;
 			s.GravMul = -1;
 			if (SpiderScanUp(ref s, playerXBias: 1))
+			{
 				s.DeathType = 12;
+				ApplyNesPlayerYHighSubtract(ref s, s.EjectU);
+			}
 			s.VelY_fixed = 0;
 		}
 		else if (num >= 0x10)
@@ -14967,7 +15464,10 @@ public class PathfinderEngine
 			s.GravFlipped = false;
 			s.GravMul = 1;
 			if (SpiderScanDown(ref s, playerXBias: 1))
+			{
 				s.DeathType = 12;
+				ApplyNesPlayerYHighSubtract(ref s, s.EjectD);
+			}
 			s.VelY_fixed = 0;
 		}
 		s.Orbed = true;

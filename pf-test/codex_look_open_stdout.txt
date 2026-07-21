@@ -1,0 +1,18 @@
+Metadata file: C:\famidash\LEVELS\metadata\lvlset_HUGE_metadata.json5 (level: lookatthislevel)
+  Searched 28 levels in official_levels, 'lookatthislevel' not found
+  Found level 'lookatthislevel' in community_levels at index 21: speed=1 maxFall=6 gameMode=0 spawnYHi= spawnYLo= scrollYHi= scrollYLo=
+Metadata: startingSpeed=1 (uiIndex=0) for 'lookatthislevel'
+Metadata: maxFallSpeed=0x6 for 'lookatthislevel'
+Metadata: startingGameMode=0 for 'lookatthislevel'
+Loading C:\famidash\LEVELS\LEVEL DATA\lvlset_HUGE\lookatthislevel.tmx...
+Map: 570x27  tiles=15390  sprites=15390
+Config: C:\Users\kando\Documents\Famidash Editor\lookatthislevel.tmx.cfg (53 offsets, 0 anchors)
+Spawn: spawnHi=0xB0 scrollHi=0x02 scrollLo=0xEF scrollLin=719 nesYOffset=528 -> startY_px=367
+Start: (0, 367)  speed=0  maxFall=0x6  bias=0.50  mode=0
+Coin collection mode ENABLED
+  Progress: 0%   
+Result: FAILED
+Message: BFS failed ~ best path to X=12px (0%) [0.1s]
+Time: 0.1s
+Path points: 1
+Trace: 

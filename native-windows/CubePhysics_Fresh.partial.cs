@@ -404,6 +404,13 @@ namespace FamidashEditor
                 playerVelX_fixed,
                 clampMaxY);
 
+            // NES currplayer_y is a 16-bit screen-space fixed-point value. Keep
+            // that byte wrap before collision and process_y_scroll; an opening
+            // spider boundary can legitimately cross $0000 while its death bit
+            // is still suppressed by state_game's X <= $20 guard.
+            int screenY_fixed = playerY_fixed - cameraY_fixed;
+            playerY_fixed = cameraY_fixed + (screenY_fixed & 0xFFFF);
+
             AppendSimDebug($"[GRAV_POS] posY: 0x{posBefore:X4} ({posBefore >> 8}px) -> 0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), velY: 0x{velBefore:X4} -> 0x{playerVelY_fixed:X4}");
         }
         

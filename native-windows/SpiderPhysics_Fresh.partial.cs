@@ -307,30 +307,30 @@ if (currplayer_mini != 0)
                 // NES decrements high_byte(currplayer_y), which is screen-space.
                 screenY_fixed = ((((screenY_fixed >> 8) - 8) << 8) | (screenY_fixed & 0xFF));
                 playerY_fixed = cameraY_fixed + screenY_fixed;
-                
+
                 // Process camera scroll (matching famidash's process_y_scroll)
                 ProcessCameraScrollDuringSpiderScan();
                 screenY_fixed = playerY_fixed - cameraY_fixed;
                 int screenY_px = screenY_fixed >> 8;
                 int worldY_px = playerY_fixed >> 8;
-                
+
                 // NES death guard checks high_byte(currplayer_y), not world Y.
                 if (screenY_px <= 0x07)
                 {
                     AppendSimDebug($"[SPIDER_UP] Hit top boundary at screenY={screenY_px}");
-					if (!MainWindow.Option_NoDeath)
-					{
-						deathTriggered = true;
-						deathTileX = playerX_fixed >> 8;
-						deathTileY = playerY_fixed >> 8;
-						paused = true;
-						_ = StopMusicAsync();
-						return;
-					}
-					break;
+                    // spider_up_wait sets cube_data's death bit. state_game does
+                    // not observe it until after x_movement and clears it while
+                    // P1's resulting X is still <= $20.
+                    simulatorSpiderBoundaryDeathPending[currplayer] = true;
+                    // The caller always executes high_byte(currplayer_y) -=
+                    // eject_U after spider_up_wait, including this guard exit.
+                    ApplySimulatorNesPlayerYHighSubtract(eject_U);
+                    break;
                 }
-                
+
                 // Check for ceiling collision
+                UpdateSimulatorSpiderScanUpEjectSideEffect(playerX_px,
+                    worldY_px + hitboxOffsetY, hitboxW, groundRowsToReserve);
                 var (collided, eject) = BgCollU_Spider(playerX_px, worldY_px + hitboxOffsetY, hitboxW, hitboxH, groundRowsToReserve);
                 if (collided)
                 {
@@ -384,19 +384,14 @@ if (currplayer_mini != 0)
                 if (screenY_px >= 0xF8)
                 {
                     AppendSimDebug($"[SPIDER_DOWN] Hit bottom boundary at screenY={screenY_px}");
-					if (!MainWindow.Option_NoDeath)
-					{
-						deathTriggered = true;
-						deathTileX = playerX_fixed >> 8;
-						deathTileY = playerY_fixed >> 8;
-						paused = true;
-						_ = StopMusicAsync();
-						return;
-					}
-					break;
+                    simulatorSpiderBoundaryDeathPending[currplayer] = true;
+                    ApplySimulatorNesPlayerYHighSubtract(eject_D);
+                    break;
                 }
-                
+
                 // Check for floor collision
+                UpdateSimulatorSpiderScanDownEjectSideEffect(playerX_px,
+                    worldY_px + hitboxOffsetY, hitboxW, hitboxH, groundRowsToReserve);
                 var (collided, eject) = BgCollD_Spider(playerX_px, worldY_px + hitboxOffsetY, hitboxW, hitboxH, groundRowsToReserve);
                 if (collided)
                 {
@@ -413,6 +408,69 @@ if (currplayer_mini != 0)
             if (iteration >= maxIterations)
             {
                 AppendSimDebug($"[SPIDER_DOWN] Max iterations reached, stopping at screenY={(playerY_fixed - cameraY_fixed) >> 8}");
+            }
+        }
+
+        private void ApplySimulatorNesPlayerYHighSubtract(int amount)
+        {
+            int screenY_fixed = playerY_fixed - cameraY_fixed;
+            int rawScreenY = screenY_fixed & 0xFFFF;
+            int high = unchecked((byte)((rawScreenY >> 8) - unchecked((byte)amount)));
+            playerY_fixed = cameraY_fixed + (high << 8) + (rawScreenY & 0xFF);
+        }
+
+        private void UpdateSimulatorSpiderScanUpEjectSideEffect(int playerX_px,
+            int playerY_px, int width, int groundRowsToReserve)
+        {
+            int tileY = playerY_px / TILE + groundRowsToReserve;
+            if (tileY < 0 || tileY >= mapHeight)
+                return;
+
+            int playerWorldX = playerX_fixed >> 8;
+            int currplayerScreenX = playerWorldX - Math.Max(0, playerWorldX - 0x50);
+            int[] probes = { playerX_px + 3, playerX_px + width - 3 };
+            foreach (int probeX in probes)
+            {
+                int tileX = probeX / TILE;
+                if (tileX < 0 || tileX >= mapWidth)
+                    continue;
+                MetatileCollision collision = MetatileCollisionTable.GetCollision(
+                    (byte)SharedPhysics.MapTileForCollision(tiles[tileY * mapWidth + tileX]));
+                if (collision == MetatileCollision.COL_NONE)
+                    continue;
+
+                bool fullSolid = collision == MetatileCollision.COL_NO_SIDE ||
+                    collision == MetatileCollision.COL_FLOOR_CEIL ||
+                    (collision == MetatileCollision.COL_ALL && currplayerScreenX >= 0x10);
+                int tmp8 = (playerY_px + _sim_nesCoordOffset) & 0x0F;
+                eject_U = unchecked((sbyte)(byte)((fullSolid ? 0xF0 : 0xF8) | tmp8));
+                if (IsSolidCollisionForSpider(collision, probeX, playerY_px))
+                    return;
+            }
+        }
+
+        private void UpdateSimulatorSpiderScanDownEjectSideEffect(int playerX_px,
+            int playerY_px, int width, int height, int groundRowsToReserve)
+        {
+            int probeY = playerY_px + height;
+            int tileY = probeY / TILE + groundRowsToReserve;
+            if (tileY < 0 || tileY >= mapHeight)
+                return;
+
+            int[] probes = { playerX_px + 3, playerX_px + width - 3 };
+            foreach (int probeX in probes)
+            {
+                int tileX = probeX / TILE;
+                if (tileX < 0 || tileX >= mapWidth)
+                    continue;
+                MetatileCollision collision = MetatileCollisionTable.GetCollision(
+                    (byte)SharedPhysics.MapTileForCollision(tiles[tileY * mapWidth + tileX]));
+                if (collision == MetatileCollision.COL_NONE)
+                    continue;
+
+                eject_D = (probeY + _sim_nesCoordOffset) & 0x0F;
+                if (IsSolidCollisionForSpider(collision, probeX, probeY))
+                    return;
             }
         }
         

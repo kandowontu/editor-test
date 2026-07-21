@@ -1,0 +1,32 @@
+[COIN_INFO] coin#0 idx=15478 sid=0x07 pos=(1304,248) hit=(1296,239)-(1312,255)
+[COIN_INFO] coin#1 idx=15814 sid=0x1A pos=(8072,264) hit=(8064,255)-(8080,271)
+[COIN_INFO] coin#2 idx=15840 sid=0x1B pos=(8664,168) hit=(8656,159)-(8672,175)
+[BFS] Starting exhaustive BFS exploration (frontier cap=120000)
+[BFS_PARAMS] startX=0 startY=367 speed=0 mode=0 gravFlip=False mini=False bias=0.5 coins=True useBfs=True
+[GF_PIPE] f=0 frontGF=0 gfDied=0 candGF=2 dedupGF=2 gfY=[-34..-34]
+[BFS] f=0 front=2 dedup=2 deaths=0 Y=[-34..-34] mode=0 gravN=0 gravF=2 X~2px pct=0% ms/f=31.8 modes: m0=2
+[BFS] ALL DEAD at frame 1 (X~4px pct=0% expanded=4 deaths=4)
+[BFS] Frontier before expansion: 2 states
+[BFS] Frontier before expansion: 2 states
+  [0] X=4 Y=-34 VelY=0xFFFFFF95 grav=True mini=False
+  [0] X=4 Y=-34 VelY=0xFFFFFF95 grav=True mini=False
+  [1] X=4 Y=-34 VelY=0xFFFFFF95 grav=True mini=False
+  [1] X=4 Y=-34 VelY=0xFFFFFF95 grav=True mini=False
+[BFS] Death types: BALL_EJECT_CEIL=4
+[BFS] Death types: BALL_EJECT_CEIL=4
+[BFS_DEAD] parent X=0x476 Y=0xFFFFDE2A VelY=0xFFFFFF95 grav=True mini=False dual=False P2_Y=0x0 P2_grav=False | child X=0x6B1 Y=0xFFFFDD54 VelY=0xFFFFFF2A grav=True mini=False dt=11 inp=False
+[BFS_DEAD] parent Y=-34 VelY=0xFFFFFF95 grav=True | child Y=-35 VelY=0xFFFFFF2A dt=BALL_EJECT_CEIL inp=False
+[BFS_DEAD] parent X=0x476 Y=0xFFFFDE2A VelY=0xFFFFFF95 grav=True mini=False dual=False P2_Y=0x0 P2_grav=False | child X=0x6B1 Y=0xFFFFDD54 VelY=0xFFFFFF2A grav=True mini=False dt=11 inp=True
+[BFS_DEAD] parent Y=-34 VelY=0xFFFFFF95 grav=True | child Y=-35 VelY=0xFFFFFF2A dt=BALL_EJECT_CEIL inp=True
+[BFS_DEAD] parent X=0x476 Y=0xFFFFDE2A VelY=0xFFFFFF95 grav=True mini=False dual=False P2_Y=0x0 P2_grav=False | child X=0x6B1 Y=0xFFFFDD54 VelY=0xFFFFFF2A grav=True mini=False dt=11 inp=False
+[BFS_DEAD] parent Y=-34 VelY=0xFFFFFF95 grav=True | child Y=-35 VelY=0xFFFFFF2A dt=BALL_EJECT_CEIL inp=False
+[BFS_DEAD] parent X=0x476 Y=0xFFFFDE2A VelY=0xFFFFFF95 grav=True mini=False dual=False P2_Y=0x0 P2_grav=False | child X=0x6B1 Y=0xFFFFDD54 VelY=0xFFFFFF2A grav=True mini=False dt=11 inp=True
+[BFS_DEAD] parent Y=-34 VelY=0xFFFFFF95 grav=True | child Y=-35 VelY=0xFFFFFF2A dt=BALL_EJECT_CEIL inp=True
+[BFS] Last frontier: size=2 X=[4..4] Y=[-34..-34] mode=0 grav=True mini=False VelY=[0xFFFFFF95..0xFFFFFF95]
+[BFS] Last frontier: size=2 X=[4..4] Y=[-34..-34] mode=0 grav=True mini=False VelY=[0xFFFFFF95..0xFFFFFF95]
+[COIN_STATUS] collected_count=0 total=3 collected_indices=[]
+[COIN_RESULT] idx=15478 status=NO
+[COIN_RESULT] idx=15814 status=NO
+[COIN_RESULT] idx=15840 status=NO
+[BFS] BFS failed ~ best path to X=12px (0%)
+[BFS_DIAG] Step1 fires=0, Step2 fires=0

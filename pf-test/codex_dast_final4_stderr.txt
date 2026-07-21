@@ -1,0 +1,862 @@
+[COIN_INFO] coin#0 idx=29950 sid=0x07 pos=(1464,200) hit=(1456,191)-(1472,207)
+[COIN_INFO] coin#1 idx=30006 sid=0x1A pos=(5560,184) hit=(5552,175)-(5568,191)
+[COIN_INFO] coin#2 idx=30051 sid=0x1B pos=(9400,216) hit=(9392,207)-(9408,223)
+[BFS] Starting exhaustive BFS exploration (frontier cap=120000)
+[BFS_PARAMS] startX=0 startY=112 speed=0 mode=0 gravFlip=False mini=False bias=0.5 coins=True useBfs=True
+[BFS] f=0 front=2 dedup=2 deaths=0 Y=[113..113] mode=0 gravN=2 gravF=0 X~2px pct=0% ms/f=26.9 modes: m0=2
+[DEDUP] f=1 cand=4 deduped=2 (lost 2)
+[BFS] f=1 front=2 dedup=2 deaths=0 Y=[114..114] mode=0 gravN=2 gravF=0 X~4px pct=0% ms/f=15.9 modes: m0=2
+[DEDUP] f=2 cand=4 deduped=2 (lost 2)
+[BFS] f=2 front=2 dedup=2 deaths=0 Y=[116..116] mode=0 gravN=2 gravF=0 X~6px pct=0% ms/f=10.8 modes: m0=2
+[DEDUP] f=3 cand=4 deduped=2 (lost 2)
+[BFS] f=3 front=2 dedup=2 deaths=0 Y=[118..118] mode=0 gravN=2 gravF=0 X~8px pct=0% ms/f=8.2 modes: m0=2
+[DEDUP] f=4 cand=4 deduped=2 (lost 2)
+[BFS] f=4 front=2 dedup=2 deaths=0 Y=[121..121] mode=0 gravN=2 gravF=0 X~11px pct=0% ms/f=6.6 modes: m0=2
+[DEDUP] f=5 cand=4 deduped=2 (lost 2)
+[BFS] f=5 front=2 dedup=2 deaths=0 Y=[124..124] mode=0 gravN=2 gravF=0 X~13px pct=0% ms/f=5.5 modes: m0=2
+[DEDUP] f=6 cand=4 deduped=2 (lost 2)
+[BFS] f=6 front=2 dedup=2 deaths=0 Y=[127..127] mode=0 gravN=2 gravF=0 X~15px pct=0% ms/f=4.8 modes: m0=2
+[DEDUP] f=7 cand=4 deduped=2 (lost 2)
+[BFS] f=7 front=2 dedup=2 deaths=0 Y=[131..131] mode=0 gravN=2 gravF=0 X~17px pct=0% ms/f=4.4 modes: m0=2
+[DEDUP] f=8 cand=4 deduped=2 (lost 2)
+[BFS] f=8 front=2 dedup=2 deaths=0 Y=[133..133] mode=0 gravN=2 gravF=0 X~20px pct=0% ms/f=4.0 modes: m0=2
+[BFS] f=9 front=4 dedup=4 deaths=0 Y=[128..133] mode=0 gravN=4 gravF=0 X~22px pct=0% ms/f=3.6 modes: m0=4
+[DEDUP] f=10 cand=8 deduped=7 (lost 1)
+[BFS] f=10 front=7 dedup=7 deaths=0 Y=[124..133] mode=0 gravN=7 gravF=0 X~24px pct=0% ms/f=3.3 modes: m0=7
+[DEDUP] f=11 cand=14 deduped=10 (lost 4)
+[BFS] f=11 front=10 dedup=10 deaths=0 Y=[121..133] mode=0 gravN=10 gravF=0 X~26px pct=0% ms/f=3.1 modes: m0=10
+[DEDUP] f=12 cand=20 deduped=13 (lost 7)
+[BFS] f=12 front=13 dedup=13 deaths=0 Y=[118..133] mode=0 gravN=13 gravF=0 X~28px pct=0% ms/f=2.9 modes: m0=13
+[DEDUP] f=13 cand=26 deduped=16 (lost 10)
+[BFS] f=13 front=16 dedup=16 deaths=0 Y=[115..133] mode=0 gravN=16 gravF=0 X~31px pct=0% ms/f=2.7 modes: m0=16
+[DEDUP] f=14 cand=32 deduped=19 (lost 13)
+[BFS] f=14 front=19 dedup=19 deaths=0 Y=[113..133] mode=0 gravN=19 gravF=0 X~33px pct=0% ms/f=2.5 modes: m0=19
+[DEDUP] f=15 cand=38 deduped=22 (lost 16)
+[BFS] f=15 front=22 dedup=22 deaths=0 Y=[111..133] mode=0 gravN=22 gravF=0 X~35px pct=0% ms/f=2.4 modes: m0=22
+[DEDUP] f=16 cand=44 deduped=25 (lost 19)
+[BFS] f=16 front=25 dedup=25 deaths=0 Y=[110..133] mode=0 gravN=25 gravF=0 X~37px pct=0% ms/f=2.3 modes: m0=25
+[DEDUP] f=17 cand=50 deduped=28 (lost 22)
+[BFS] f=17 front=28 dedup=28 deaths=0 Y=[109..133] mode=0 gravN=28 gravF=0 X~40px pct=0% ms/f=2.2 modes: m0=28
+[DEDUP] f=18 cand=56 deduped=31 (lost 25)
+[BFS] f=18 front=31 dedup=31 deaths=0 Y=[108..133] mode=0 gravN=31 gravF=0 X~42px pct=0% ms/f=2.1 modes: m0=31
+[DEDUP] f=19 cand=62 deduped=34 (lost 28)
+[BFS] f=19 front=34 dedup=34 deaths=0 Y=[108..133] mode=0 gravN=34 gravF=0 X~44px pct=0% ms/f=2.0 modes: m0=34
+[DEDUP] f=20 cand=68 deduped=37 (lost 31)
+[BFS] f=20 front=37 dedup=37 deaths=0 Y=[108..133] mode=0 gravN=37 gravF=0 X~46px pct=0% ms/f=1.9 modes: m0=37
+[DEDUP] f=21 cand=74 deduped=40 (lost 34)
+[BFS] f=21 front=40 dedup=40 deaths=0 Y=[108..133] mode=0 gravN=40 gravF=0 X~49px pct=0% ms/f=1.9 modes: m0=40
+[DEDUP] f=22 cand=80 deduped=43 (lost 37)
+[BFS] f=22 front=43 dedup=43 deaths=0 Y=[108..133] mode=0 gravN=43 gravF=0 X~51px pct=0% ms/f=1.8 modes: m0=43
+[DEDUP] f=23 cand=86 deduped=46 (lost 40)
+[BFS] f=23 front=46 dedup=46 deaths=0 Y=[108..133] mode=0 gravN=46 gravF=0 X~53px pct=0% ms/f=1.8 modes: m0=46
+[DEDUP] f=24 cand=92 deduped=49 (lost 43)
+[BFS] f=24 front=49 dedup=49 deaths=0 Y=[108..133] mode=0 gravN=49 gravF=0 X~55px pct=0% ms/f=1.7 modes: m0=49
+[DEDUP] f=25 cand=98 deduped=52 (lost 46)
+[BFS] f=25 front=52 dedup=52 deaths=0 Y=[108..133] mode=0 gravN=52 gravF=0 X~57px pct=0% ms/f=1.7 modes: m0=52
+[DEDUP] f=26 cand=104 deduped=55 (lost 49)
+[BFS] f=26 front=55 dedup=55 deaths=0 Y=[108..133] mode=0 gravN=55 gravF=0 X~60px pct=0% ms/f=1.6 modes: m0=55
+[DEDUP] f=27 cand=110 deduped=58 (lost 52)
+[BFS] f=27 front=58 dedup=58 deaths=0 Y=[108..133] mode=0 gravN=58 gravF=0 X~62px pct=0% ms/f=1.6 modes: m0=58
+[DEDUP] f=28 cand=116 deduped=61 (lost 55)
+[BFS] f=28 front=61 dedup=61 deaths=0 Y=[108..133] mode=0 gravN=61 gravF=0 X~64px pct=0% ms/f=1.5 modes: m0=61
+[DEDUP] f=29 cand=122 deduped=64 (lost 58)
+[BFS] f=29 front=64 dedup=64 deaths=0 Y=[108..133] mode=0 gravN=64 gravF=0 X~66px pct=0% ms/f=1.5 modes: m0=64
+[DEDUP] f=30 cand=128 deduped=66 (lost 62)
+[BFS] f=30 front=66 dedup=66 deaths=0 Y=[108..133] mode=0 gravN=66 gravF=0 X~69px pct=0% ms/f=1.5 modes: m0=66
+[DEDUP] f=31 cand=132 deduped=68 (lost 64)
+[BFS] f=31 front=68 dedup=68 deaths=0 Y=[108..133] mode=0 gravN=68 gravF=0 X~71px pct=0% ms/f=1.5 modes: m0=68
+[DEDUP] f=32 cand=136 deduped=71 (lost 65)
+[BFS] f=32 front=71 dedup=71 deaths=0 Y=[108..133] mode=0 gravN=71 gravF=0 X~73px pct=0% ms/f=1.4 modes: m0=71
+[DEDUP] f=33 cand=142 deduped=74 (lost 68)
+[BFS] f=33 front=74 dedup=74 deaths=0 Y=[108..133] mode=0 gravN=74 gravF=0 X~75px pct=0% ms/f=1.4 modes: m0=74
+[DEDUP] f=34 cand=148 deduped=77 (lost 71)
+[BFS] f=34 front=77 dedup=77 deaths=0 Y=[108..133] mode=0 gravN=77 gravF=0 X~78px pct=0% ms/f=1.4 modes: m0=77
+[DEDUP] f=35 cand=154 deduped=80 (lost 74)
+[BFS] f=35 front=80 dedup=80 deaths=0 Y=[108..133] mode=0 gravN=80 gravF=0 X~80px pct=0% ms/f=1.4 modes: m0=80
+[DEDUP] f=36 cand=160 deduped=83 (lost 77)
+[BFS] f=36 front=83 dedup=83 deaths=0 Y=[108..133] mode=0 gravN=83 gravF=0 X~82px pct=0% ms/f=1.3 modes: m0=83
+[DEDUP] f=37 cand=166 deduped=86 (lost 80)
+[BFS] f=37 front=86 dedup=86 deaths=0 Y=[108..133] mode=0 gravN=86 gravF=0 X~84px pct=0% ms/f=1.3 modes: m0=86
+[DEDUP] f=38 cand=172 deduped=89 (lost 83)
+[BFS] f=38 front=89 dedup=89 deaths=0 Y=[108..133] mode=0 gravN=89 gravF=0 X~86px pct=0% ms/f=1.3 modes: m0=89
+[DEDUP] f=39 cand=178 deduped=92 (lost 86)
+[BFS] f=39 front=92 dedup=92 deaths=0 Y=[108..133] mode=0 gravN=92 gravF=0 X~89px pct=0% ms/f=1.3 modes: m0=92
+[DEDUP] f=40 cand=168 deduped=88 (lost 80)
+[BFS] f=40 front=88 dedup=88 deaths=16 Y=[108..128] mode=0 gravN=88 gravF=0 X~91px pct=0% ms/f=1.3 modes: m0=88
+[DEDUP] f=41 cand=164 deduped=84 (lost 80)
+[BFS] f=41 front=84 dedup=84 deaths=12 Y=[108..124] mode=0 gravN=84 gravF=0 X~93px pct=0% ms/f=1.3 modes: m0=84
+[DEDUP] f=42 cand=162 deduped=81 (lost 81)
+[BFS] f=42 front=81 dedup=81 deaths=6 Y=[108..123] mode=0 gravN=81 gravF=0 X~95px pct=0% ms/f=1.3 modes: m0=81
+[DEDUP] f=43 cand=156 deduped=78 (lost 78)
+[BFS] f=43 front=78 dedup=78 deaths=6 Y=[108..123] mode=0 gravN=78 gravF=0 X~98px pct=0% ms/f=1.3 modes: m0=78
+[DEDUP] f=44 cand=156 deduped=78 (lost 78)
+[BFS] f=44 front=78 dedup=78 deaths=0 Y=[108..127] mode=0 gravN=78 gravF=0 X~100px pct=0% ms/f=1.2 modes: m0=78
+[DEDUP] f=45 cand=144 deduped=72 (lost 72)
+[BFS] f=45 front=72 dedup=72 deaths=12 Y=[108..123] mode=0 gravN=72 gravF=0 X~102px pct=0% ms/f=1.2 modes: m0=72
+[DEDUP] f=46 cand=138 deduped=69 (lost 69)
+[BFS] f=46 front=69 dedup=69 deaths=6 Y=[108..123] mode=0 gravN=69 gravF=0 X~104px pct=0% ms/f=1.2 modes: m0=69
+[DEDUP] f=47 cand=138 deduped=69 (lost 69)
+[BFS] f=47 front=69 dedup=69 deaths=0 Y=[108..127] mode=0 gravN=69 gravF=0 X~107px pct=0% ms/f=1.2 modes: m0=69
+[DEDUP] f=48 cand=138 deduped=69 (lost 69)
+[BFS] f=48 front=69 dedup=69 deaths=0 Y=[108..132] mode=0 gravN=69 gravF=0 X~109px pct=0% ms/f=1.2 modes: m0=69
+[DEDUP] f=49 cand=138 deduped=68 (lost 70)
+[BFS] f=49 front=68 dedup=68 deaths=0 Y=[108..133] mode=0 gravN=68 gravF=0 X~111px pct=0% ms/f=1.2 modes: m0=68
+[DEDUP] f=50 cand=136 deduped=69 (lost 67)
+[BFS] f=50 front=69 dedup=69 deaths=0 Y=[108..133] mode=0 gravN=69 gravF=0 X~113px pct=0% ms/f=1.2 modes: m0=69
+[DEDUP] f=51 cand=138 deduped=71 (lost 67)
+[BFS] f=51 front=71 dedup=71 deaths=0 Y=[109..133] mode=0 gravN=71 gravF=0 X~115px pct=0% ms/f=1.1 modes: m0=71
+[DEDUP] f=52 cand=142 deduped=71 (lost 71)
+[BFS] f=52 front=71 dedup=71 deaths=0 Y=[109..133] mode=0 gravN=71 gravF=0 X~118px pct=0% ms/f=1.1 modes: m0=71
+[DEDUP] f=53 cand=142 deduped=71 (lost 71)
+[BFS] f=53 front=71 dedup=71 deaths=0 Y=[111..133] mode=0 gravN=71 gravF=0 X~120px pct=0% ms/f=1.1 modes: m0=71
+[DEDUP] f=54 cand=142 deduped=71 (lost 71)
+[BFS] f=54 front=71 dedup=71 deaths=0 Y=[112..133] mode=0 gravN=71 gravF=0 X~122px pct=0% ms/f=1.1 modes: m0=71
+[DEDUP] f=55 cand=142 deduped=71 (lost 71)
+[BFS] f=55 front=71 dedup=71 deaths=0 Y=[113..133] mode=0 gravN=71 gravF=0 X~124px pct=0% ms/f=1.1 modes: m0=71
+[DEDUP] f=56 cand=142 deduped=71 (lost 71)
+[BFS] f=56 front=71 dedup=71 deaths=0 Y=[111..133] mode=0 gravN=71 gravF=0 X~127px pct=0% ms/f=1.1 modes: m0=71
+[DEDUP] f=57 cand=142 deduped=71 (lost 71)
+[BFS] f=57 front=71 dedup=71 deaths=0 Y=[110..133] mode=0 gravN=71 gravF=0 X~129px pct=0% ms/f=1.1 modes: m0=71
+[DEDUP] f=58 cand=142 deduped=71 (lost 71)
+[BFS] f=58 front=71 dedup=71 deaths=0 Y=[109..133] mode=0 gravN=71 gravF=0 X~131px pct=0% ms/f=1.1 modes: m0=71
+[DEDUP] f=59 cand=142 deduped=71 (lost 71)
+[BFS] f=59 front=71 dedup=71 deaths=0 Y=[108..133] mode=0 gravN=71 gravF=0 X~133px pct=0% ms/f=1.1 modes: m0=71
+[DEDUP] f=60 cand=142 deduped=71 (lost 71)
+[BFS] f=60 front=71 dedup=71 deaths=0 Y=[108..133] mode=0 gravN=71 gravF=0 X~136px pct=0% ms/f=1.1 modes: m0=71
+[DEDUP] f=61 cand=142 deduped=71 (lost 71)
+[BFS] f=61 front=71 dedup=71 deaths=0 Y=[108..133] mode=0 gravN=71 gravF=0 X~138px pct=0% ms/f=1.1 modes: m0=71
+[DEDUP] f=62 cand=142 deduped=75 (lost 67)
+[BFS] f=62 front=75 dedup=75 deaths=0 Y=[108..133] mode=0 gravN=75 gravF=0 X~140px pct=0% ms/f=1.1 modes: m0=75
+[DEDUP] f=63 cand=150 deduped=79 (lost 71)
+[BFS] f=63 front=79 dedup=79 deaths=0 Y=[108..133] mode=0 gravN=79 gravF=0 X~142px pct=0% ms/f=1.0 modes: m0=79
+[DEDUP] f=64 cand=158 deduped=82 (lost 76)
+[BFS] f=64 front=82 dedup=82 deaths=0 Y=[108..133] mode=0 gravN=82 gravF=0 X~144px pct=0% ms/f=1.0 modes: m0=82
+[DEDUP] f=65 cand=164 deduped=84 (lost 80)
+[BFS] f=65 front=84 dedup=84 deaths=0 Y=[108..134] mode=0 gravN=84 gravF=0 X~147px pct=0% ms/f=1.0 modes: m0=84
+[DEDUP] f=66 cand=168 deduped=84 (lost 84)
+[BFS] f=66 front=84 dedup=84 deaths=0 Y=[108..135] mode=0 gravN=84 gravF=0 X~149px pct=0% ms/f=1.0 modes: m0=84
+[DEDUP] f=67 cand=168 deduped=84 (lost 84)
+[BFS] f=67 front=84 dedup=84 deaths=0 Y=[108..137] mode=0 gravN=84 gravF=0 X~151px pct=0% ms/f=1.0 modes: m0=84
+[DEDUP] f=68 cand=168 deduped=84 (lost 84)
+[BFS] f=68 front=84 dedup=84 deaths=0 Y=[108..139] mode=0 gravN=84 gravF=0 X~153px pct=0% ms/f=1.0 modes: m0=84
+[DEDUP] f=69 cand=168 deduped=84 (lost 84)
+[BFS] f=69 front=84 dedup=84 deaths=0 Y=[108..142] mode=0 gravN=84 gravF=0 X~156px pct=0% ms/f=1.0 modes: m0=84
+[DEDUP] f=70 cand=168 deduped=84 (lost 84)
+[BFS] f=70 front=84 dedup=84 deaths=0 Y=[108..145] mode=0 gravN=84 gravF=0 X~158px pct=0% ms/f=1.0 modes: m0=84
+[DEDUP] f=71 cand=168 deduped=84 (lost 84)
+[BFS] f=71 front=84 dedup=84 deaths=0 Y=[108..148] mode=0 gravN=84 gravF=0 X~160px pct=0% ms/f=1.0 modes: m0=84
+[DEDUP] f=72 cand=168 deduped=84 (lost 84)
+[BFS] f=72 front=84 dedup=84 deaths=0 Y=[108..152] mode=0 gravN=84 gravF=0 X~162px pct=0% ms/f=1.0 modes: m0=84
+[DEDUP] f=73 cand=168 deduped=84 (lost 84)
+[BFS] f=73 front=84 dedup=84 deaths=0 Y=[108..156] mode=0 gravN=84 gravF=0 X~165px pct=0% ms/f=1.0 modes: m0=84
+[DEDUP] f=74 cand=168 deduped=84 (lost 84)
+[BFS] f=74 front=84 dedup=84 deaths=0 Y=[108..161] mode=0 gravN=84 gravF=0 X~167px pct=0% ms/f=1.0 modes: m0=84
+[DEDUP] f=75 cand=168 deduped=83 (lost 85)
+[BFS] f=75 front=83 dedup=83 deaths=0 Y=[109..165] mode=0 gravN=83 gravF=0 X~169px pct=0% ms/f=1.0 modes: m0=83
+[DEDUP] f=76 cand=166 deduped=84 (lost 82)
+[BFS] f=76 front=84 dedup=84 deaths=0 Y=[109..165] mode=0 gravN=84 gravF=0 X~171px pct=0% ms/f=1.0 modes: m0=84
+[DEDUP] f=77 cand=168 deduped=85 (lost 83)
+[BFS] f=77 front=85 dedup=85 deaths=0 Y=[111..165] mode=0 gravN=85 gravF=0 X~173px pct=0% ms/f=1.0 modes: m0=85
+[DEDUP] f=78 cand=170 deduped=87 (lost 83)
+[BFS] f=78 front=87 dedup=87 deaths=0 Y=[112..165] mode=0 gravN=87 gravF=0 X~176px pct=0% ms/f=1.0 modes: m0=87
+[DEDUP] f=79 cand=174 deduped=90 (lost 84)
+[BFS] f=79 front=90 dedup=90 deaths=0 Y=[114..165] mode=0 gravN=90 gravF=0 X~178px pct=1% ms/f=1.0 modes: m0=90
+[DEDUP] f=80 cand=180 deduped=93 (lost 87)
+[BFS] f=80 front=93 dedup=93 deaths=0 Y=[117..165] mode=0 gravN=93 gravF=0 X~180px pct=1% ms/f=1.0 modes: m0=93
+[DEDUP] f=81 cand=186 deduped=96 (lost 90)
+[BFS] f=81 front=96 dedup=96 deaths=0 Y=[120..165] mode=0 gravN=96 gravF=0 X~182px pct=1% ms/f=1.0 modes: m0=96
+[DEDUP] f=82 cand=192 deduped=99 (lost 93)
+[BFS] f=82 front=99 dedup=99 deaths=0 Y=[123..165] mode=0 gravN=99 gravF=0 X~185px pct=1% ms/f=1.0 modes: m0=99
+[DEDUP] f=83 cand=198 deduped=102 (lost 96)
+[DEDUP] f=84 cand=204 deduped=105 (lost 99)
+[DEDUP] f=85 cand=210 deduped=108 (lost 102)
+[DEDUP] f=86 cand=216 deduped=111 (lost 105)
+[DEDUP] f=87 cand=222 deduped=114 (lost 108)
+[DEDUP] f=88 cand=228 deduped=117 (lost 111)
+[DEDUP] f=89 cand=234 deduped=123 (lost 111)
+[DEDUP] f=90 cand=246 deduped=129 (lost 117)
+[DEDUP] f=91 cand=258 deduped=136 (lost 122)
+[DEDUP] f=92 cand=272 deduped=143 (lost 129)
+[DEDUP] f=93 cand=286 deduped=149 (lost 137)
+[DEDUP] f=94 cand=298 deduped=153 (lost 145)
+[DEDUP] f=95 cand=306 deduped=153 (lost 153)
+[DEDUP] f=96 cand=306 deduped=147 (lost 159)
+[DEDUP] f=97 cand=294 deduped=231 (lost 63)
+[DEDUP] f=98 cand=462 deduped=353 (lost 109)
+[DEDUP] f=99 cand=706 deduped=467 (lost 239)
+[DEDUP] f=100 cand=934 deduped=564 (lost 370)
+[BFS] f=100 front=564 dedup=564 deaths=0 Y=[123..186] mode=0 gravN=564 gravF=0 X~225px pct=1% ms/f=1.0 modes: m0=564
+[DEDUP] f=101 cand=1128 deduped=653 (lost 475)
+[DEDUP] f=102 cand=1306 deduped=737 (lost 569)
+[DEDUP] f=103 cand=1474 deduped=815 (lost 659)
+[DEDUP] f=104 cand=1624 deduped=886 (lost 738)
+[DEDUP] f=105 cand=1760 deduped=950 (lost 810)
+[DEDUP] f=106 cand=1870 deduped=998 (lost 872)
+[DEDUP] f=107 cand=1978 deduped=1049 (lost 929)
+[DEDUP] f=108 cand=2080 deduped=1059 (lost 1021)
+[DEDUP] f=109 cand=2100 deduped=1050 (lost 1050)
+[DEDUP] f=110 cand=2082 deduped=899 (lost 1183)
+[DEDUP] f=111 cand=1708 deduped=1127 (lost 581)
+[DEDUP] f=112 cand=2224 deduped=1539 (lost 685)
+[DEDUP] f=113 cand=3054 deduped=1910 (lost 1144)
+[DEDUP] f=114 cand=3778 deduped=2260 (lost 1518)
+[DEDUP] f=115 cand=4485 deduped=2619 (lost 1866)
+[S8B] f=116 step8b=24 total=24 front=2619 cand=5214 mode=0
+[DEDUP] f=116 cand=5214 deduped=3014 (lost 2200)
+[DEDUP] f=117 cand=5839 deduped=3318 (lost 2521)
+[DEDUP] f=118 cand=6521 deduped=3639 (lost 2882)
+[DEDUP] f=119 cand=7266 deduped=3983 (lost 3283)
+[DEDUP] f=120 cand=7739 deduped=4180 (lost 3559)
+[DEDUP] f=121 cand=8244 deduped=4441 (lost 3803)
+[DEDUP] f=122 cand=8720 deduped=4434 (lost 4286)
+[DEDUP] f=123 cand=8868 deduped=4401 (lost 4467)
+[DEDUP] f=124 cand=8502 deduped=4226 (lost 4276)
+[DEDUP] f=125 cand=8338 deduped=4145 (lost 4193)
+[DEDUP] f=126 cand=8290 deduped=4130 (lost 4160)
+[DEDUP] f=127 cand=8260 deduped=4090 (lost 4170)
+[DEDUP] f=128 cand=8180 deduped=4067 (lost 4113)
+[DEDUP] f=129 cand=8134 deduped=4066 (lost 4068)
+[DEDUP] f=130 cand=8132 deduped=4062 (lost 4070)
+[DEDUP] f=131 cand=8124 deduped=4032 (lost 4092)
+[DEDUP] f=132 cand=8064 deduped=4015 (lost 4049)
+[DEDUP] f=133 cand=8030 deduped=4010 (lost 4020)
+[DEDUP] f=134 cand=8020 deduped=4014 (lost 4006)
+[DEDUP] f=135 cand=8028 deduped=4014 (lost 4014)
+[DEDUP] f=136 cand=8028 deduped=4009 (lost 4019)
+[DEDUP] f=137 cand=8018 deduped=4004 (lost 4014)
+[DEDUP] f=138 cand=8008 deduped=3936 (lost 4072)
+[DEDUP] f=139 cand=7872 deduped=3854 (lost 4018)
+[DEDUP] f=140 cand=7708 deduped=3786 (lost 3922)
+[DEDUP] f=141 cand=7572 deduped=3797 (lost 3775)
+[DEDUP] f=142 cand=7594 deduped=3938 (lost 3656)
+[DEDUP] f=143 cand=7876 deduped=4120 (lost 3756)
+[DEDUP] f=144 cand=8240 deduped=4331 (lost 3909)
+[DEDUP] f=145 cand=8662 deduped=4611 (lost 4051)
+[DEDUP] f=146 cand=9222 deduped=4914 (lost 4308)
+[DEDUP] f=147 cand=8472 deduped=4689 (lost 3783)
+[DEDUP] f=148 cand=8814 deduped=4638 (lost 4176)
+[DEDUP] f=149 cand=8814 deduped=4407 (lost 4407)
+[DEDUP] f=150 cand=8814 deduped=4407 (lost 4407)
+[DEDUP] f=151 cand=8814 deduped=4407 (lost 4407)
+[DEDUP] f=152 cand=8814 deduped=4407 (lost 4407)
+[DEDUP] f=153 cand=8798 deduped=4223 (lost 4575)
+[DEDUP] f=154 cand=8422 deduped=6710 (lost 1712)
+[DEDUP] f=155 cand=13420 deduped=10356 (lost 3064)
+[DEDUP] f=156 cand=20712 deduped=13974 (lost 6738)
+[DEDUP] f=157 cand=27948 deduped=17351 (lost 10597)
+[DEDUP] f=158 cand=34660 deduped=20891 (lost 13769)
+[DEDUP] f=159 cand=41782 deduped=24559 (lost 17223)
+[DEDUP] f=160 cand=48489 deduped=27951 (lost 20538)
+[DEDUP] f=161 cand=55374 deduped=31685 (lost 23689)
+[DEDUP] f=162 cand=63370 deduped=35396 (lost 27974)
+[DEDUP] f=163 cand=70792 deduped=38801 (lost 31991)
+[DEDUP] f=164 cand=77602 deduped=41644 (lost 35958)
+[DEDUP] f=165 cand=83288 deduped=42533 (lost 40755)
+[DEDUP] f=166 cand=85066 deduped=42538 (lost 42528)
+[DEDUP] f=167 cand=85076 deduped=42540 (lost 42536)
+[DEDUP] f=168 cand=85080 deduped=42542 (lost 42538)
+[DEDUP] f=169 cand=85084 deduped=42532 (lost 42552)
+[DEDUP] f=170 cand=85064 deduped=42532 (lost 42532)
+[DEDUP] f=171 cand=84230 deduped=42111 (lost 42119)
+[DEDUP] f=172 cand=82980 deduped=41490 (lost 41490)
+[DEDUP] f=173 cand=81636 deduped=40817 (lost 40819)
+[DEDUP] f=174 cand=80644 deduped=39882 (lost 40762)
+[DEDUP] f=175 cand=79764 deduped=38123 (lost 41641)
+[DEDUP] f=176 cand=76246 deduped=36169 (lost 40077)
+[DEDUP] f=177 cand=72338 deduped=34602 (lost 37736)
+[DEDUP] f=178 cand=69204 deduped=32257 (lost 36947)
+[DEDUP] f=179 cand=64514 deduped=29139 (lost 35375)
+[DEDUP] f=180 cand=58278 deduped=25584 (lost 32694)
+[DEDUP] f=181 cand=51168 deduped=22537 (lost 28631)
+[DEDUP] f=182 cand=45074 deduped=20022 (lost 25052)
+[DEDUP] f=183 cand=40044 deduped=18757 (lost 21287)
+[DEDUP] f=184 cand=37514 deduped=18277 (lost 19237)
+[DEDUP] f=185 cand=36554 deduped=19285 (lost 17269)
+[DEDUP] f=186 cand=38570 deduped=20017 (lost 18553)
+[DEDUP] f=187 cand=40034 deduped=20461 (lost 19573)
+[DEDUP] f=188 cand=40922 deduped=20905 (lost 20017)
+[DEDUP] f=189 cand=41810 deduped=21349 (lost 20461)
+[DEDUP] f=190 cand=42698 deduped=21793 (lost 20905)
+[DEDUP] f=191 cand=43586 deduped=22237 (lost 21349)
+[DEDUP] f=192 cand=44474 deduped=22581 (lost 21893)
+[DEDUP] f=193 cand=45162 deduped=22691 (lost 22471)
+[DEDUP] f=194 cand=45382 deduped=23202 (lost 22180)
+[DEDUP] f=195 cand=46404 deduped=23639 (lost 22765)
+[DEDUP] f=196 cand=47278 deduped=23844 (lost 23434)
+[DEDUP] f=197 cand=47688 deduped=23082 (lost 24606)
+[DEDUP] f=198 cand=46164 deduped=22419 (lost 23745)
+[DEDUP] f=199 cand=44838 deduped=21801 (lost 23037)
+[DEDUP] f=200 cand=43602 deduped=22809 (lost 20793)
+[BFS] f=200 front=22809 dedup=22809 deaths=0 Y=[140..373] mode=0 gravN=22809 gravF=0 X~448px pct=2% ms/f=33.2 modes: m0=22809
+[DEDUP] f=201 cand=45618 deduped=23521 (lost 22097)
+[DEDUP] f=202 cand=47042 deduped=23641 (lost 23401)
+[DEDUP] f=203 cand=47282 deduped=23758 (lost 23524)
+[DEDUP] f=204 cand=40682 deduped=14664 (lost 26018)
+[DEDUP] f=205 cand=29328 deduped=13258 (lost 16070)
+[DEDUP] f=206 cand=26516 deduped=13272 (lost 13244)
+[DEDUP] f=207 cand=26544 deduped=13863 (lost 12681)
+[DEDUP] f=208 cand=27726 deduped=14454 (lost 13272)
+[DEDUP] f=209 cand=28908 deduped=15045 (lost 13863)
+[DEDUP] f=210 cand=30090 deduped=15636 (lost 14454)
+[DEDUP] f=211 cand=31272 deduped=16227 (lost 15045)
+[DEDUP] f=212 cand=32454 deduped=16818 (lost 15636)
+[DEDUP] f=213 cand=33636 deduped=17409 (lost 16227)
+[DEDUP] f=214 cand=34818 deduped=17969 (lost 16849)
+[DEDUP] f=215 cand=35938 deduped=18529 (lost 17409)
+[DEDUP] f=216 cand=37058 deduped=19120 (lost 17938)
+[DEDUP] f=217 cand=38240 deduped=19608 (lost 18632)
+[DEDUP] f=218 cand=39216 deduped=19629 (lost 19587)
+[DEDUP] f=219 cand=35096 deduped=18273 (lost 16823)
+[DEDUP] f=220 cand=34770 deduped=17810 (lost 16960)
+[DEDUP] f=221 cand=35620 deduped=17930 (lost 17690)
+[DEDUP] f=222 cand=35860 deduped=18050 (lost 17810)
+[DEDUP] f=223 cand=36100 deduped=18170 (lost 17930)
+[DEDUP] f=224 cand=32788 deduped=16514 (lost 16274)
+[DEDUP] f=225 cand=31198 deduped=15719 (lost 15479)
+[DEDUP] f=226 cand=29608 deduped=14924 (lost 14684)
+[DEDUP] f=227 cand=29848 deduped=15044 (lost 14804)
+[DEDUP] f=228 cand=30088 deduped=15164 (lost 14924)
+[DEDUP] f=229 cand=30328 deduped=14683 (lost 15645)
+[DEDUP] f=230 cand=29366 deduped=14516 (lost 14850)
+[DEDUP] f=231 cand=29032 deduped=14506 (lost 14526)
+[DEDUP] f=232 cand=29012 deduped=14653 (lost 14359)
+[DEDUP] f=233 cand=29306 deduped=14800 (lost 14506)
+[DEDUP] f=234 cand=29600 deduped=14947 (lost 14653)
+[DEDUP] f=235 cand=29894 deduped=15094 (lost 14800)
+[DEDUP] f=236 cand=30188 deduped=15148 (lost 15040)
+[DEDUP] f=237 cand=30296 deduped=15202 (lost 15094)
+[DEDUP] f=238 cand=30404 deduped=15256 (lost 15148)
+[DEDUP] f=239 cand=30512 deduped=15298 (lost 15214)
+[DEDUP] f=240 cand=30596 deduped=15325 (lost 15271)
+[DEDUP] f=241 cand=30650 deduped=15953 (lost 14697)
+[DEDUP] f=242 cand=31906 deduped=16581 (lost 15325)
+[DEDUP] f=243 cand=33162 deduped=17052 (lost 16110)
+[DEDUP] f=244 cand=34104 deduped=17523 (lost 16581)
+[DEDUP] f=245 cand=35046 deduped=17994 (lost 17052)
+[DEDUP] f=246 cand=35988 deduped=18465 (lost 17523)
+[DEDUP] f=247 cand=36930 deduped=18936 (lost 17994)
+[DEDUP] f=248 cand=37872 deduped=19407 (lost 18465)
+[DEDUP] f=249 cand=38814 deduped=19878 (lost 18936)
+[DEDUP] f=250 cand=39756 deduped=20349 (lost 19407)
+[DEDUP] f=251 cand=40698 deduped=20663 (lost 20035)
+[DEDUP] f=252 cand=41326 deduped=20506 (lost 20820)
+[DEDUP] f=253 cand=41012 deduped=20506 (lost 20506)
+[DEDUP] f=254 cand=41012 deduped=20506 (lost 20506)
+[DEDUP] f=255 cand=41012 deduped=20506 (lost 20506)
+[DEDUP] f=256 cand=41012 deduped=20506 (lost 20506)
+[DEDUP] f=257 cand=41012 deduped=20506 (lost 20506)
+[DEDUP] f=258 cand=41012 deduped=20506 (lost 20506)
+[DEDUP] f=259 cand=41012 deduped=20506 (lost 20506)
+[DEDUP] f=260 cand=41012 deduped=20506 (lost 20506)
+[DEDUP] f=261 cand=41012 deduped=20506 (lost 20506)
+[DEDUP] f=262 cand=41012 deduped=20506 (lost 20506)
+[DEDUP] f=263 cand=41012 deduped=20977 (lost 20035)
+[DEDUP] f=264 cand=41954 deduped=21448 (lost 20506)
+[DEDUP] f=265 cand=42896 deduped=21919 (lost 20977)
+[DEDUP] f=266 cand=43838 deduped=22390 (lost 21448)
+[DEDUP] f=267 cand=44780 deduped=22861 (lost 21919)
+[DEDUP] f=268 cand=45722 deduped=23332 (lost 22390)
+[DEDUP] f=269 cand=46664 deduped=23803 (lost 22861)
+[DEDUP] f=270 cand=47606 deduped=24274 (lost 23332)
+[DEDUP] f=271 cand=48548 deduped=24745 (lost 23803)
+[DEDUP] f=272 cand=49490 deduped=25216 (lost 24274)
+[DEDUP] f=273 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=274 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=275 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=276 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=277 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=278 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=279 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=280 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=281 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=282 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=283 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=284 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=285 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=286 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=287 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=288 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=289 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=290 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=291 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=292 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=293 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=294 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=295 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=296 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=297 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=298 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=299 cand=50432 deduped=25216 (lost 25216)
+[DEDUP] f=300 cand=50432 deduped=25216 (lost 25216)
+[BFS] f=300 front=25216 dedup=25216 deaths=0 Y=[140..373] mode=0 gravN=25216 gravF=0 X~671px pct=3% ms/f=52.3 modes: m0=25216
+[DEDUP] f=301 cand=50432 deduped=26158 (lost 24274)
+[DEDUP] f=302 cand=52316 deduped=26786 (lost 25530)
+[DEDUP] f=303 cand=53572 deduped=26786 (lost 26786)
+[DEDUP] f=304 cand=53572 deduped=26780 (lost 26792)
+[DEDUP] f=305 cand=53560 deduped=26774 (lost 26786)
+[DEDUP] f=306 cand=53548 deduped=26768 (lost 26780)
+[DEDUP] f=307 cand=53536 deduped=26762 (lost 26774)
+[DEDUP] f=308 cand=53524 deduped=26756 (lost 26768)
+[DEDUP] f=309 cand=53512 deduped=26744 (lost 26768)
+[DEDUP] f=310 cand=51616 deduped=25802 (lost 25814)
+[DEDUP] f=311 cand=49732 deduped=24860 (lost 24872)
+[DEDUP] f=312 cand=34732 deduped=15476 (lost 19256)
+[DEDUP] f=313 cand=30952 deduped=15176 (lost 15776)
+[DEDUP] f=314 cand=30352 deduped=15344 (lost 15008)
+[DEDUP] f=315 cand=30688 deduped=15365 (lost 15323)
+[DEDUP] f=316 cand=30730 deduped=15386 (lost 15344)
+[DEDUP] f=317 cand=30772 deduped=15407 (lost 15365)
+[DEDUP] f=318 cand=30814 deduped=15428 (lost 15386)
+[DEDUP] f=319 cand=30856 deduped=15449 (lost 15407)
+[DEDUP] f=320 cand=30898 deduped=15470 (lost 15428)
+[DEDUP] f=321 cand=30940 deduped=15491 (lost 15449)
+[DEDUP] f=322 cand=30982 deduped=16454 (lost 14528)
+[DEDUP] f=323 cand=32908 deduped=17096 (lost 15812)
+[DEDUP] f=324 cand=34192 deduped=17096 (lost 17096)
+[DEDUP] f=325 cand=34192 deduped=16468 (lost 17724)
+[DEDUP] f=326 cand=32936 deduped=16782 (lost 16154)
+[DEDUP] f=327 cand=33564 deduped=17253 (lost 16311)
+[DEDUP] f=328 cand=34506 deduped=17724 (lost 16782)
+[DEDUP] f=329 cand=35448 deduped=18180 (lost 17268)
+[DEDUP] f=330 cand=36360 deduped=18043 (lost 18317)
+[DEDUP] f=331 cand=36086 deduped=18560 (lost 17526)
+[DEDUP] f=332 cand=37120 deduped=19235 (lost 17885)
+[DEDUP] f=333 cand=38470 deduped=19766 (lost 18704)
+[DEDUP] f=334 cand=39532 deduped=20297 (lost 19235)
+[DEDUP] f=335 cand=40594 deduped=20828 (lost 19766)
+[DEDUP] f=336 cand=41656 deduped=21359 (lost 20297)
+[DEDUP] f=337 cand=42718 deduped=20814 (lost 21904)
+[DEDUP] f=338 cand=41628 deduped=20722 (lost 20906)
+[DEDUP] f=339 cand=41444 deduped=20794 (lost 20650)
+[DEDUP] f=340 cand=41588 deduped=20558 (lost 21030)
+[DEDUP] f=341 cand=41116 deduped=28236 (lost 12880)
+[DEDUP] f=342 cand=56472 deduped=39763 (lost 16709)
+[DEDUP] f=343 cand=79526 deduped=51342 (lost 28184)
+[DEDUP] f=344 cand=102684 deduped=63465 (lost 39219)
+[DEDUP] f=345 cand=126930 deduped=75285 (lost 51645)
+[DEDUP] f=346 cand=150570 deduped=86463 (lost 64107)
+[DEDUP] f=347 cand=172926 deduped=98045 (lost 74881)
+[DEDUP] f=348 cand=183492 deduped=102803 (lost 80689)
+[DEDUP] f=349 cand=186604 deduped=103319 (lost 83285)
+[DEDUP] f=350 cand=185980 deduped=102029 (lost 83951)
+[DEDUP] f=351 cand=188046 deduped=102596 (lost 85450)
+[DEDUP] f=352 cand=190662 deduped=97885 (lost 92777)
+[DEDUP] f=353 cand=190178 deduped=95117 (lost 95061)
+[DEDUP] f=354 cand=188010 deduped=85854 (lost 102156)
+[GF_PIPE] f=354 frontGF=0 gfDied=0 candGF=77237 dedupGF=17760 gfY=[75..76]
+[GF_SELECT] f=354 dedupGF=17760 selectedGF=17410 totalNext=85256
+[DEDUP] f=355 cand=170512 deduped=94542 (lost 75970)
+[GF_PIPE] f=355 frontGF=17410 gfDied=0 candGF=61733 dedupGF=26932 gfY=[75..76]
+[GF_SELECT] f=355 dedupGF=26932 selectedGF=26440 totalNext=93308
+[DEDUP] f=356 cand=186616 deduped=105275 (lost 81341)
+[GF_PIPE] f=356 frontGF=26440 gfDied=0 candGF=78122 dedupGF=38093 gfY=[75..76]
+[GF_SELECT] f=356 dedupGF=38093 selectedGF=32665 totalNext=95468
+[DEDUP] f=357 cand=188152 deduped=115521 (lost 72631)
+[GF_PIPE] f=357 frontGF=32665 gfDied=0 candGF=88246 dedupGF=53777 gfY=[75..79]
+[GF_SELECT] f=357 dedupGF=53777 selectedGF=44531 totalNext=99298
+[DEDUP] f=358 cand=197630 deduped=126524 (lost 71106)
+[GF_PIPE] f=358 frontGF=44531 gfDied=0 candGF=108404 dedupGF=71870 gfY=[75..83]
+[GF_SELECT] f=358 dedupGF=71870 selectedGF=54148 totalNext=103263
+[DEDUP] f=359 cand=204618 deduped=129022 (lost 75596)
+[GF_PIPE] f=359 frontGF=54148 gfDied=0 candGF=124394 dedupGF=80166 gfY=[75..86]
+[GF_SELECT] f=359 dedupGF=80166 selectedGF=61808 totalNext=106284
+[DEDUP] f=360 cand=211776 deduped=131734 (lost 80042)
+[GF_PIPE] f=360 frontGF=61808 gfDied=0 candGF=136827 dedupGF=86754 gfY=[75..89]
+[TRANSITION_SELECT] f=360 portals=1 added=128 ordinaryCap=120000
+[PHASE_SELECT] f=360 added=2346 ordinaryCap=120000 candidates=118637
+[RESERVE_SELECT] f=360 added=8192 available=13097
+[GF_SELECT] f=360 dedupGF=86754 selectedGF=66482 totalNext=106082
+[DEDUP] f=361 cand=211368 deduped=129790 (lost 81578)
+[GF_PIPE] f=361 frontGF=66482 gfDied=0 candGF=143111 dedupGF=89526 gfY=[75..92]
+[GF_SELECT] f=361 dedupGF=89526 selectedGF=69260 totalNext=106676
+[DEDUP] f=362 cand=213352 deduped=129536 (lost 83816)
+[GF_PIPE] f=362 frontGF=69260 gfDied=0 candGF=146664 dedupGF=90991 gfY=[75..94]
+[GF_SELECT] f=362 dedupGF=90991 selectedGF=69827 totalNext=106709
+[DEDUP] f=363 cand=213418 deduped=127708 (lost 85710)
+[GF_PIPE] f=363 frontGF=69827 gfDied=0 candGF=146272 dedupGF=89533 gfY=[75..96]
+[GF_SELECT] f=363 dedupGF=89533 selectedGF=72543 totalNext=108665
+[DEDUP] f=364 cand=216836 deduped=128037 (lost 88799)
+[GF_PIPE] f=364 frontGF=72543 gfDied=0 candGF=150560 dedupGF=91271 gfY=[75..97]
+[GF_SELECT] f=364 dedupGF=91271 selectedGF=72902 totalNext=108294
+[DEDUP] f=365 cand=215974 deduped=127437 (lost 88537)
+[GF_PIPE] f=365 frontGF=72902 gfDied=0 candGF=145804 dedupGF=86973 gfY=[75..98]
+[GF_SELECT] f=365 dedupGF=86973 selectedGF=71896 totalNext=109203
+[DEDUP] f=366 cand=217228 deduped=121880 (lost 95348)
+[GF_PIPE] f=366 frontGF=71896 gfDied=0 candGF=143792 dedupGF=85099 gfY=[75..99]
+[GF_SELECT] f=366 dedupGF=85099 selectedGF=71904 totalNext=106261
+[DEDUP] f=367 cand=211276 deduped=117370 (lost 93906)
+[GF_PIPE] f=367 frontGF=71904 gfDied=0 candGF=143808 dedupGF=83585 gfY=[75..99]
+[GF_SELECT] f=367 dedupGF=83585 selectedGF=71735 totalNext=104331
+[DEDUP] f=368 cand=207778 deduped=113904 (lost 93874)
+[GF_PIPE] f=368 frontGF=71735 gfDied=0 candGF=143470 dedupGF=81714 gfY=[75..99]
+[GF_SELECT] f=368 dedupGF=81714 selectedGF=75389 totalNext=106517
+[DEDUP] f=369 cand=213034 deduped=115694 (lost 97340)
+[GF_PIPE] f=369 frontGF=75389 gfDied=0 candGF=150778 dedupGF=84543 gfY=[75..99]
+[GF_SELECT] f=369 dedupGF=84543 selectedGF=78092 totalNext=108687
+[DEDUP] f=370 cand=136624 deduped=76585 (lost 60039)
+[GF_PIPE] f=370 frontGF=78092 gfDied=80750 FWD=80750 candGF=75434 dedupGF=45974 gfY=[75..92]
+[GF_SELECT] f=370 dedupGF=45974 selectedGF=45735 totalNext=75721
+[DEDUP] f=371 cand=130140 deduped=73330 (lost 56810)
+[GF_PIPE] f=371 frontGF=45735 gfDied=15282 FWD=15282 candGF=76188 dedupGF=46343 gfY=[75..92]
+[GF_SELECT] f=371 dedupGF=46343 selectedGF=46241 totalNext=72628
+[S8B] f=372 step8b=486 total=3674 front=72628 cand=141582 mode=0
+[DEDUP] f=372 cand=141582 deduped=79016 (lost 62566)
+[GF_PIPE] f=372 frontGF=46241 gfDied=0 candGF=92482 dedupGF=54489 gfY=[75..94]
+[GF_SELECT] f=372 dedupGF=54489 selectedGF=54396 totalNext=78276
+[DEDUP] f=373 cand=121354 deduped=68597 (lost 52757)
+[GF_PIPE] f=373 frontGF=54396 gfDied=32344 FLR=16132 FWD=16212 candGF=76448 dedupGF=46474 gfY=[75..92]
+[GF_SELECT] f=373 dedupGF=46474 selectedGF=46381 totalNext=67889
+[DEDUP] f=374 cand=117796 deduped=66818 (lost 50978)
+[GF_PIPE] f=374 frontGF=46381 gfDied=16218 FWD=16218 candGF=76544 dedupGF=46522 gfY=[75..92]
+[GF_SELECT] f=374 dedupGF=46522 selectedGF=46429 totalNext=66260
+[DEDUP] f=375 cand=130040 deduped=73181 (lost 56859)
+[GF_PIPE] f=375 frontGF=46429 gfDied=0 candGF=92858 dedupGF=54679 gfY=[75..94]
+[GF_SELECT] f=375 dedupGF=54679 selectedGF=54586 totalNext=72852
+[DEDUP] f=376 cand=129408 deduped=72983 (lost 56425)
+[GF_PIPE] f=376 frontGF=54586 gfDied=16296 FLR=16296 candGF=92876 dedupGF=54688 gfY=[75..94]
+[GF_SELECT] f=376 dedupGF=54688 selectedGF=54595 totalNext=72837
+[DEDUP] f=377 cand=113058 deduped=64859 (lost 48199)
+[GF_PIPE] f=377 frontGF=54595 gfDied=32616 FWD=32616 candGF=76574 dedupGF=46537 gfY=[75..92]
+[GF_SELECT] f=377 dedupGF=46537 selectedGF=46444 totalNext=64766
+[DEDUP] f=378 cand=109526 deduped=63156 (lost 46370)
+[GF_PIPE] f=378 frontGF=46444 gfDied=16314 FWD=16314 candGF=76574 dedupGF=46537 gfY=[75..92]
+[GF_SELECT] f=378 dedupGF=46537 selectedGF=46444 totalNext=63063
+[DEDUP] f=379 cand=123872 deduped=70370 (lost 53502)
+[GF_PIPE] f=379 frontGF=46444 gfDied=0 candGF=92888 dedupGF=54694 gfY=[75..94]
+[GF_SELECT] f=379 dedupGF=54694 selectedGF=54601 totalNext=70277
+[DEDUP] f=380 cand=121646 deduped=68943 (lost 52703)
+[GF_PIPE] f=380 frontGF=54601 gfDied=16314 FLR=16314 candGF=92888 dedupGF=54694 gfY=[75..94]
+[RESERVE_SELECT] f=380 added=769 available=862
+[GF_SELECT] f=380 dedupGF=54694 selectedGF=54601 totalNext=68850
+[DEDUP] f=381 cand=102508 deduped=59330 (lost 43178)
+[GF_PIPE] f=381 frontGF=54601 gfDied=32628 FWD=32628 candGF=76574 dedupGF=46537 gfY=[75..92]
+[GF_SELECT] f=381 dedupGF=46537 selectedGF=46444 totalNext=59237
+[DEDUP] f=382 cand=118474 deduped=67578 (lost 50896)
+[GF_PIPE] f=382 frontGF=46444 gfDied=0 candGF=92888 dedupGF=54694 gfY=[75..94]
+[GF_SELECT] f=382 dedupGF=54694 selectedGF=54601 totalNext=67485
+[DEDUP] f=383 cand=118656 deduped=67709 (lost 50947)
+[GF_PIPE] f=383 frontGF=54601 gfDied=16314 FLR=16314 candGF=92888 dedupGF=54695 gfY=[75..94]
+[GF_SELECT] f=383 dedupGF=54695 selectedGF=54602 totalNext=67616
+[DEDUP] f=384 cand=118918 deduped=67848 (lost 51070)
+[GF_PIPE] f=384 frontGF=54602 gfDied=16314 FLR=16314 candGF=92890 dedupGF=54696 gfY=[75..94]
+[GF_SELECT] f=384 dedupGF=54696 selectedGF=54601 totalNext=67753
+[DEDUP] f=385 cand=135506 deduped=76165 (lost 59341)
+[GF_PIPE] f=385 frontGF=54601 gfDied=0 candGF=109202 dedupGF=62852 gfY=[75..96]
+[GF_SELECT] f=385 dedupGF=62852 selectedGF=62758 totalNext=76071
+[DEDUP] f=386 cand=152142 deduped=84507 (lost 67635)
+[GF_PIPE] f=386 frontGF=62758 gfDied=0 candGF=125516 dedupGF=71010 gfY=[75..97]
+[GF_SELECT] f=386 dedupGF=71010 selectedGF=70915 totalNext=84412
+[DEDUP] f=387 cand=168824 deduped=91598 (lost 77226)
+[GF_PIPE] f=387 frontGF=70915 gfDied=0 candGF=141830 dedupGF=79166 gfY=[75..98]
+[GF_SELECT] f=387 dedupGF=79166 selectedGF=78799 totalNext=91231
+[DEDUP] f=388 cand=182462 deduped=99034 (lost 83428)
+[GF_PIPE] f=388 frontGF=78799 gfDied=0 candGF=157598 dedupGF=87046 gfY=[75..99]
+[GF_SELECT] f=388 dedupGF=87046 selectedGF=80730 totalNext=92702
+[DEDUP] f=389 cand=185404 deduped=100389 (lost 85015)
+[GF_PIPE] f=389 frontGF=80730 gfDied=0 candGF=161460 dedupGF=88518 gfY=[75..99]
+[GF_SELECT] f=389 dedupGF=88518 selectedGF=82133 totalNext=93980
+[DEDUP] f=390 cand=187960 deduped=96560 (lost 91400)
+[GF_PIPE] f=390 frontGF=82133 gfDied=0 candGF=164266 dedupGF=84789 gfY=[81..99]
+[GF_SELECT] f=390 dedupGF=84789 selectedGF=81895 totalNext=93642
+[DEDUP] f=391 cand=187284 deduped=96248 (lost 91036)
+[GF_PIPE] f=391 frontGF=81895 gfDied=0 candGF=163790 dedupGF=84452 gfY=[86..99]
+[GF_SELECT] f=391 dedupGF=84452 selectedGF=81317 totalNext=93087
+[DEDUP] f=392 cand=186174 deduped=92985 (lost 93189)
+[GF_PIPE] f=392 frontGF=81317 gfDied=0 candGF=162634 dedupGF=81540 gfY=[89..99]
+[GF_SELECT] f=392 dedupGF=81540 selectedGF=80747 totalNext=92169
+[DEDUP] f=393 cand=184338 deduped=92344 (lost 91994)
+[GF_PIPE] f=393 frontGF=80747 gfDied=0 candGF=161494 dedupGF=80901 gfY=[92..99]
+[GF_SELECT] f=393 dedupGF=80901 selectedGF=80682 totalNext=92119
+[DEDUP] f=394 cand=184238 deduped=91506 (lost 92732)
+[GF_PIPE] f=394 frontGF=80682 gfDied=0 candGF=161364 dedupGF=80724 gfY=[93..100]
+[GF_SELECT] f=394 dedupGF=80724 selectedGF=80596 totalNext=91362
+[DEDUP] f=395 cand=182724 deduped=91070 (lost 91654)
+[GF_PIPE] f=395 frontGF=80596 gfDied=0 candGF=161192 dedupGF=80607 gfY=[90..104]
+[GF_SELECT] f=395 dedupGF=80607 selectedGF=80590 totalNext=91053
+[DEDUP] f=396 cand=182106 deduped=91034 (lost 91072)
+[GF_PIPE] f=396 frontGF=80590 gfDied=0 candGF=161180 dedupGF=80599 gfY=[87..108]
+[GF_SELECT] f=396 dedupGF=80599 selectedGF=80591 totalNext=91026
+[DEDUP] f=397 cand=182052 deduped=90902 (lost 91150)
+[GF_PIPE] f=397 frontGF=80591 gfDied=0 candGF=161182 dedupGF=80600 gfY=[84..111]
+[GF_SELECT] f=397 dedupGF=80600 selectedGF=80591 totalNext=90893
+[DEDUP] f=398 cand=181786 deduped=90917 (lost 90869)
+[GF_PIPE] f=398 frontGF=80591 gfDied=0 candGF=161182 dedupGF=80600 gfY=[80..113]
+[GF_SELECT] f=398 dedupGF=80600 selectedGF=80591 totalNext=90908
+[DEDUP] f=399 cand=181816 deduped=91182 (lost 90634)
+[GF_PIPE] f=399 frontGF=80591 gfDied=0 candGF=161182 dedupGF=80599 gfY=[75..116]
+[GF_SELECT] f=399 dedupGF=80599 selectedGF=80592 totalNext=91175
+[DEDUP] f=400 cand=182350 deduped=91514 (lost 90836)
+[GF_PIPE] f=400 frontGF=80592 gfDied=0 candGF=161184 dedupGF=80601 gfY=[75..117]
+[RESERVE_SELECT] f=400 added=1900 available=1910
+[GF_SELECT] f=400 dedupGF=80601 selectedGF=80591 totalNext=91504
+[BFS] f=400 front=91504 dedup=91514 deaths=0 Y=[75..373] mode=0 gravN=10913 gravF=80591 X~894px pct=5% ms/f=115.3 modes: m0=91504
+[DEDUP] f=401 cand=183008 deduped=90854 (lost 92154)
+[GF_PIPE] f=401 frontGF=80591 gfDied=0 candGF=161182 dedupGF=79506 gfY=[71..119]
+[GF_SELECT] f=401 dedupGF=79506 selectedGF=79429 totalNext=90777
+[DEDUP] f=402 cand=177474 deduped=87331 (lost 90143)
+[GF_PIPE] f=402 frontGF=79429 gfDied=4080 FLR=4080 candGF=154778 dedupGF=75554 gfY=[66..120]
+[GF_SELECT] f=402 dedupGF=75554 selectedGF=75454 totalNext=87231
+[DEDUP] f=403 cand=169220 deduped=82192 (lost 87028)
+[GF_PIPE] f=403 frontGF=75454 gfDied=5242 EJT=5242 candGF=145666 dedupGF=70108 gfY=[66..120]
+[GF_SELECT] f=403 dedupGF=70108 selectedGF=70019 totalNext=82103
+[DEDUP] f=404 cand=156670 deduped=76196 (lost 80474)
+[GF_PIPE] f=404 frontGF=70019 gfDied=7536 EJT=7536 candGF=125896 dedupGF=61338 gfY=[66..120]
+[GF_SELECT] f=404 dedupGF=61338 selectedGF=61249 totalNext=76087
+[DEDUP] f=405 cand=152174 deduped=73806 (lost 78368)
+[GF_PIPE] f=405 frontGF=61249 gfDied=0 candGF=120296 dedupGF=58539 gfY=[60..120]
+[GF_SELECT] f=405 dedupGF=58539 selectedGF=58448 totalNext=73708
+[DEDUP] f=406 cand=147416 deduped=73052 (lost 74364)
+[GF_PIPE] f=406 frontGF=58448 gfDied=0 candGF=114694 dedupGF=55799 gfY=[54..119]
+[GF_SELECT] f=406 dedupGF=55799 selectedGF=55707 totalNext=72952
+[DEDUP] f=407 cand=135258 deduped=69020 (lost 66238)
+[GF_PIPE] f=407 frontGF=55707 gfDied=10646 EJT=7430 FWD=3216 candGF=91975 dedupGF=45478 gfY=[47..117]
+[GF_SELECT] f=407 dedupGF=45478 selectedGF=45368 totalNext=68888
+[DEDUP] f=408 cand=126282 deduped=67267 (lost 59015)
+[GF_PIPE] f=408 frontGF=45368 gfDied=11494 FLR=11494 candGF=74843 dedupGF=37858 gfY=[41..116]
+[GF_SELECT] f=408 dedupGF=37858 selectedGF=37757 totalNext=67103
+[DEDUP] f=409 cand=124882 deduped=67491 (lost 57391)
+[GF_PIPE] f=409 frontGF=37757 gfDied=9324 EJT=5292 FLR=4032 candGF=61791 dedupGF=31353 gfY=[33..117]
+[GF_SELECT] f=409 dedupGF=31353 selectedGF=31243 totalNext=67350
+[DEDUP] f=410 cand=125372 deduped=71297 (lost 54075)
+[GF_PIPE] f=410 frontGF=31243 gfDied=9328 CTR=5250 FLR=4078 candGF=48759 dedupGF=24831 gfY=[26..118]
+[GF_SELECT] f=410 dedupGF=24831 selectedGF=24741 totalNext=71159
+[DEDUP] f=411 cand=137030 deduped=75929 (lost 61101)
+[GF_PIPE] f=411 frontGF=24741 gfDied=5288 EJT=5288 candGF=39795 dedupGF=16959 gfY=[18..120]
+[GF_SELECT] f=411 dedupGF=16959 selectedGF=16945 totalNext=75860
+[DEDUP] f=412 cand=151720 deduped=86309 (lost 65411)
+[GF_PIPE] f=412 frontGF=16945 gfDied=0 candGF=29491 dedupGF=14977 gfY=[11..120]
+[GF_SELECT] f=412 dedupGF=14977 selectedGF=14975 totalNext=86280
+[DEDUP] f=413 cand=172560 deduped=104778 (lost 67782)
+[GF_PIPE] f=413 frontGF=14975 gfDied=0 candGF=27753 dedupGF=17133 gfY=[3..121]
+[GF_SELECT] f=413 dedupGF=17133 selectedGF=17131 totalNext=95712
+[DEDUP] f=414 cand=191424 deduped=110047 (lost 81377)
+[GF_PIPE] f=414 frontGF=17131 gfDied=0 candGF=32065 dedupGF=17125 gfY=[-4..121]
+[GF_SELECT] f=414 dedupGF=17125 selectedGF=16857 totalNext=97642
+[DEDUP] f=415 cand=195284 deduped=111139 (lost 84145)
+[GF_PIPE] f=415 frontGF=16857 gfDied=0 candGF=31517 dedupGF=16922 gfY=[-11..120]
+[GF_SELECT] f=415 dedupGF=16922 selectedGF=16886 totalNext=97525
+[DEDUP] f=416 cand=195050 deduped=111640 (lost 83410)
+[GF_PIPE] f=416 frontGF=16886 gfDied=0 candGF=33772 dedupGF=19144 gfY=[-18..120]
+[GF_SELECT] f=416 dedupGF=19144 selectedGF=19002 totalNext=98533
+[DEDUP] f=417 cand=197066 deduped=108938 (lost 88128)
+[GF_PIPE] f=417 frontGF=19002 gfDied=0 candGF=38004 dedupGF=19042 gfY=[-25..118]
+[GF_SELECT] f=417 dedupGF=19042 selectedGF=19032 totalNext=99957
+[DEDUP] f=418 cand=199914 deduped=105909 (lost 94005)
+[GF_PIPE] f=418 frontGF=19032 gfDied=0 candGF=38064 dedupGF=15551 gfY=[-32..117]
+[GF_SELECT] f=418 dedupGF=15551 selectedGF=15382 totalNext=99820
+[DEDUP] f=419 cand=199278 deduped=105815 (lost 93463)
+[GF_PIPE] f=419 frontGF=15382 gfDied=362 OOT=362 candGF=30402 dedupGF=12580 gfY=[-32..114]
+[GF_SELECT] f=419 dedupGF=12580 selectedGF=12460 totalNext=101044
+[DEDUP] f=420 cand=201834 deduped=108715 (lost 93119)
+[GF_PIPE] f=420 frontGF=12460 gfDied=254 OOT=254 candGF=24666 dedupGF=11715 gfY=[3..112]
+[TRANSITION_SELECT] f=420 portals=1 added=94 ordinaryCap=120000
+[PHASE_SELECT] f=420 added=1713 ordinaryCap=120000 candidates=103087
+[RESERVE_SELECT] f=420 added=4745 available=5628
+[GF_SELECT] f=420 dedupGF=11715 selectedGF=11711 totalNext=101390
+[DEDUP] f=421 cand=198288 deduped=106900 (lost 91388)
+[GF_PIPE] f=421 frontGF=11711 gfDied=4492 FWD=4492 candGF=18930 dedupGF=9457 gfY=[-4..109]
+[GF_SELECT] f=421 dedupGF=9457 selectedGF=9453 totalNext=100638
+[DEDUP] f=422 cand=201276 deduped=107967 (lost 93309)
+[GF_PIPE] f=422 frontGF=9453 gfDied=0 candGF=18906 dedupGF=9455 gfY=[-11..105]
+[GF_SELECT] f=422 dedupGF=9455 selectedGF=9451 totalNext=104365
+[DEDUP] f=423 cand=208730 deduped=111658 (lost 97072)
+[GF_PIPE] f=423 frontGF=9451 gfDied=0 candGF=18902 dedupGF=9451 gfY=[-18..101]
+[GF_SELECT] f=423 dedupGF=9451 selectedGF=9447 totalNext=105755
+[DEDUP] f=424 cand=211510 deduped=113162 (lost 98348)
+[GF_PIPE] f=424 frontGF=9447 gfDied=0 candGF=18894 dedupGF=9449 gfY=[-25..97]
+[GF_SELECT] f=424 dedupGF=9449 selectedGF=9432 totalNext=106349
+[DEDUP] f=425 cand=212698 deduped=113758 (lost 98940)
+[GF_PIPE] f=425 frontGF=9432 gfDied=0 candGF=18864 dedupGF=9430 gfY=[-32..92]
+[GF_SELECT] f=425 dedupGF=9430 selectedGF=9401 totalNext=105125
+[DEDUP] f=426 cand=209886 deduped=109203 (lost 100683)
+[GF_PIPE] f=426 frontGF=9401 gfDied=364 OOT=364 candGF=18438 dedupGF=6669 gfY=[17..87]
+[GF_SELECT] f=426 dedupGF=6669 selectedGF=6646 totalNext=103275
+[DEDUP] f=427 cand=206550 deduped=109911 (lost 96639)
+[GF_PIPE] f=427 frontGF=6646 gfDied=0 candGF=13292 dedupGF=6598 gfY=[9..81]
+[GF_SELECT] f=427 dedupGF=6598 selectedGF=6582 totalNext=104890
+[DEDUP] f=428 cand=209780 deduped=111123 (lost 98657)
+[GF_PIPE] f=428 frontGF=6582 gfDied=0 candGF=13164 dedupGF=6579 gfY=[2..75]
+[GF_SELECT] f=428 dedupGF=6579 selectedGF=6556 totalNext=104971
+[DEDUP] f=429 cand=207450 deduped=108782 (lost 98668)
+[GF_PIPE] f=429 frontGF=6556 gfDied=0 candGF=13112 dedupGF=5080 gfY=[-5..70]
+[GF_SELECT] f=429 dedupGF=5080 selectedGF=5035 totalNext=104299
+[DEDUP] f=430 cand=186254 deduped=98407 (lost 87847)
+[GF_PIPE] f=430 frontGF=5035 gfDied=9734 EJT=9734 candGF=336 dedupGF=171 gfY=[-12..-10]
+[GF_SELECT] f=430 dedupGF=171 selectedGF=170 totalNext=97363
+[DEDUP] f=431 cand=190668 deduped=98244 (lost 92424)
+[GF_PIPE] f=431 frontGF=170 gfDied=0 candGF=340 dedupGF=156 gfY=[-19..-18]
+[DEDUP] f=432 cand=190198 deduped=95545 (lost 94653)
+[GF_PIPE] f=432 frontGF=156 gfDied=0 candGF=312 dedupGF=160 gfY=[-26..-24]
+[GF_SELECT] f=432 dedupGF=160 selectedGF=159 totalNext=95401
+[DEDUP] f=433 cand=190802 deduped=90649 (lost 100153)
+[GF_PIPE] f=433 frontGF=159 gfDied=0 candGF=318 dedupGF=157 gfY=[-34..-32]
+[DEDUP] f=434 cand=178054 deduped=90443 (lost 87611)
+[GF_PIPE] f=434 frontGF=157 gfDied=314 OOT=314 candGF=0 dedupGF=0 gfY=[N/A..N/A]
+[DEDUP] f=435 cand=180618 deduped=96644 (lost 83974)
+[DEDUP] f=436 cand=190550 deduped=99292 (lost 91258)
+[DEDUP] f=437 cand=193088 deduped=100686 (lost 92402)
+[DEDUP] f=438 cand=195402 deduped=101811 (lost 93591)
+[DEDUP] f=439 cand=196134 deduped=102308 (lost 93826)
+[DEDUP] f=440 cand=198002 deduped=103013 (lost 94989)
+[TRANSITION_SELECT] f=440 portals=1 added=92 ordinaryCap=120000
+[PHASE_SELECT] f=440 added=1068 ordinaryCap=120000 candidates=98295
+[RESERVE_SELECT] f=440 added=4291 available=4718
+[DEDUP] f=441 cand=196794 deduped=102051 (lost 94743)
+[DEDUP] f=442 cand=197750 deduped=102578 (lost 95172)
+[DEDUP] f=443 cand=196940 deduped=102176 (lost 94764)
+[DEDUP] f=444 cand=197494 deduped=105684 (lost 91810)
+[DEDUP] f=445 cand=200704 deduped=105017 (lost 95687)
+[DEDUP] f=446 cand=202162 deduped=101445 (lost 100717)
+[DEDUP] f=447 cand=198190 deduped=99369 (lost 98821)
+[DEDUP] f=448 cand=196728 deduped=98551 (lost 98177)
+[DEDUP] f=449 cand=196552 deduped=97279 (lost 99273)
+[DEDUP] f=450 cand=193650 deduped=98054 (lost 95596)
+[DEDUP] f=451 cand=193666 deduped=102537 (lost 91129)
+[DEDUP] f=452 cand=199260 deduped=102467 (lost 96793)
+[DEDUP] f=453 cand=199400 deduped=98017 (lost 101383)
+[DEDUP] f=454 cand=194680 deduped=96623 (lost 98057)
+[DEDUP] f=455 cand=192702 deduped=95827 (lost 96875)
+[DEDUP] f=456 cand=190778 deduped=110103 (lost 80675)
+[DEDUP] f=457 cand=204948 deduped=123218 (lost 81730)
+[DEDUP] f=458 cand=217716 deduped=123125 (lost 94591)
+[DEDUP] f=459 cand=211832 deduped=118243 (lost 93589)
+[DEDUP] f=460 cand=205834 deduped=116035 (lost 89799)
+[TRANSITION_SELECT] f=460 portals=1 added=118 ordinaryCap=120000
+[PHASE_SELECT] f=460 added=2484 ordinaryCap=120000 candidates=102729
+[RESERVE_SELECT] f=460 added=8192 available=13306
+[DEDUP] f=461 cand=212616 deduped=118032 (lost 94584)
+[DEDUP] f=462 cand=214284 deduped=117503 (lost 96781)
+[DEDUP] f=463 cand=213858 deduped=116689 (lost 97169)
+[DEDUP] f=464 cand=216266 deduped=117191 (lost 99075)
+[DEDUP] f=465 cand=214546 deduped=116071 (lost 98475)
+[DEDUP] f=466 cand=205858 deduped=111321 (lost 94537)
+[DEDUP] f=467 cand=197094 deduped=101427 (lost 95667)
+[DEDUP] f=468 cand=194492 deduped=97328 (lost 97164)
+[DEDUP] f=469 cand=177204 deduped=86351 (lost 90853)
+[DEDUP] f=470 cand=160086 deduped=110275 (lost 49811)
+[S8B] f=471 step8b=5856 total=9842 front=101294 cand=192746 mode=0
+[DEDUP] f=471 cand=192746 deduped=144227 (lost 48519)
+[ROUTE_ARCHIVE] f=471 splitY=231 upper=113151 lower=21375 saved=60000 targetX=2568
+[DEDUP] f=472 cand=204218 deduped=145092 (lost 59126)
+[DEDUP] f=473 cand=211244 deduped=144180 (lost 67064)
+[DEDUP] f=474 cand=219208 deduped=143304 (lost 75904)
+[DEDUP] f=475 cand=201156 deduped=127780 (lost 73376)
+[DEDUP] f=476 cand=198802 deduped=124200 (lost 74602)
+[DEDUP] f=477 cand=195226 deduped=119584 (lost 75642)
+[DEDUP] f=478 cand=211222 deduped=126604 (lost 84618)
+[DEDUP] f=479 cand=182242 deduped=108923 (lost 73319)
+[DEDUP] f=480 cand=186512 deduped=111098 (lost 75414)
+[TRANSITION_SELECT] f=480 portals=1 added=112 ordinaryCap=120000
+[PHASE_SELECT] f=480 added=568 ordinaryCap=120000 candidates=104011
+[RESERVE_SELECT] f=480 added=6321 available=7087
+[DEDUP] f=481 cand=213570 deduped=123783 (lost 89787)
+[DEDUP] f=482 cand=178502 deduped=104198 (lost 74304)
+[DEDUP] f=483 cand=179598 deduped=103474 (lost 76124)
+[DEDUP] f=484 cand=182436 deduped=107191 (lost 75245)
+[DEDUP] f=485 cand=205022 deduped=118838 (lost 86184)
+[DEDUP] f=486 cand=177804 deduped=104435 (lost 73369)
+[DEDUP] f=487 cand=182470 deduped=106437 (lost 76033)
+[DEDUP] f=488 cand=186726 deduped=108520 (lost 78206)
+[S8B] f=489 step8b=6652 total=6844 front=101522 cand=196200 mode=0
+[DEDUP] f=489 cand=196200 deduped=112994 (lost 83206)
+[DEDUP] f=490 cand=175896 deduped=102680 (lost 73216)
+[DEDUP] f=491 cand=181546 deduped=105494 (lost 76052)
+[DEDUP] f=492 cand=202524 deduped=115858 (lost 86666)
+[DEDUP] f=493 cand=211206 deduped=119024 (lost 92182)
+[DEDUP] f=494 cand=214212 deduped=118521 (lost 95691)
+[DEDUP] f=495 cand=214964 deduped=119949 (lost 95015)
+[DEDUP] f=496 cand=216370 deduped=122145 (lost 94225)
+[DEDUP] f=497 cand=217780 deduped=122694 (lost 95086)
+[DEDUP] f=498 cand=221072 deduped=124244 (lost 96828)
+[DEDUP] f=499 cand=220596 deduped=123827 (lost 96769)
+[DEDUP] f=500 cand=222126 deduped=124406 (lost 97720)
+[TRANSITION_SELECT] f=500 portals=1 added=128 ordinaryCap=120000
+[PHASE_SELECT] f=500 added=2480 ordinaryCap=120000 candidates=113110
+[RESERVE_SELECT] f=500 added=8192 available=11296
+[BFS] f=500 front=110144 dedup=124406 deaths=0 Y=[137..373] mode=0 gravN=110144 gravF=0 X~1117px pct=6% ms/f=192.1 modes: m0=110144
+[DEDUP] f=501 cand=220288 deduped=123198 (lost 97090)
+[DEDUP] f=502 cand=216940 deduped=120646 (lost 96294)
+[DEDUP] f=503 cand=212724 deduped=117744 (lost 94980)
+[DEDUP] f=504 cand=209940 deduped=115754 (lost 94186)
+[DEDUP] f=505 cand=208230 deduped=114087 (lost 94143)
+[DEDUP] f=506 cand=207664 deduped=113565 (lost 94099)
+[DEDUP] f=507 cand=208344 deduped=113841 (lost 94503)
+[DEDUP] f=508 cand=208600 deduped=113863 (lost 94737)
+[DEDUP] f=509 cand=207172 deduped=113027 (lost 94145)
+[DEDUP] f=510 cand=206398 deduped=112477 (lost 93921)
+[DEDUP] f=511 cand=206538 deduped=112447 (lost 94091)
+[DEDUP] f=512 cand=206658 deduped=112457 (lost 94201)
+[DEDUP] f=513 cand=207042 deduped=112532 (lost 94510)
+[DEDUP] f=514 cand=207144 deduped=112392 (lost 94752)
+[DEDUP] f=515 cand=207082 deduped=112100 (lost 94982)
+[DEDUP] f=516 cand=207290 deduped=111923 (lost 95367)
+[DEDUP] f=517 cand=206906 deduped=110863 (lost 96043)
+[DEDUP] f=518 cand=206442 deduped=110000 (lost 96442)
+[DEDUP] f=519 cand=205186 deduped=109248 (lost 95938)
+[DEDUP] f=520 cand=204658 deduped=108997 (lost 95661)
+[TRANSITION_SELECT] f=520 portals=1 added=122 ordinaryCap=120000
+[PHASE_SELECT] f=520 added=1515 ordinaryCap=120000 candidates=99063
+[RESERVE_SELECT] f=520 added=8192 available=9934
+[DEDUP] f=521 cand=204504 deduped=108925 (lost 95579)
+[DEDUP] f=522 cand=203914 deduped=108604 (lost 95310)
+[DEDUP] f=523 cand=204236 deduped=108721 (lost 95515)
+[DEDUP] f=524 cand=203786 deduped=108370 (lost 95416)
+[DEDUP] f=525 cand=203588 deduped=108271 (lost 95317)
+[DEDUP] f=526 cand=203604 deduped=108377 (lost 95227)
+[DEDUP] f=527 cand=203902 deduped=108402 (lost 95500)
+[DEDUP] f=528 cand=203770 deduped=108121 (lost 95649)
+[DEDUP] f=529 cand=203862 deduped=108205 (lost 95657)
+[DEDUP] f=530 cand=204094 deduped=109891 (lost 94203)
+[DEDUP] f=531 cand=205830 deduped=109110 (lost 96720)
+[DEDUP] f=532 cand=204678 deduped=105602 (lost 99076)
+[DEDUP] f=533 cand=200906 deduped=102679 (lost 98227)
+[DEDUP] f=534 cand=199148 deduped=102278 (lost 96870)
+[DEDUP] f=535 cand=198558 deduped=102612 (lost 95946)
+[DEDUP] f=536 cand=198898 deduped=103582 (lost 95316)
+[DEDUP] f=537 cand=200052 deduped=103959 (lost 96093)
+[DEDUP] f=538 cand=200668 deduped=103238 (lost 97430)
+[DEDUP] f=539 cand=199586 deduped=104993 (lost 94593)
+[DEDUP] f=540 cand=199584 deduped=105770 (lost 93814)
+[TRANSITION_SELECT] f=540 portals=1 added=101 ordinaryCap=120000
+[PHASE_SELECT] f=540 added=735 ordinaryCap=120000 candidates=98843
+[RESERVE_SELECT] f=540 added=6347 available=6927
+[DEDUP] f=541 cand=198810 deduped=104932 (lost 93878)
+[DEDUP] f=542 cand=198248 deduped=104803 (lost 93445)
+[DEDUP] f=543 cand=197872 deduped=104636 (lost 93236)
+[DEDUP] f=544 cand=197160 deduped=104319 (lost 92841)
+[DEDUP] f=545 cand=196058 deduped=103765 (lost 92293)
+[DEDUP] f=546 cand=195296 deduped=103201 (lost 92095)
+[DEDUP] f=547 cand=194180 deduped=102689 (lost 91491)
+[DEDUP] f=548 cand=193448 deduped=102381 (lost 91067)
+[DEDUP] f=549 cand=192344 deduped=101970 (lost 90374)
+[DEDUP] f=550 cand=191238 deduped=101296 (lost 89942)
+[DEDUP] f=551 cand=190246 deduped=100779 (lost 89467)
+[DEDUP] f=552 cand=189148 deduped=100332 (lost 88816)
+[DEDUP] f=553 cand=188164 deduped=100117 (lost 88047)
+[DEDUP] f=554 cand=188498 deduped=100283 (lost 88215)
+[DEDUP] f=555 cand=188300 deduped=100551 (lost 87749)
+[DEDUP] f=556 cand=187972 deduped=100243 (lost 87729)
+[DEDUP] f=557 cand=187810 deduped=99877 (lost 87933)
+[DEDUP] f=558 cand=187786 deduped=100033 (lost 87753)
+[DEDUP] f=559 cand=187650 deduped=100878 (lost 86772)
+[DEDUP] f=560 cand=188380 deduped=100042 (lost 88338)
+[TRANSITION_SELECT] f=560 portals=1 added=80 ordinaryCap=120000
+[PHASE_SELECT] f=560 added=259 ordinaryCap=120000 candidates=97275
+[RESERVE_SELECT] f=560 added=2481 available=2767
+[DEDUP] f=561 cand=188374 deduped=97465 (lost 90909)
+[DEDUP] f=562 cand=187726 deduped=97033 (lost 90693)
+[DEDUP] f=563 cand=165920 deduped=83085 (lost 82835)
+[DEDUP] f=564 cand=165078 deduped=85198 (lost 79880)
+[DEDUP] f=565 cand=170118 deduped=89926 (lost 80192)
+[DEDUP] f=566 cand=179648 deduped=93213 (lost 86435)
+[DEDUP] f=567 cand=182340 deduped=94678 (lost 87662)
+[DEDUP] f=568 cand=182786 deduped=94900 (lost 87886)
+[DEDUP] f=569 cand=182780 deduped=95162 (lost 87618)
+[DEDUP] f=570 cand=182978 deduped=95195 (lost 87783)
+[DEDUP] f=571 cand=183154 deduped=95045 (lost 88109)
+[DEDUP] f=572 cand=183430 deduped=95700 (lost 87730)
+[DEDUP] f=573 cand=185314 deduped=96453 (lost 88861)
+[DEDUP] f=574 cand=186294 deduped=96749 (lost 89545)
+[DEDUP] f=575 cand=188120 deduped=97575 (lost 90545)
+[DEDUP] f=576 cand=185912 deduped=98773 (lost 87139)
+[DEDUP] f=577 cand=185856 deduped=98901 (lost 86955)

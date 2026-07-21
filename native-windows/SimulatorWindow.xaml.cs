@@ -3960,6 +3960,8 @@ namespace FamidashEditor
         private readonly bool[] simulatorOrbPassComplete = new bool[2];
         private readonly bool[] simulatorOrbResultConsumed = new bool[2];
         private readonly bool[] simulatorOrbActivatedPending = new bool[2];
+        private readonly bool[] simulatorSkullDeathPending = new bool[2];
+        private readonly bool[] simulatorSpiderBoundaryDeathPending = new bool[2];
         private bool SimulatorUsesExactNesRecords => simulatorNesSpriteRecords != null;
         private readonly int[] simulatorOrbTypePending = new int[] { -1, -1 };
 
@@ -4048,6 +4050,8 @@ namespace FamidashEditor
             simulatorOrbResultConsumed[currplayer] = false;
             simulatorOrbActivatedPending[currplayer] = false;
             simulatorOrbTypePending[currplayer] = -1;
+            simulatorSkullDeathPending[currplayer] = false;
+            simulatorSpiderBoundaryDeathPending[currplayer] = false;
         }
 
         private void EndSimulatorNesSpritePass()
@@ -4101,6 +4105,67 @@ namespace FamidashEditor
                 simulatorOrbTypePending[currplayer] = result.orbType;
                 orbhitonthisframe[currplayer] = true;
             }
+        }
+
+        private void CheckSkullOrbCollisionNesOrder()
+        {
+            if (!simulatorNesDispatchActive || simulatorNesDispatchSpriteId != 0x79)
+                return;
+
+            bool wave = currentGameMode == 6;
+            bool isMini = currplayer_mini != 0;
+            int hitboxW = wave ? 8 : (isMini ? 8 : 15);
+            int hitboxH = wave ? 8 : (isMini ? 7 : 15);
+            int playerLeft = (playerX_fixed >> 8) + 1;
+            int playerTop = (playerY_fixed >> 8) + (wave ? 4 : GetMiniSpriteOffsetY());
+            if (!SpriteIntersectsPlayerTouching(
+                    simulatorNesDispatchIndex, 0x79,
+                    playerLeft, playerLeft + hitboxW - 1,
+                    playerTop, playerTop + hitboxH - 1))
+                return;
+
+            bool pressed = pathfinderEnabled
+                ? pfPressEdgeThisFrame
+                : Interlocked.CompareExchange(ref keyXPressedCount, 0, 0) > 0;
+            bool held = IsXDownAsync() || keyXHeld;
+            // spcl_skl_orb uses cube_data bit $02 in cube, ball, robot, spider,
+            // swing, ninja, pogo, snake, and later modes. Ship, UFO, and wave
+            // use only a fresh press. orbBufferActive is the simulator's existing
+            // representation of that buffered airborne press.
+            bool usesBufferedHold = currentGameMode != 1 && currentGameMode != 3 &&
+                currentGameMode != 6 && orbBufferActive[currplayer];
+            if (usesBufferedHold ? held : pressed)
+            {
+                simulatorSkullDeathPending[currplayer] = true;
+                AppendSimDebug($"[SKULL_ORB] pending death p={currplayer} " +
+                    $"press={pressed} hold={held} buffered={orbBufferActive[currplayer]}");
+            }
+        }
+
+        private void TriggerSimulatorDeferredDeath(string reason, int deathX, int deathY)
+        {
+            if (deathTriggered || MainWindow.Option_NoDeath)
+                return;
+
+            AppendSimDebug($"[DEATH] {reason} at ({deathX},{deathY})");
+            deathTriggered = true;
+            deathTileX = deathX;
+            deathTileY = deathY;
+            paused = true;
+            _ = StopMusicAsync();
+            try
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                    if (this.Owner is MainWindow mw)
+                    {
+                        try { mw.PauseSimulatorPlayback(); } catch { }
+                        try { mw.AddDeathMarker(deathX, deathY); } catch { }
+                    }
+                }));
+            }
+            catch { }
         }
 
         private void BuildSimulatorNesSpriteStream()
@@ -7595,6 +7660,9 @@ namespace FamidashEditor
                 }
 
                 try { ResetOrbSystem(); } catch { }
+                Array.Clear(simulatorSkullDeathPending, 0, simulatorSkullDeathPending.Length);
+                Array.Clear(simulatorSpiderBoundaryDeathPending, 0,
+                    simulatorSpiderBoundaryDeathPending.Length);
                 try { ResetBluePadSystem(); } catch { }
                 try { ResetSlopeState(); } catch { }
                 Array.Clear(ninjajumps, 0, ninjajumps.Length);
@@ -12120,6 +12188,7 @@ namespace FamidashEditor
                                 CheckMiscTriggers();
                                 CheckPadCollision();
                                 CheckSpiderOrbPadCollision();
+                                CheckSkullOrbCollisionNesOrder();
                                 CheckRegularOrbCollisionNesOrder();
                                 CheckDashOrbCollision();
                                 CheckAlphabetBlocks();
@@ -12942,6 +13011,20 @@ namespace FamidashEditor
                         // first and used NEW X — that lets the player's center pixel sweep past
                         // a half-slab side that NES kills on (a 1–3 px discrepancy depending on
                         // current speed). Run the death check FIRST, then advance.
+                        // SKULL_ORB sets cube_data bit $01 during sprite_collide;
+                        // state_game observes it after x_movement and suppresses it
+                        // only while P1's resulting X is still <= $20.
+                        if ((simulatorSkullDeathPending[0] ||
+                             simulatorSpiderBoundaryDeathPending[0]) &&
+                            (attemptedPlayerX_fixed >> 8) > 0x20)
+                        {
+                            TriggerSimulatorDeferredDeath(
+                                simulatorSkullDeathPending[0]
+                                    ? "Skull orb activation"
+                                    : "Spider scan boundary",
+                                attemptedPlayerX_fixed >> 8, playerY_fixed >> 8);
+                        }
+
                         if (!deathTriggered && !camModeActive && CheckDeathCollision(out int deathX_px, out int deathY_px, preAdvancePlayerX_fixed))
                         {
                             AppendSimDebug($"[DEATH] Death tile collision at ({deathX_px},{deathY_px}) (OLD X)");
@@ -13214,6 +13297,7 @@ namespace FamidashEditor
                                         CheckMiscTriggers();
                                         CheckPadCollision();
                                         CheckSpiderOrbPadCollision();
+                                        CheckSkullOrbCollisionNesOrder();
                                         CheckRegularOrbCollisionNesOrder();
                                         CheckDashOrbCollision();
                                         CheckAlphabetBlocks();
@@ -13375,6 +13459,17 @@ namespace FamidashEditor
                             // NES processes x_movement_coll (floor spikes + forward collision) and
                             // bg_coll_death for P2 at P1's X, P2's post-physics Y.
                             // P2's X doesn't advance independently (synced to P1), so no preAdvance distinction.
+                            if ((simulatorSkullDeathPending[1] ||
+                                 simulatorSpiderBoundaryDeathPending[1]) &&
+                                (playerX_fixed >> 8) > 0x20)
+                            {
+                                TriggerSimulatorDeferredDeath(
+                                    simulatorSkullDeathPending[1]
+                                        ? "Skull orb activation (P2)"
+                                        : "Spider scan boundary (P2)",
+                                    playerX_fixed >> 8, playerY_fixed >> 8);
+                            }
+
                             if (!MainWindow.Option_NoDeath && invincibleCounter == 0 && !deathTriggered)
                             {
                                 int p2X_px = playerX_fixed >> 8;

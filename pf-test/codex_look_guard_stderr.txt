@@ -1,0 +1,111 @@
+[COIN_INFO] coin#0 idx=15478 sid=0x07 pos=(1304,248) hit=(1296,239)-(1312,255)
+[COIN_INFO] coin#1 idx=15814 sid=0x1A pos=(8072,264) hit=(8064,255)-(8080,271)
+[COIN_INFO] coin#2 idx=15840 sid=0x1B pos=(8664,168) hit=(8656,159)-(8672,175)
+[BFS] Starting exhaustive BFS exploration (frontier cap=120000)
+[BFS_PARAMS] startX=0 startY=367 speed=0 mode=0 gravFlip=False mini=False bias=0.5 coins=True useBfs=True
+[GF_PIPE] f=0 frontGF=0 gfDied=0 candGF=2 dedupGF=2 gfY=[-34..-34]
+[BFS] f=0 front=2 dedup=2 deaths=0 Y=[-34..-34] mode=0 gravN=0 gravF=2 X~2px pct=0% ms/f=24.1 modes: m0=2
+[DEDUP] f=1 cand=4 deduped=2 (lost 2)
+[GF_PIPE] f=1 frontGF=2 gfDied=0 candGF=4 dedupGF=2 gfY=[-35..-35]
+[BFS] f=1 front=2 dedup=2 deaths=0 Y=[-35..-35] mode=0 gravN=0 gravF=2 X~4px pct=0% ms/f=12.7 modes: m0=2
+[DEDUP] f=2 cand=4 deduped=3 (lost 1)
+[GF_PIPE] f=2 frontGF=2 gfDied=0 candGF=4 dedupGF=3 gfY=[-36..-36]
+[BFS] f=2 front=3 dedup=3 deaths=0 Y=[-36..-36] mode=0 gravN=0 gravF=3 X~6px pct=0% ms/f=8.6 modes: m0=3
+[DEDUP] f=3 cand=6 deduped=3 (lost 3)
+[GF_PIPE] f=3 frontGF=3 gfDied=0 candGF=6 dedupGF=3 gfY=[-38..-38]
+[BFS] f=3 front=3 dedup=3 deaths=0 Y=[-38..-38] mode=0 gravN=0 gravF=3 X~8px pct=0% ms/f=6.5 modes: m0=3
+[DEDUP] f=4 cand=6 deduped=3 (lost 3)
+[GF_PIPE] f=4 frontGF=3 gfDied=0 candGF=6 dedupGF=3 gfY=[-40..-40]
+[BFS] f=4 front=3 dedup=3 deaths=0 Y=[-40..-40] mode=0 gravN=0 gravF=3 X~11px pct=0% ms/f=5.3 modes: m0=3
+[DEDUP] f=5 cand=6 deduped=3 (lost 3)
+[GF_PIPE] f=5 frontGF=3 gfDied=0 candGF=6 dedupGF=3 gfY=[-43..-43]
+[BFS] f=5 front=3 dedup=3 deaths=0 Y=[-43..-43] mode=0 gravN=0 gravF=3 X~13px pct=0% ms/f=4.4 modes: m0=3
+[DEDUP] f=6 cand=6 deduped=3 (lost 3)
+[GF_PIPE] f=6 frontGF=3 gfDied=0 candGF=6 dedupGF=3 gfY=[-46..-46]
+[BFS] f=6 front=3 dedup=3 deaths=0 Y=[-46..-46] mode=0 gravN=0 gravF=3 X~15px pct=0% ms/f=3.8 modes: m0=3
+[DEDUP] f=7 cand=6 deduped=3 (lost 3)
+[GF_PIPE] f=7 frontGF=3 gfDied=0 candGF=0 dedupGF=0 gfY=[N/A..N/A]
+[BFS] f=7 front=3 dedup=3 deaths=0 Y=[-42..-42] mode=0 gravN=3 gravF=0 X~17px pct=0% ms/f=3.7 modes: m0=3
+[DEDUP] f=8 cand=6 deduped=3 (lost 3)
+[BFS] f=8 front=3 dedup=3 deaths=0 Y=[-37..-37] mode=0 gravN=3 gravF=0 X~20px pct=0% ms/f=3.3 modes: m0=3
+[DEDUP] f=9 cand=6 deduped=3 (lost 3)
+[BFS] f=9 front=3 dedup=3 deaths=0 Y=[-32..-32] mode=0 gravN=3 gravF=0 X~22px pct=0% ms/f=3.0 modes: m0=3
+[DEDUP] f=10 cand=6 deduped=3 (lost 3)
+[BFS] f=10 front=3 dedup=3 deaths=0 Y=[-27..-27] mode=0 gravN=3 gravF=0 X~24px pct=0% ms/f=2.8 modes: m0=3
+[DEDUP] f=11 cand=6 deduped=3 (lost 3)
+[BFS] f=11 front=3 dedup=3 deaths=0 Y=[-21..-21] mode=0 gravN=3 gravF=0 X~26px pct=0% ms/f=2.6 modes: m0=3
+[DEDUP] f=12 cand=6 deduped=3 (lost 3)
+[BFS] f=12 front=3 dedup=3 deaths=0 Y=[-15..-15] mode=0 gravN=3 gravF=0 X~28px pct=0% ms/f=2.4 modes: m0=3
+[DEDUP] f=13 cand=6 deduped=3 (lost 3)
+[BFS] f=13 front=3 dedup=3 deaths=0 Y=[-9..-9] mode=0 gravN=3 gravF=0 X~31px pct=0% ms/f=2.2 modes: m0=3
+[DEDUP] f=14 cand=6 deduped=3 (lost 3)
+[BFS] f=14 front=3 dedup=3 deaths=0 Y=[-3..-3] mode=0 gravN=3 gravF=0 X~33px pct=0% ms/f=2.1 modes: m0=3
+[DEDUP] f=15 cand=6 deduped=3 (lost 3)
+[BFS] f=15 front=3 dedup=3 deaths=0 Y=[2..2] mode=0 gravN=3 gravF=0 X~35px pct=0% ms/f=2.0 modes: m0=3
+[DEDUP] f=16 cand=6 deduped=3 (lost 3)
+[BFS] f=16 front=3 dedup=3 deaths=0 Y=[9..9] mode=0 gravN=3 gravF=0 X~37px pct=0% ms/f=1.9 modes: m0=3
+[DEDUP] f=17 cand=6 deduped=3 (lost 3)
+[BFS] f=17 front=3 dedup=3 deaths=0 Y=[14..14] mode=0 gravN=3 gravF=0 X~40px pct=0% ms/f=1.8 modes: m0=3
+[DEDUP] f=18 cand=6 deduped=3 (lost 3)
+[BFS] f=18 front=3 dedup=3 deaths=0 Y=[20..20] mode=0 gravN=3 gravF=0 X~42px pct=0% ms/f=1.7 modes: m0=3
+[DEDUP] f=19 cand=6 deduped=3 (lost 3)
+[BFS] f=19 front=3 dedup=3 deaths=0 Y=[26..26] mode=0 gravN=3 gravF=0 X~44px pct=0% ms/f=1.6 modes: m0=3
+[DEDUP] f=20 cand=6 deduped=3 (lost 3)
+[BFS] f=20 front=3 dedup=3 deaths=0 Y=[32..32] mode=0 gravN=3 gravF=0 X~46px pct=0% ms/f=1.6 modes: m0=3
+[DEDUP] f=21 cand=6 deduped=3 (lost 3)
+[BFS] f=21 front=3 dedup=3 deaths=0 Y=[38..38] mode=0 gravN=3 gravF=0 X~49px pct=0% ms/f=1.5 modes: m0=3
+[DEDUP] f=22 cand=6 deduped=3 (lost 3)
+[BFS] f=22 front=3 dedup=3 deaths=0 Y=[44..44] mode=0 gravN=3 gravF=0 X~51px pct=0% ms/f=1.4 modes: m0=3
+[DEDUP] f=23 cand=6 deduped=3 (lost 3)
+[BFS] f=23 front=3 dedup=3 deaths=0 Y=[50..50] mode=0 gravN=3 gravF=0 X~53px pct=0% ms/f=1.4 modes: m0=3
+[DEDUP] f=24 cand=6 deduped=3 (lost 3)
+[BFS] f=24 front=3 dedup=3 deaths=0 Y=[56..56] mode=0 gravN=3 gravF=0 X~55px pct=0% ms/f=1.3 modes: m0=3
+[DEDUP] f=25 cand=6 deduped=3 (lost 3)
+[BFS] f=25 front=3 dedup=3 deaths=0 Y=[62..62] mode=0 gravN=3 gravF=0 X~57px pct=0% ms/f=1.3 modes: m0=3
+[DEDUP] f=26 cand=6 deduped=3 (lost 3)
+[BFS] f=26 front=3 dedup=3 deaths=0 Y=[68..68] mode=0 gravN=3 gravF=0 X~60px pct=0% ms/f=1.3 modes: m0=3
+[DEDUP] f=27 cand=6 deduped=3 (lost 3)
+[BFS] f=27 front=3 dedup=3 deaths=0 Y=[74..74] mode=0 gravN=3 gravF=0 X~62px pct=0% ms/f=1.2 modes: m0=3
+[DEDUP] f=28 cand=6 deduped=3 (lost 3)
+[BFS] f=28 front=3 dedup=3 deaths=0 Y=[80..80] mode=0 gravN=3 gravF=0 X~64px pct=0% ms/f=1.2 modes: m0=3
+[DEDUP] f=29 cand=6 deduped=3 (lost 3)
+[BFS] f=29 front=3 dedup=3 deaths=0 Y=[85..85] mode=0 gravN=3 gravF=0 X~66px pct=0% ms/f=1.1 modes: m0=3
+[DEDUP] f=30 cand=6 deduped=3 (lost 3)
+[BFS] f=30 front=3 dedup=3 deaths=0 Y=[92..92] mode=0 gravN=3 gravF=0 X~69px pct=0% ms/f=1.1 modes: m0=3
+[DEDUP] f=31 cand=6 deduped=3 (lost 3)
+[BFS] f=31 front=3 dedup=3 deaths=0 Y=[97..97] mode=0 gravN=3 gravF=0 X~71px pct=0% ms/f=1.1 modes: m0=3
+[DEDUP] f=32 cand=6 deduped=3 (lost 3)
+[BFS] f=32 front=3 dedup=3 deaths=0 Y=[103..103] mode=0 gravN=3 gravF=0 X~73px pct=0% ms/f=1.1 modes: m0=3
+[DEDUP] f=33 cand=6 deduped=3 (lost 3)
+[BFS] f=33 front=3 dedup=3 deaths=0 Y=[109..109] mode=0 gravN=3 gravF=0 X~75px pct=0% ms/f=1.0 modes: m0=3
+[DEDUP] f=34 cand=6 deduped=3 (lost 3)
+[BFS] f=34 front=3 dedup=3 deaths=0 Y=[115..115] mode=0 gravN=3 gravF=0 X~78px pct=0% ms/f=1.0 modes: m0=3
+[BFS] ALL DEAD at frame 35 (X~80px pct=0% expanded=6 deaths=6)
+[BFS] Frontier before expansion: 3 states
+[BFS] Frontier before expansion: 3 states
+  [0] X=80 Y=115 VelY=0x622 grav=False mini=False
+  [0] X=80 Y=115 VelY=0x622 grav=False mini=False
+  [1] X=80 Y=115 VelY=0x622 grav=False mini=False
+  [1] X=80 Y=115 VelY=0x622 grav=False mini=False
+  [2] X=80 Y=115 VelY=0x622 grav=False mini=False
+  [2] X=80 Y=115 VelY=0x622 grav=False mini=False
+[BFS] Death types: FLOOR_SPIKE=6
+[BFS] Death types: FLOOR_SPIKE=6
+[BFS_DEAD] parent X=0x504C Y=0x73BB VelY=0x622 grav=False mini=False dual=False P2_Y=0x0 P2_grav=False | child X=0x5287 Y=0x7972 VelY=0x5B7 grav=False mini=False dt=7 inp=False
+[BFS_DEAD] parent Y=115 VelY=0x622 grav=False | child Y=121 VelY=0x5B7 dt=FLOOR_SPIKE inp=False
+[BFS_DEAD] parent X=0x504C Y=0x73BB VelY=0x622 grav=False mini=False dual=False P2_Y=0x0 P2_grav=False | child X=0x5287 Y=0x7972 VelY=0x5B7 grav=False mini=False dt=7 inp=True
+[BFS_DEAD] parent Y=115 VelY=0x622 grav=False | child Y=121 VelY=0x5B7 dt=FLOOR_SPIKE inp=True
+[BFS_DEAD] parent X=0x504C Y=0x73BB VelY=0x622 grav=False mini=False dual=False P2_Y=0x0 P2_grav=False | child X=0x5287 Y=0x7972 VelY=0x5B7 grav=False mini=False dt=7 inp=False
+[BFS_DEAD] parent Y=115 VelY=0x622 grav=False | child Y=121 VelY=0x5B7 dt=FLOOR_SPIKE inp=False
+[BFS_DEAD] parent X=0x504C Y=0x73BB VelY=0x622 grav=False mini=False dual=False P2_Y=0x0 P2_grav=False | child X=0x5287 Y=0x7972 VelY=0x5B7 grav=False mini=False dt=7 inp=True
+[BFS_DEAD] parent Y=115 VelY=0x622 grav=False | child Y=121 VelY=0x5B7 dt=FLOOR_SPIKE inp=True
+[BFS_DEAD] parent X=0x504C Y=0x73BB VelY=0x622 grav=False mini=False dual=False P2_Y=0x0 P2_grav=False | child X=0x5287 Y=0x7972 VelY=0x5B7 grav=False mini=False dt=7 inp=False
+[BFS_DEAD] parent Y=115 VelY=0x622 grav=False | child Y=121 VelY=0x5B7 dt=FLOOR_SPIKE inp=False
+[BFS] Last frontier: size=3 X=[80..80] Y=[115..115] mode=0 grav=False mini=False VelY=[0x622..0x622]
+[BFS] Last frontier: size=3 X=[80..80] Y=[115..115] mode=0 grav=False mini=False VelY=[0x622..0x622]
+[COIN_STATUS] collected_count=0 total=3 collected_indices=[]
+[COIN_RESULT] idx=15478 status=NO
+[COIN_RESULT] idx=15814 status=NO
+[COIN_RESULT] idx=15840 status=NO
+[BFS] BFS failed ~ best path to X=88px (0%)
+[BFS_DIAG] Step1 fires=0, Step2 fires=0
