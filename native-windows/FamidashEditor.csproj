@@ -31,12 +31,12 @@
   </PropertyGroup>
   <PropertyGroup>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
-    <!-- Debug logging disabled in Release for BFS thread safety (Parallel.For) and performance.
-         Use Debug config or remove DISABLE_DEBUG_LOGGING to generate PF logs in %TEMP%. -->
+    <!-- Pathfinder diagnostic output is runtime-selectable in the settings dialog.
+         NoDebugLogging remains available as an opt-in compile-time stripped build. -->
   </PropertyGroup>
 
-  <!-- Release + NoDebugLogging: suppress ALL sim debug logging (file I/O + string allocs) -->
-  <PropertyGroup Condition="'$(Configuration)' == 'Release' Or '$(Configuration)' == 'NoDebugLogging'">
+  <!-- NoDebugLogging: suppress ALL sim debug logging (file I/O + string allocs) -->
+  <PropertyGroup Condition="'$(Configuration)' == 'NoDebugLogging'">
     <DefineConstants>$(DefineConstants);DISABLE_DEBUG_LOGGING</DefineConstants>
   </PropertyGroup>
 
@@ -427,6 +427,7 @@
     <LocalMesenBuildDir Condition="'$(LocalMesenBuildDir)' == ''">$(MSBuildProjectDirectory)\..\Mesen2\bin\win-x64\Release\</LocalMesenBuildDir>
     <LocalSimFamidashDir Condition="'$(LocalSimFamidashDir)' == ''">$(MSBuildProjectDirectory)\..\sim-famidash\</LocalSimFamidashDir>
     <LocalSimFamidashOverlayLua Condition="'$(LocalSimFamidashOverlayLua)' == ''">$(MSBuildProjectDirectory)\..\famidash_path_overlay.lua</LocalSimFamidashOverlayLua>
+    <LocalFamidashHitboxOverlayLua Condition="'$(LocalFamidashHitboxOverlayLua)' == ''">$(MSBuildProjectDirectory)\..\famidash\LUA SCRIPTS\famidash_hitbox_overlay.lua</LocalFamidashHitboxOverlayLua>
     <MesenRuntimeCopyExcludes>$(LocalMesenBuildDir)**\*.lib</MesenRuntimeCopyExcludes>
     <RuntimeFolderCopyExcludes>$(LocalSimFamidashDir).git\**;$(LocalSimFamidashDir)BUILD.zip;$(LocalSimFamidashDir)**\*.log</RuntimeFolderCopyExcludes>
   </PropertyGroup>
@@ -452,11 +453,15 @@
           SkipUnchangedFiles="true"
           Condition="'@(BuildSimFamidashFiles)' != ''" />
     <MakeDir Directories="$(OutDir)sim-famidash"
-             Condition="Exists('$(LocalSimFamidashOverlayLua)')" />
+             Condition="Exists('$(LocalSimFamidashOverlayLua)') Or Exists('$(LocalFamidashHitboxOverlayLua)')" />
     <Copy SourceFiles="$(LocalSimFamidashOverlayLua)"
           DestinationFiles="$(OutDir)sim-famidash\famidash_path_overlay.lua"
           SkipUnchangedFiles="true"
           Condition="Exists('$(LocalSimFamidashOverlayLua)')" />
+    <Copy SourceFiles="$(LocalFamidashHitboxOverlayLua)"
+          DestinationFiles="$(OutDir)sim-famidash\famidash_hitbox_overlay.lua"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(LocalFamidashHitboxOverlayLua)')" />
   </Target>
 
   <!-- dotnet publish -o ReleaseBuild uses PublishDir, so copy there as well. -->
@@ -480,11 +485,15 @@
           SkipUnchangedFiles="true"
           Condition="'@(PublishSimFamidashFiles)' != '' And '$(PublishDir)' != ''" />
     <MakeDir Directories="$(PublishDir)sim-famidash"
-             Condition="Exists('$(LocalSimFamidashOverlayLua)') And '$(PublishDir)' != ''" />
+             Condition="(Exists('$(LocalSimFamidashOverlayLua)') Or Exists('$(LocalFamidashHitboxOverlayLua)')) And '$(PublishDir)' != ''" />
     <Copy SourceFiles="$(LocalSimFamidashOverlayLua)"
           DestinationFiles="$(PublishDir)sim-famidash\famidash_path_overlay.lua"
           SkipUnchangedFiles="true"
           Condition="Exists('$(LocalSimFamidashOverlayLua)') And '$(PublishDir)' != ''" />
+    <Copy SourceFiles="$(LocalFamidashHitboxOverlayLua)"
+          DestinationFiles="$(PublishDir)sim-famidash\famidash_hitbox_overlay.lua"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(LocalFamidashHitboxOverlayLua)') And '$(PublishDir)' != ''" />
   </Target>
 
 </Project>

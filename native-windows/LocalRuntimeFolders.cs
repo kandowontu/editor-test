@@ -10,6 +10,7 @@ namespace FamidashEditor
         private static readonly object SyncRoot = new();
         private static string? cachedSimFamidashFolder;
         internal const string SimFamidashOverlayFileName = "famidash_path_overlay.lua";
+        internal const string FamidashHitboxOverlayFileName = "famidash_hitbox_overlay.lua";
 
         internal static string BaseDirectory =>
             Path.GetFullPath(AppContext.BaseDirectory);
@@ -19,6 +20,9 @@ namespace FamidashEditor
 
         internal static string SimFamidashOverlayPath =>
             Path.Combine(SimFamidashFolder, SimFamidashOverlayFileName);
+
+        internal static string FamidashHitboxOverlayPath =>
+            Path.Combine(SimFamidashFolder, FamidashHitboxOverlayFileName);
 
         internal static string MesenFolder =>
             Path.Combine(BaseDirectory, "mesen");
@@ -92,6 +96,38 @@ namespace FamidashEditor
                 }
 
                 Directory.CreateDirectory(targetRoot);
+                File.Copy(source, target, overwrite: true);
+                return target;
+            }
+        }
+
+        internal static string EnsureFamidashHitboxOverlayScript()
+        {
+            lock (SyncRoot)
+            {
+                string target = FamidashHitboxOverlayPath;
+                string? source = FindSourceHitboxOverlayScript(target);
+
+                if (File.Exists(target))
+                {
+                    if (!string.IsNullOrWhiteSpace(source) &&
+                        File.GetLastWriteTimeUtc(source) > File.GetLastWriteTimeUtc(target))
+                    {
+                        File.Copy(source, target, overwrite: true);
+                    }
+
+                    return target;
+                }
+
+                if (string.IsNullOrWhiteSpace(source))
+                {
+                    throw new FileNotFoundException(
+                        "Could not find the Famidash hitbox overlay Lua script. " +
+                        $"Expected local script:\n{target}",
+                        target);
+                }
+
+                Directory.CreateDirectory(SimFamidashFolder);
                 File.Copy(source, target, overwrite: true);
                 return target;
             }
@@ -183,6 +219,46 @@ namespace FamidashEditor
                 candidates.Add(Path.Combine(dir.FullName, "famidash", SimFamidashOverlayFileName));
                 candidates.Add(Path.Combine(dir.FullName, "ReleaseBuild", "sim-famidash", SimFamidashOverlayFileName));
                 candidates.Add(Path.Combine(dir.FullName, "native-windows", "ReleaseBuild", "sim-famidash", SimFamidashOverlayFileName));
+            }
+        }
+
+        private static string? FindSourceHitboxOverlayScript(string target)
+        {
+            var candidates = new List<string>();
+            AddHitboxOverlayCandidates(candidates, BaseDirectory);
+            AddHitboxOverlayCandidates(candidates, Environment.CurrentDirectory);
+
+            string targetFull = Path.GetFullPath(target);
+            foreach (string candidate in candidates
+                         .Where(c => !string.IsNullOrWhiteSpace(c))
+                         .Select(Path.GetFullPath)
+                         .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (string.Equals(candidate, targetFull, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (File.Exists(candidate))
+                    return candidate;
+            }
+
+            return null;
+        }
+
+        private static void AddHitboxOverlayCandidates(List<string> candidates, string? start)
+        {
+            if (string.IsNullOrWhiteSpace(start)) return;
+
+            DirectoryInfo? dir;
+            try { dir = new DirectoryInfo(Path.GetFullPath(start)); }
+            catch { return; }
+
+            for (int i = 0; dir != null && i < 10; i++, dir = dir.Parent)
+            {
+                candidates.Add(Path.Combine(dir.FullName, "sim-famidash", FamidashHitboxOverlayFileName));
+                candidates.Add(Path.Combine(dir.FullName, "famidash", "LUA SCRIPTS", FamidashHitboxOverlayFileName));
+                candidates.Add(Path.Combine(dir.FullName, "LUA SCRIPTS", FamidashHitboxOverlayFileName));
+                candidates.Add(Path.Combine(dir.FullName, FamidashHitboxOverlayFileName));
+                candidates.Add(Path.Combine(dir.FullName, "ReleaseBuild", "sim-famidash", FamidashHitboxOverlayFileName));
+                candidates.Add(Path.Combine(dir.FullName, "native-windows", "ReleaseBuild", "sim-famidash", FamidashHitboxOverlayFileName));
             }
         }
 

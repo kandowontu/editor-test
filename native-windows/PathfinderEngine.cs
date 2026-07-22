@@ -1052,6 +1052,12 @@ public class PathfinderEngine
 
 	public bool Verbose { get; set; }
 
+	/// <summary>
+	/// Controls all Pathfinder diagnostic output, including console diagnostics
+	/// and the frame/physics/interaction artifacts written to %TEMP%.
+	/// </summary>
+	public bool EnableLogging { get; set; } = true;
+
 	public Action<List<(int x, int y)>?, int, int, bool>? OnSpeculativePath { get; set; }
 
 	public int CurrentSpeculativeVizMode { get; private set; } = -1;
@@ -1890,6 +1896,12 @@ public class PathfinderEngine
 
 	private void EnsureArtifactWritersOpen()
 	{
+		if (!EnableLogging)
+		{
+			_log = TextWriter.Null;
+			SharedPhysics.FullTraceLog = null;
+			return;
+		}
 		if (_artifactWritersOpen)
 		{
 			return;
@@ -2017,6 +2029,12 @@ public class PathfinderEngine
 	private void TraceFrameOpen()
 	{
 		#if !DISABLE_DEBUG_LOGGING
+		if (!EnableLogging)
+		{
+			_log = TextWriter.Null;
+			SharedPhysics.FullTraceLog = null;
+			return;
+		}
 		EnsureArtifactWritersOpen();
 		try
 		{
@@ -2663,7 +2681,7 @@ public class PathfinderEngine
 
 	public void Run(int startX_px, int startY_px, int startSpeedUiIndex, int startGameMode, bool startGravFlipped, bool startMini)
 	{
-		_baseLog = (Verbose ? Console.Error : TextWriter.Null);
+		_baseLog = (EnableLogging && Verbose ? Console.Error : TextWriter.Null);
 		_log = _baseLog;
 		for (int i = 0; i < allCoins.Count; i++)
 		{

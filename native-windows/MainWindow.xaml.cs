@@ -21960,7 +21960,9 @@ namespace FamidashEditor
                 }
 
                 // Show pathfinder settings popup
-                var settingsWin = new PathfinderSettingsWindow { Owner = this };
+                var settingsWin = new PathfinderSettingsWindow(
+                    _pathfinderLoggingEnabled,
+                    _mesenLuaLoggingEnabled) { Owner = this };
                 if (settingsWin.ShowDialog() != true)
                     return;
                 double jumpTimingBias = settingsWin.JumpTimingBias;
@@ -21968,6 +21970,9 @@ namespace FamidashEditor
                 bool drawPathLine = settingsWin.DrawPathLine;
                 bool showPathfinderLive = settingsWin.ShowPathfinderLive;
                 bool showProspectivePaths = settingsWin.ShowProspectivePaths;
+                bool enablePathfinderLogging = settingsWin.EnablePathfinderLogging;
+                _pathfinderLoggingEnabled = enablePathfinderLogging;
+                _mesenLuaLoggingEnabled = settingsWin.EnableMesenLogging;
 
                 // Determine starting position
                 int startX_px = 0;
@@ -22031,6 +22036,7 @@ namespace FamidashEditor
                             nesSpriteLayerForRuntime,
                             nesSpriteRecordsForRuntime);
                         engine.LevelName = currentFilePath ?? "";
+                        engine.EnableLogging = enablePathfinderLogging;
                         engine.JumpTimingBias = jumpTimingBias;
                         engine.PreferCoins = preferCoins;
                         engine.UseBFS = preferCoins; // BFS always runs first; UseBFS=true prevents heuristic fallback
@@ -22470,8 +22476,7 @@ namespace FamidashEditor
             try
             {
                 RefreshMesenLogStamp();
-                System.IO.File.WriteAllText(this.OverlayLuaPath, BuildOverlayLuaScript(includeReplay: true, drawPathlines: true));
-                System.IO.File.WriteAllText(this.OverlayLuaNoPathlinesPath, BuildOverlayLuaScript(includeReplay: true, drawPathlines: false));
+                WriteGeneratedOverlayLuaScripts(includeReplay: true);
             }
             catch { }
         }

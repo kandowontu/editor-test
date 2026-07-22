@@ -11,6 +11,8 @@ namespace FamidashEditor
     {
         private Process?        _mesenRunProcess;
         private string?         _mesenLogStamp;
+        private bool            _pathfinderLoggingEnabled = true;
+        private bool            _mesenLuaLoggingEnabled = true;
         // ── Per-level replay/trace paths ────────────────────────────────────
         // All Mesen-related files live in My Documents under a per-level folder.
         //   <Documents>/Famidash Editor/Replays/<level>/famidash_overlay.lua
@@ -50,6 +52,12 @@ namespace FamidashEditor
 
         internal string OverlayLuaNoPathlinesPath =>
             Path.Combine(CurrentReplayDir, "famidash_overlay (nopathlines).lua");
+
+        internal string OverlayLuaHitboxesPath =>
+            Path.Combine(CurrentReplayDir, "famidash_overlay (hitboxes and pathlines).lua");
+
+        internal string OverlayLuaHitboxesNoPathlinesPath =>
+            Path.Combine(CurrentReplayDir, "famidash_overlay (hitboxes, no pathlines or player).lua");
 
         internal string ReplayTempFile =>
             Path.Combine(CurrentReplayDir, "famidash_replay.csv");
@@ -158,6 +166,88 @@ namespace FamidashEditor
             base.OnClosing(e);
         }
 
+        /// <summary>
+        /// Writes the two existing replay overlays plus two variants augmented
+        /// with the authoritative Famidash tile/sprite hitbox overlay.
+        /// Existing replay/F9 callers continue to launch OverlayLuaPath.
+        /// </summary>
+        internal void WriteGeneratedOverlayLuaScripts(bool includeReplay)
+        {
+            string withPathlines = BuildOverlayLuaScript(
+                includeReplay, drawPathlines: true, _mesenLuaLoggingEnabled);
+            string withoutPathlines = BuildOverlayLuaScript(
+                includeReplay, drawPathlines: false, _mesenLuaLoggingEnabled);
+
+            File.WriteAllText(OverlayLuaPath, withPathlines);
+            File.WriteAllText(OverlayLuaNoPathlinesPath, withoutPathlines);
+
+            // Do not make the established replay/F9 flow depend on this optional
+            // companion source. Normal builds and publishes package it locally;
+            // the resolver also repairs a missing local copy from the workspace.
+            try
+            {
+                string hitboxSourcePath = LocalRuntimeFolders.EnsureFamidashHitboxOverlayScript();
+                string hitboxSource = File.ReadAllText(hitboxSourcePath);
+
+                File.WriteAllText(
+                    OverlayLuaHitboxesNoPathlinesPath,
+                    withoutPathlines + PrepareHitboxOverlaySource(
+                        hitboxSource,
+                        showPlayer: false,
+                        enableLogging: _mesenLuaLoggingEnabled));
+                File.WriteAllText(
+                    OverlayLuaHitboxesPath,
+                    withPathlines + PrepareHitboxOverlaySource(
+                        hitboxSource,
+                        showPlayer: true,
+                        enableLogging: _mesenLuaLoggingEnabled));
+            }
+            catch
+            {
+                // The standard generated scripts above remain valid and usable.
+            }
+        }
+
+        private static string PrepareHitboxOverlaySource(
+            string source,
+            bool showPlayer,
+            bool enableLogging)
+        {
+            string configured = source.Replace(
+                "local SHOW_PLAYER     = true",
+                $"local SHOW_PLAYER     = {(showPlayer ? "true" : "false")}",
+                StringComparison.Ordinal);
+
+            if (!enableLogging)
+            {
+                var filtered = new System.Text.StringBuilder(configured.Length);
+                using var reader = new StringReader(configured);
+                string? line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    string trimmed = line.TrimStart();
+                    if (trimmed.StartsWith("emu.log(", StringComparison.Ordinal))
+                    {
+                        int indentation = line.Length - trimmed.Length;
+                        filtered.Append(' ', indentation)
+                                .AppendLine("-- Mesen logging disabled by FamidashEditor");
+                    }
+                    else
+                    {
+                        filtered.AppendLine(line);
+                    }
+                }
+                configured = filtered.ToString();
+            }
+
+            // Keep the hitbox script's many locals in their own Lua function
+            // scope. Its registered callbacks retain those locals after setup.
+            return "\n\n-- Famidash authoritative hitbox overlay ------------------------------\n" +
+                   "local function __installFamidashHitboxOverlay()\n" +
+                   configured +
+                   "\nend\n__installFamidashHitboxOverlay()\n";
+        }
+
         // -----------------------------------------------------------------------
         // Self-contained replay/trace Lua script passed to Mesen on startup.
         // -----------------------------------------------------------------------
@@ -176,6 +266,11 @@ namespace FamidashEditor
         }
 
         internal string BuildOverlayLuaScript(bool includeReplay, bool drawPathlines)
+        {
+            return BuildOverlayLuaScript(includeReplay, drawPathlines, _mesenLuaLoggingEnabled);
+        }
+
+        internal string BuildOverlayLuaScript(bool includeReplay, bool drawPathlines, bool enableLogging)
         {
             // The Lua script resolves the temp directory at runtime via
             // os.getenv so the generated source contains NO machine-specific
@@ -285,6 +380,7 @@ local replay     = {embeddedReplayLiteral}
 local replay2    = {embeddedReplay2Literal}
 local nesYOffset = {embeddedYOffset}
 local SHOW_PATHLINES = {(drawPathlines ? "true" : "false")}
+local ENABLE_LOGGING = {(enableLogging ? "true" : "false")}
 local STATE_GAME = 0x02
 local ADDR_GAMESTATE = 0x049C
 local ADDR_JOYPAD1_HOLD = 0x0022
@@ -449,6 +545,7 @@ local function _physBank()
 end
 
 local function _physSnap(tag, pc)
+    if not ENABLE_LOGGING then return end
     if physEventCount >= PHYS_EVENT_MAX then return end
     local M = emu.memType.nesMemory
     local cpx  = emu.read16(0x68, M) or 0
@@ -577,6 +674,7 @@ _hookPhys(""x_movement.out"",     0x8A32)
 -- instruction modifies it.  Diagnoses the sim=2211 +0x200 mystery where
 -- ej_D=00 yet cpy_high increased by 2 between slope_vel.out and bg_coll_D.out.
 local function _cpyWriteSnap(addr, value)
+    if not ENABLE_LOGGING then return end
     if physEventCount >= PHYS_EVENT_MAX then return end
     local M = emu.memType.nesMemory
     local st = emu.getState()
@@ -674,50 +772,52 @@ emu.addEventCallback(function()
         -- attempts.  Open in ""a"" the first time, write a separator on each
         -- arm so attempts are visually grouped.  This way comparing the trace
         -- against PF can see the frames immediately preceding NES-death.
-        if not traceFp then
-            traceFp = io.open(traceFile, ""w"")
-            if traceFp then
-                traceFp:write(""nes_y_offset,"" .. tostring(nesYOffset) .. ""\n"")
-                traceFp:write(""rom_frame,sim_cursor,px,py,a_next,a_cur,raw_x,raw_y,scrollx,scrolly,vel_y,table_idx,gravity_mod,dashing,gamemode,scroll_y_subpx,framerate,tgt_scroll_y,cp_y,scroll_y_raw,cube_data,death_pc,death_ctx,collmap_r8,mini,cp_gravity,nocamlock,nocamlockforced,min_scroll_y,dual,orbed,jblocked,hblocked,fblocked,ninjajumps\n"")
+        if ENABLE_LOGGING then
+            if not traceFp then
+                traceFp = io.open(traceFile, ""w"")
+                if traceFp then
+                    traceFp:write(""nes_y_offset,"" .. tostring(nesYOffset) .. ""\n"")
+                    traceFp:write(""rom_frame,sim_cursor,px,py,a_next,a_cur,raw_x,raw_y,scrollx,scrolly,vel_y,table_idx,gravity_mod,dashing,gamemode,scroll_y_subpx,framerate,tgt_scroll_y,cp_y,scroll_y_raw,cube_data,death_pc,death_ctx,collmap_r8,mini,cp_gravity,nocamlock,nocamlockforced,min_scroll_y,dual,orbed,jblocked,hblocked,fblocked,ninjajumps\n"")
+                end
+            else
+                traceFp:write(""# --- respawn ---\n"")
+                traceFp:flush()
             end
-        else
-            traceFp:write(""# --- respawn ---\n"")
-            traceFp:flush()
-        end
-        if not orbDbgFp then
-            orbDbgFp = io.open(orbDbgFile, ""w"")
-            if orbDbgFp then
-                orbDbgFp:write(""# NES sprite/orb decision dump.  Per-frame: ENTER + per-slot SLOT lines.\n"")
-                orbDbgFp:write(""# Symbol RAM addrs: Generic=0x5C8 (x,y,w,h), Generic2=0x5CC (x,y,w,h)\n"")
-                orbDbgFp:write(""#   activesprites_x_lo=0x4DB[16], _x_hi=0x4EB[16] (world X 16-bit)\n"")
-                orbDbgFp:write(""#   activesprites_y_lo=0x4FB[16], _y_hi=0x50B[16] (world Y 16-bit)\n"")
-                orbDbgFp:write(""#   activesprites_type=0x51B[16]\n"")
-                orbDbgFp:write(""#   activesprites_realx=0x54B[16] (1 byte, screen-local draw x)\n"")
-                orbDbgFp:write(""#   activesprites_realy=0x55B[16] (1 byte, screen-local draw y)\n"")
-                orbDbgFp:write(""#   activesprites_active=0x56B[16], _activated=0x57B[16]\n"")
-                orbDbgFp:write(""#   currplayer_x=0x68 (16-bit), currplayer_y=0x6A (16-bit)\n"")
-                orbDbgFp:write(""#   currplayer_vel_y=0x6E (16-bit signed), currplayer_table_idx=0x79\n"")
-                orbDbgFp:write(""#   currplayer_gravity=0x70, currplayer_mini=0x67, cube_data=0x7B\n"")
-                orbDbgFp:write(""#   dashing=0x4D4, orbactive=0x4C6, orbhitonthisframe=0x451\n"")
-                orbDbgFp:write(""#   index=0x92 (last sprite slot tested), max_loaded_sprites=16\n"")
-                orbDbgFp:write(""#   sprite tables: widths=0xA811, heights=0xA711, x_offset=0xA911, y_offset=0xAA11\n"")
+            if not orbDbgFp then
+                orbDbgFp = io.open(orbDbgFile, ""w"")
+                if orbDbgFp then
+                    orbDbgFp:write(""# NES sprite/orb decision dump.  Per-frame: ENTER + per-slot SLOT lines.\n"")
+                    orbDbgFp:write(""# Symbol RAM addrs: Generic=0x5C8 (x,y,w,h), Generic2=0x5CC (x,y,w,h)\n"")
+                    orbDbgFp:write(""#   activesprites_x_lo=0x4DB[16], _x_hi=0x4EB[16] (world X 16-bit)\n"")
+                    orbDbgFp:write(""#   activesprites_y_lo=0x4FB[16], _y_hi=0x50B[16] (world Y 16-bit)\n"")
+                    orbDbgFp:write(""#   activesprites_type=0x51B[16]\n"")
+                    orbDbgFp:write(""#   activesprites_realx=0x54B[16] (1 byte, screen-local draw x)\n"")
+                    orbDbgFp:write(""#   activesprites_realy=0x55B[16] (1 byte, screen-local draw y)\n"")
+                    orbDbgFp:write(""#   activesprites_active=0x56B[16], _activated=0x57B[16]\n"")
+                    orbDbgFp:write(""#   currplayer_x=0x68 (16-bit), currplayer_y=0x6A (16-bit)\n"")
+                    orbDbgFp:write(""#   currplayer_vel_y=0x6E (16-bit signed), currplayer_table_idx=0x79\n"")
+                    orbDbgFp:write(""#   currplayer_gravity=0x70, currplayer_mini=0x67, cube_data=0x7B\n"")
+                    orbDbgFp:write(""#   dashing=0x4D4, orbactive=0x4C6, orbhitonthisframe=0x451\n"")
+                    orbDbgFp:write(""#   index=0x92 (last sprite slot tested), max_loaded_sprites=16\n"")
+                    orbDbgFp:write(""#   sprite tables: widths=0xA811, heights=0xA711, x_offset=0xA911, y_offset=0xAA11\n"")
+                end
+            else
+                orbDbgFp:write(""# --- respawn ---\n"")
+                orbDbgFp:flush()
             end
-        else
-            orbDbgFp:write(""# --- respawn ---\n"")
-            orbDbgFp:flush()
-        end
-        if not physDbgFp then
-            physDbgFp = io.open(physDbgFile, ""w"")
-            if physDbgFp then
-                physDbgFp:write(""# NES physics-routine entry/exit log.  Per-frame: F=<frame> sim=<cursor>\n"")
-                physDbgFp:write(""# followed by 0..N TAG lines (entry: <name>.in / exit: <name>.out).\n"")
-                physDbgFp:write(""# Fields: tag pc=PC A/X/Y cpx cpy cpvx cpvy G=(x,y,wxh) ej_U ej_D col probe=(tx,ty,tr) mini grav tidx cd sx sy SLOPE[cpsF cpswOn cpsT cplst zsF zsT zswOn mcjh glst]\n"")
-                physDbgFp:write(""# Probes: $93=temp_x $94=temp_y $95=temp_room $81=collision\n"")
-                physDbgFp:write(""# Eject:  $8D=eject_U $8C=eject_D (currplayer_y_high -= eject_U+1 / += eject_D+1)\n"")
+            if not physDbgFp then
+                physDbgFp = io.open(physDbgFile, ""w"")
+                if physDbgFp then
+                    physDbgFp:write(""# NES physics-routine entry/exit log.  Per-frame: F=<frame> sim=<cursor>\n"")
+                    physDbgFp:write(""# followed by 0..N TAG lines (entry: <name>.in / exit: <name>.out).\n"")
+                    physDbgFp:write(""# Fields: tag pc=PC A/X/Y cpx cpy cpvx cpvy G=(x,y,wxh) ej_U ej_D col probe=(tx,ty,tr) mini grav tidx cd sx sy SLOPE[cpsF cpswOn cpsT cplst zsF zsT zswOn mcjh glst]\n"")
+                    physDbgFp:write(""# Probes: $93=temp_x $94=temp_y $95=temp_room $81=collision\n"")
+                    physDbgFp:write(""# Eject:  $8D=eject_U $8C=eject_D (currplayer_y_high -= eject_U+1 / += eject_D+1)\n"")
+                end
+            else
+                physDbgFp:write(""# --- respawn ---\n"")
+                physDbgFp:flush()
             end
-        else
-            physDbgFp:write(""# --- respawn ---\n"")
-            physDbgFp:flush()
         end
     end
 	prevPx = resetPx

@@ -36,11 +36,23 @@ namespace FamidashEditor
         /// </summary>
         public bool ShowProspectivePaths { get; private set; } = false;
 
+        /// <summary>
+        /// True if the Pathfinder should write its diagnostic files to %TEMP%.
+        /// </summary>
+        public bool EnablePathfinderLogging { get; private set; } = true;
 
+        /// <summary>
+        /// True if generated Mesen replay scripts may write diagnostic files.
+        /// </summary>
+        public bool EnableMesenLogging { get; private set; } = true;
 
-        public PathfinderSettingsWindow()
+        public PathfinderSettingsWindow(
+            bool enablePathfinderLogging = true,
+            bool enableMesenLogging = true)
         {
             InitializeComponent();
+            ChkPathfinderLogging.IsChecked = enablePathfinderLogging;
+            ChkMesenLogging.IsChecked = enableMesenLogging;
             OptEarliest.Checked += (s, e) => UpdateLabel();
             OptEarly.Checked += (s, e) => UpdateLabel();
             OptMiddle.Checked += (s, e) => UpdateLabel();
@@ -78,6 +90,8 @@ namespace FamidashEditor
             DrawPathLine = (ChkDrawPathLine.IsChecked == true);
             ShowPathfinderLive = (ChkShowLive.IsChecked == true);
             ShowProspectivePaths = (ChkShowProspective.IsChecked == true);
+            EnablePathfinderLogging = (ChkPathfinderLogging.IsChecked == true);
+            EnableMesenLogging = (ChkMesenLogging.IsChecked == true);
 
             DialogResult = true;
             Close();

@@ -102,8 +102,7 @@ namespace FamidashEditor
                 try
                 {
                     RefreshMesenLogStamp();
-                    File.WriteAllText(luaPath, BuildOverlayLuaScript(includeReplay: true, drawPathlines: true));
-                    File.WriteAllText(OverlayLuaNoPathlinesPath, BuildOverlayLuaScript(includeReplay: true, drawPathlines: false));
+                    WriteGeneratedOverlayLuaScripts(includeReplay: true);
                 }
                 catch { luaPath = ""; }
 
