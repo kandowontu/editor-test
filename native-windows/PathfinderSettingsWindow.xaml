@@ -15,7 +15,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="Jump Timing" FontSize="14" FontWeight="Bold" Margin="0,0,0,10"/>
+		<TextBlock Grid.Row="0" Text="Jump / Input Timing" FontSize="14" FontWeight="Bold" Margin="0,0,0,10"/>
 
         <StackPanel Grid.Row="1" Orientation="Vertical" Margin="0,0,0,4">
             <RadioButton x:Name="OptEarliest" Content="Earliest possible" Foreground="White" Margin="0,3" FontSize="12"/>
@@ -25,10 +25,11 @@
             <RadioButton x:Name="OptLatest" Content="Latest possible" Foreground="White" Margin="0,3" FontSize="12"/>
         </StackPanel>
 
-        <TextBlock Grid.Row="2" x:Name="BiasLabel" Text="Jump at the midpoint between earliest and latest viable timing" 
-                   FontSize="11" Foreground="#999999" HorizontalAlignment="Left" Margin="0,6,0,0" TextWrapping="Wrap"/>
+		<TextBlock Grid.Row="2" x:Name="BiasLabel" Text="Use neutral timing across every game mode"
+				   FontSize="11" Foreground="#999999" HorizontalAlignment="Left" Margin="0,6,0,0" TextWrapping="Wrap"/>
 
         <CheckBox x:Name="ChkPreferCoins" Grid.Row="3" Content="Prefer coins" Foreground="White" FontSize="12" Margin="0,8,0,0"
+                  IsChecked="True"
                   ToolTip="Try to collect coins (0x07, 0x1A, 0x1B) along the path"/>
 
         <StackPanel Grid.Row="4" Orientation="Vertical" Margin="0,8,0,0">

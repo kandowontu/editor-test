@@ -227,12 +227,8 @@
                 <TextBox x:Name="LowerTextBox" Width="150" CharacterCasing="Upper" MaxLength="15" />
             </StackPanel>
 
-            <!-- Scroll Y position fields moved under Upper/Lower text -->
+            <!-- Remaining scroll Y position field -->
             <StackPanel Grid.Row="12" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Left" Margin="8,8,0,0">
-                <TextBlock Text="scrollYPositionHi:" VerticalAlignment="Center" Margin="0,0,8,0" />
-                <TextBox x:Name="ScrollYPositionHiTextBox" Width="100" CharacterCasing="Upper" />
-            </StackPanel>
-            <StackPanel Grid.Row="13" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Left" Margin="8,8,0,0">
                 <TextBlock Text="scrollYPositionLow:" VerticalAlignment="Center" Margin="0,0,8,0" />
                 <TextBox x:Name="ScrollYPositionLowTextBox" Width="100" CharacterCasing="Upper" />
             </StackPanel>
@@ -262,9 +258,7 @@
             <Separator Margin="0,8" />
             <TextBlock Text="spawnYPositionHi:" Margin="0,8,0,0" HorizontalAlignment="Center" />
             <TextBox x:Name="SpawnYPositionHiTextBox" Width="120" Margin="0,4,0,0" HorizontalAlignment="Center" CharacterCasing="Upper" />
-            <TextBlock Text="spawnYPositionLow:" Margin="0,8,0,0" HorizontalAlignment="Center" />
-            <TextBox x:Name="SpawnYPositionLowTextBox" Width="120" Margin="0,4,0,0" HorizontalAlignment="Center" CharacterCasing="Upper" />
-            
+
         </StackPanel>
     </Grid>
 </Window>

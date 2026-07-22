@@ -2,54 +2,18 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Threading;
-using System.Windows.Controls;
-using System.Windows.Media;
 
 namespace FamidashEditor
 {
     public partial class MainWindow
     {
-        // -----------------------------------------------------------------------
-        // Overlay options (persisted via editor settings)
-        // -----------------------------------------------------------------------
-        private bool _overlayAndFollow = true;
-        private bool _camFollow        = true;
-
-        // -----------------------------------------------------------------------
-        // Runtime state
-        // -----------------------------------------------------------------------
-        private Process?        _mesenOverlayProcess;
-        private nint            _mesenHwnd;
-        private int             _latestNesScrollX;
-        private int             _latestNesScrollY;
-        private int             _rawNesScrollX = int.MinValue;
-        private CancellationTokenSource? _overlayReadCts;
-        private Task?           _overlayReadTask;
-        private int             _lastMesenScreenX = int.MinValue;
-        private int             _lastMesenScreenY = int.MinValue;
-        private int             _lastMesenWinW = int.MinValue;
-        private int             _lastMesenWinH = int.MinValue;
-        private double          _lastScrollOffsetX = double.NaN;
-        private double          _lastScrollOffsetY = double.NaN;
-        private double          _fixedAnchorViewportX = double.NaN;
-        private double          _fixedAnchorViewportY = double.NaN;
-        private double          _initialCameraCanvasY = double.NaN;
-        private double          _smoothScrollX = double.NaN;
-        private double          _smoothScrollTargetX = double.NaN;
-        private int             _smoothScrollCoarseXPx = int.MinValue;
-        private int             _smoothScrollShiftXPx = int.MinValue;
-        private TranslateTransform? _smoothScrollTransform;
-        private bool            _overlayRenderHooked = false;
+        private Process?        _mesenRunProcess;
         private string?         _mesenLogStamp;
         // ── Per-level replay/trace paths ────────────────────────────────────
         // All Mesen-related files live in My Documents under a per-level folder.
         //   <Documents>/Famidash Editor/Replays/<level>/famidash_overlay.lua
-        //   <Documents>/Famidash Editor/Replays/<level>/famidash_overlay_scroll.txt
         //   <Documents>/Famidash Editor/Replays/<level>/famidash_replay.csv
         //   <Documents>/Famidash Editor/Replays/<level>/famidash_mesen_trace.csv
         // Snapshots from "Compare Traces" land in the same per-level folder.
@@ -80,9 +44,6 @@ namespace FamidashEditor
 
         internal string CurrentReplayDir =>
             GetLevelReplayDir(currentFilePath);
-
-        private string ScrollTempFile =>
-            Path.Combine(CurrentReplayDir, "famidash_overlay_scroll.txt");
 
         internal string OverlayLuaPath =>
             Path.Combine(CurrentReplayDir, "famidash_overlay.lua");
@@ -130,24 +91,9 @@ namespace FamidashEditor
         internal string MesenPhysicsDebugFile =>
             Path.Combine(Path.GetTempPath(), $"famidash_mesen_physics_debug_{CurrentLevelTag}_{MesenLogStamp}.log");
 
-        // -----------------------------------------------------------------------
-        // P/Invoke
-        // -----------------------------------------------------------------------
-        private delegate bool EnumWindowsProc(nint hWnd, nint lParam);
-        [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, nint lParam);
-        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint hWnd, out uint lpdwProcessId);
-        [DllImport("user32.dll")] private static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-        [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint hWnd);
-
-        private const uint SWP_NOACTIVATE  = 0x0010;
-        private const uint SWP_NOZORDER    = 0x0004;
-        private const uint SWP_SHOWWINDOW  = 0x0040;
-        private static readonly nint HWND_TOPMOST = new nint(-1);
-
-        // -----------------------------------------------------------------------
-        // Public API called by OpenRomInMesen after the process is launched
-        // -----------------------------------------------------------------------
-        internal void StartMesenOverlay(Process proc)
+        // Track process lifetime so trace cleanup and post-run path display remain
+        // available without repositioning Mesen or scrolling the editor.
+        internal void StartMesenRunMonitor(Process proc)
         {
             // Do not refresh the log stamp here. BuildOverlayLuaScript() bakes
             // the current stamp into the Lua file names before Mesen launches;
@@ -159,71 +105,23 @@ namespace FamidashEditor
             // immediately, which prevents stray 0-byte sets when Mesen starts,
             // reloads, or exits without gameplay.
 
-            _mesenOverlayProcess = proc;
-            _mesenHwnd           = 0;
-            _latestNesScrollX    = 0;
-            _latestNesScrollY    = 0;
-            _rawNesScrollX       = int.MinValue;
-            _lastMesenWinW       = int.MinValue;
-            _lastMesenWinH       = int.MinValue;
-            _fixedAnchorViewportX = double.NaN;
-            _fixedAnchorViewportY = double.NaN;
-            _initialCameraCanvasY = double.NaN;
-            _smoothScrollX = double.NaN;
-            _smoothScrollTargetX = double.NaN;
-            _smoothScrollCoarseXPx = int.MinValue;
-            _smoothScrollShiftXPx = int.MinValue;
-            ClearSmoothEditorHorizontalShift();
-
-            _overlayReadCts = new CancellationTokenSource();
-            _overlayReadTask = OverlayReadLoop(_overlayReadCts.Token);
-
-            if (!_overlayRenderHooked)
-            {
-                CompositionTarget.Rendering += OverlayRendering_Tick;
-                _overlayRenderHooked = true;
-            }
+            _mesenRunProcess = proc;
 
             // Watch for process exit and clean up
             Task.Run(() =>
             {
                 try { proc.WaitForExit(); } catch { }
-                Dispatcher.BeginInvoke(StopMesenOverlay);
+                Dispatcher.BeginInvoke(StopMesenRunMonitor);
             });
         }
 
-        internal void StopMesenOverlay()
+        internal void StopMesenRunMonitor()
         {
-            string scrollFile = ScrollTempFile; // capture before state is torn down
             string traceFile = MesenTraceFile;
             string orbDebugFile = MesenOrbDebugFile;
             string physicsDebugFile = MesenPhysicsDebugFile;
-            try { _overlayReadCts?.Cancel(); } catch { }
-            _overlayReadCts      = null;
-            _overlayReadTask     = null;
-            if (_overlayRenderHooked)
-            {
-                try { CompositionTarget.Rendering -= OverlayRendering_Tick; } catch { }
-                _overlayRenderHooked = false;
-            }
-            Process? proc = _mesenOverlayProcess;
-            _mesenHwnd           = 0;
-            _mesenOverlayProcess = null;
-            _lastMesenScreenX    = int.MinValue;
-            _lastMesenScreenY    = int.MinValue;
-            _lastMesenWinW       = int.MinValue;
-            _lastMesenWinH       = int.MinValue;
-            _rawNesScrollX       = int.MinValue;
-            _lastScrollOffsetX   = double.NaN;
-            _lastScrollOffsetY   = double.NaN;
-            _fixedAnchorViewportX = double.NaN;
-            _fixedAnchorViewportY = double.NaN;
-            _initialCameraCanvasY = double.NaN;
-            _smoothScrollX = double.NaN;
-            _smoothScrollTargetX = double.NaN;
-            _smoothScrollCoarseXPx = int.MinValue;
-            _smoothScrollShiftXPx = int.MinValue;
-            ClearSmoothEditorHorizontalShift();
+            Process? proc = _mesenRunProcess;
+            _mesenRunProcess = null;
             try
             {
                 if (proc != null && !proc.HasExited)
@@ -232,7 +130,6 @@ namespace FamidashEditor
                 }
             }
             catch { }
-            try { if (File.Exists(scrollFile)) File.Delete(scrollFile); } catch { }
 
             // Mesen has exited.  Parse the per-frame trace CSV and show the
             // actual NES path on the editor canvas — magenta polyline above
@@ -257,271 +154,12 @@ namespace FamidashEditor
 
         protected override void OnClosing(CancelEventArgs e)
         {
-            try { StopMesenOverlay(); } catch { }
+            try { StopMesenRunMonitor(); } catch { }
             base.OnClosing(e);
         }
 
         // -----------------------------------------------------------------------
-        // Background scroll reader loop (keeps file I/O off the UI thread)
-        // -----------------------------------------------------------------------
-        private async Task OverlayReadLoop(CancellationToken token)
-        {
-            while (!token.IsCancellationRequested)
-            {
-                if (_mesenOverlayProcess == null || _mesenOverlayProcess.HasExited)
-                {
-                    break;
-                }
-
-                try
-                {
-                    if (File.Exists(ScrollTempFile))
-                    {
-                        string txt;
-                        using (var fs = new FileStream(ScrollTempFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
-                        using (var sr = new StreamReader(fs))
-                        {
-                            txt = sr.ReadToEnd().Trim();
-                        }
-                        string[] parts = txt.Split(',');
-                        if (parts.Length >= 2
-                            && int.TryParse(parts[0].Trim(), out int vx)
-                            && int.TryParse(parts[1].Trim(), out int vy))
-                        {
-                            int candidateX = Math.Max(0, vx);
-                            // Geometry Dash-style camera X should be monotonic during play.
-                            // Treat large backward jumps as restart/death (rebase), and ignore
-                            // small backward deltas as sampling jitter.
-                            const int resetBackJumpPx = 64;
-                            if (_rawNesScrollX == int.MinValue)
-                            {
-                                _rawNesScrollX = candidateX;
-                                _latestNesScrollX = candidateX;
-                            }
-                            else if (candidateX + resetBackJumpPx < _rawNesScrollX)
-                            {
-                                // Restart/death or hard seek: accept backward jump and rebase.
-                                _rawNesScrollX = candidateX;
-                                _latestNesScrollX = candidateX;
-                            }
-                            else
-                            {
-                                _rawNesScrollX = Math.Max(_rawNesScrollX, candidateX);
-                                _latestNesScrollX = _rawNesScrollX;
-                            }
-                            _latestNesScrollY = vy;
-                        }
-                    }
-                }
-                catch { }
-
-                try
-                {
-                    await Task.Delay(1, token);
-                }
-                catch (TaskCanceledException)
-                {
-                    break;
-                }
-            }
-        }
-
-        private void OverlayRendering_Tick(object? sender, EventArgs e)
-        {
-            if (!_overlayAndFollow) return;
-            if (_mesenOverlayProcess == null || _mesenOverlayProcess.HasExited) return;
-
-            if (_mesenHwnd == 0)
-            {
-                _mesenHwnd = FindWindowForProcess(_mesenOverlayProcess.Id);
-                if (_mesenHwnd == 0) return;
-            }
-
-            RepositionMesenWindow();
-        }
-
-        // -----------------------------------------------------------------------
-        // Reposition & resize the Mesen window to overlay the editor canvas
-        // -----------------------------------------------------------------------
-        private void RepositionMesenWindow()
-        {
-            if (_mesenHwnd == 0 || CanvasHost == null) return;
-
-            try
-            {
-                var    dpi     = VisualTreeHelper.GetDpi(this);
-                double zoom    = ZoomSlider?.Value ?? 1.0;
-                double scrollX = _latestNesScrollX;
-                double scrollY = _latestNesScrollY;
-
-                const int NesHeightPixels = 240;
-                const int NesWidthPixels  = 256;
-                const int YCalibrationTiles = -33;
-                const int XLeadTiles = 2;
-                const int WindowSizeNudgePixels = 0;
-                double cameraCanvasX = mapViewportPadding + scrollX * zoom;
-                double cameraCanvasY = mapViewportPadding + (scrollY + (3 * TileSize)) * zoom + gridRenderShiftY;
-
-                // Emulator size in editor logical units / physical pixels.
-                double emuLogicalW = (NesWidthPixels + WindowSizeNudgePixels) * zoom;
-                double emuLogicalH = (NesHeightPixels + WindowSizeNudgePixels) * zoom;
-                int winW = (int)(emuLogicalW * dpi.DpiScaleX);
-                int winH = (int)(emuLogicalH * dpi.DpiScaleY);
-
-                double vpW = SafeViewportWidth();
-                double vpH = SafeViewportHeight();
-                double centeredAnchorX = Math.Max(0.0, (vpW - emuLogicalW) / 2.0);
-                double centeredAnchorY = Math.Max(0.0, (vpH - emuLogicalH) / 2.0);
-
-                if (double.IsNaN(_fixedAnchorViewportX) || double.IsNaN(_fixedAnchorViewportY))
-                {
-                    _fixedAnchorViewportX = Math.Min(centeredAnchorX, mapViewportPadding);
-                    _fixedAnchorViewportY = Math.Min(centeredAnchorY, mapViewportPadding + (3 * TileSize) * zoom + gridRenderShiftY);
-                    // Rebase vertical follow to the current rendered camera position.
-                    _initialCameraCanvasY = cameraCanvasY;
-                }
-
-                double anchorViewportX = _fixedAnchorViewportX;
-                double yCalibrationPx = YCalibrationTiles * TileSize * zoom;
-                double baseAnchorViewportY = _fixedAnchorViewportY;
-                double anchorViewportY = baseAnchorViewportY;
-
-                if (_camFollow && MapScrollViewer != null)
-                {
-                    double xLeadPx = XLeadTiles * TileSize * zoom;
-                    double targetOffsetX = Math.Max(0.0, cameraCanvasX - anchorViewportX + xLeadPx);
-                    // Stable follow: apply direct pixel-aligned offset (no spring/easing).
-                    UpdateSmoothEditorHorizontalScroll(targetOffsetX);
-                    _lastScrollOffsetX = targetOffsetX;
-                    _lastScrollOffsetY = MapScrollViewer.VerticalOffset;
-
-                    // Vertical behavior: move window by rendered camera delta from its startup baseline.
-                    if (double.IsNaN(_initialCameraCanvasY))
-                    {
-                        _initialCameraCanvasY = cameraCanvasY;
-                    }
-                    double yDelta = cameraCanvasY - _initialCameraCanvasY;
-                    anchorViewportY = baseAnchorViewportY + yDelta;
-                }
-                else
-                {
-                    ClearSmoothEditorHorizontalShift();
-                }
-
-                // Apply explicit user calibration after camera-delta follow.
-                anchorViewportY = anchorViewportY + yCalibrationPx;
-
-                // (Tall-level Y compensation removed; Mesen window position
-                // is correct for all level heights without extra offset.)
-
-                // Pixel-align the anchor to device pixels to avoid 1-2px drift from
-                // sub-pixel accumulation during vertical camera movement.
-                double alignedAnchorX = Math.Round(anchorViewportX * dpi.DpiScaleX) / dpi.DpiScaleX;
-                double alignedAnchorY = Math.Round(anchorViewportY * dpi.DpiScaleY) / dpi.DpiScaleY;
-
-                // Place Mesen at the computed viewport anchor.
-                Point screenTopLeft = MapScrollViewer != null
-                    ? MapScrollViewer.PointToScreen(new Point(alignedAnchorX, alignedAnchorY))
-                    : CanvasHost.PointToScreen(new Point(alignedAnchorX, alignedAnchorY));
-
-                int newX = (int)Math.Round(screenTopLeft.X);
-                int newY = (int)Math.Round(screenTopLeft.Y);
-                // Enforce position and size every tick in case Mesen reapplies its own bounds.
-                SetWindowPos(_mesenHwnd, HWND_TOPMOST,
-                    newX, newY, winW, winH, SWP_NOACTIVATE | SWP_SHOWWINDOW);
-                _lastMesenScreenX = newX;
-                _lastMesenScreenY = newY;
-                _lastMesenWinW = winW;
-                _lastMesenWinH = winH;
-            }
-            catch { }
-        }
-
-        private void UpdateSmoothEditorHorizontalScroll(double targetOffsetX)
-        {
-            var scrollViewer = MapScrollViewer;
-            var canvasHost = CanvasHost;
-            var mapContentRoot = MapContentRoot;
-            if (scrollViewer == null || canvasHost == null || mapContentRoot == null) return;
-
-            var dpi = VisualTreeHelper.GetDpi(this);
-            double maxH = Math.Max(0.0, canvasHost.ActualWidth - SafeViewportWidth());
-            double clampedTarget = Math.Max(0.0, Math.Min(maxH, targetOffsetX));
-
-            int targetPx = (int)Math.Round(clampedTarget * dpi.DpiScaleX);
-            int maxPx = (int)Math.Round(maxH * dpi.DpiScaleX);
-            targetPx = Math.Max(0, Math.Min(maxPx, targetPx));
-
-            // Keep ScrollViewer updates infrequent; visible motion comes from
-            // integer-pixel transform updates on the full map content each frame.
-            const int rebaseStepPx = 512;
-            int coarsePx = (targetPx / rebaseStepPx) * rebaseStepPx;
-            int shiftPx = targetPx - coarsePx;
-
-            if (_smoothScrollCoarseXPx != coarsePx)
-            {
-                scrollViewer.ScrollToHorizontalOffset(coarsePx / dpi.DpiScaleX);
-                _smoothScrollCoarseXPx = coarsePx;
-            }
-
-            if (_smoothScrollShiftXPx != shiftPx)
-            {
-                var smoothTransform = _smoothScrollTransform ??= new TranslateTransform();
-                smoothTransform.X = -(shiftPx / dpi.DpiScaleX);
-                smoothTransform.Y = 0.0;
-                mapContentRoot.RenderTransform = smoothTransform;
-                _smoothScrollShiftXPx = shiftPx;
-            }
-
-            _smoothScrollX = targetPx / dpi.DpiScaleX;
-            _smoothScrollTargetX = _smoothScrollX;
-        }
-
-        private void ClearSmoothEditorHorizontalShift()
-        {
-            try
-            {
-                if (MapContentRoot != null)
-                {
-                    MapContentRoot.RenderTransform = Transform.Identity;
-                }
-            }
-            catch { }
-            _smoothScrollCoarseXPx = int.MinValue;
-            _smoothScrollShiftXPx = int.MinValue;
-            _smoothScrollTransform = null;
-        }
-
-        // -----------------------------------------------------------------------
-        // Find the first visible top-level window owned by a given process
-        // -----------------------------------------------------------------------
-        private static nint FindWindowForProcess(int processId)
-        {
-            nint found = 0;
-            EnumWindows((hWnd, _) =>
-            {
-                GetWindowThreadProcessId(hWnd, out uint pid);
-                if ((int)pid == processId && IsWindowVisible(hWnd))
-                {
-                    found = hWnd;
-                    return false; // stop enumeration
-                }
-                return true;
-            }, 0);
-            return found;
-        }
-
-        // -----------------------------------------------------------------------
-        // Lua script embedded as a string — written to a temp file and passed
-        // to Mesen as a command-line argument so it loads on startup.
-        //
-        // The script reads Famidash's live camera variables directly from RAM
-        // every 3 frames (~20 Hz) and writes them to a temp file that the editor
-        // overlay timer reads.
-        //
-        // From Famidash.dbg (current build):
-        //   _scroll_x = $04A6 (uint32 world pixel camera X)
-        //   _scroll_y = $04AA (uint16 encoded camera Y)
+        // Self-contained replay/trace Lua script passed to Mesen on startup.
         // -----------------------------------------------------------------------
         internal string BuildOverlayLuaScript()
         {
@@ -530,9 +168,8 @@ namespace FamidashEditor
 
         // The script is ALWAYS self-contained: replay data is embedded as a Lua
         // literal directly in the generated source.  When `includeReplay` is
-        // false, an empty replay table is embedded — the script still runs
-        // (scroll capture works) but displays "REPLAY: file empty or missing"
-        // until a real path is exported.  No external file reads, ever.
+        // false, an empty replay table is embedded and the script still loads.
+        // No external file reads, ever.
         internal string BuildOverlayLuaScript(bool includeReplay)
         {
             return BuildOverlayLuaScript(includeReplay, drawPathlines: true);
@@ -551,7 +188,7 @@ namespace FamidashEditor
 
             // Read replay CSV at generation time and embed it as Lua literals
             // so the running script has zero inbound file dependencies.
-            // Keeps trace/orbDbg/scroll WRITES (those are outputs, not deps).
+            // Keeps trace/orb-debug writes (those are outputs, not dependencies).
             string embeddedReplayLiteral = "{}";
             string embeddedReplay2Literal = "{}";
             int    embeddedYOffset       = 0;
@@ -614,43 +251,13 @@ namespace FamidashEditor
                 catch { /* fall back to empty replay */ }
             }
 
-            string scrollPart =
-$@"-- FamidashEditor overlay script (auto-generated, do not edit)
-local scrollFile = ""famidash_overlay_scroll.txt""
-
-emu.addEventCallback(function()
-    local scrollX0 = emu.read32(0x04A6, emu.memType.nesMemory) or 0
-    local sy_raw0  = emu.read16(0x04AA, emu.memType.nesMemory) or 0
-    local scrollX1 = emu.read32(0x053E, emu.memType.nesMemory) or 0
-    local sy_raw1  = emu.read16(0x0542, emu.memType.nesMemory) or 0
-    local scrollX = scrollX0
-    local sy_raw = sy_raw0
-    if scrollX0 == 0 and sy_raw0 == 0 and (scrollX1 ~= 0 or sy_raw1 ~= 0) then
-        scrollX = scrollX1
-        sy_raw = sy_raw1
-    end
-    -- calculate_linear_scroll_y: linear = lo + hi * 240 (matches nesdash.s implementation)
-    local sy_lo   = sy_raw & 0xFF
-    local sy_hi   = (sy_raw >> 8) & 0xFF
-    local scrollY = sy_lo + sy_hi * 240
-    local tempFile = scrollFile .. "".tmp""
-    local f = io.open(tempFile, ""w"")
-    if f then
-        f:write(tostring(scrollX) .. "","" .. tostring(scrollY))
-        f:close()
-        pcall(function() os.remove(scrollFile) end)
-        pcall(function() os.rename(tempFile, scrollFile) end)
-    end
-end, emu.eventType.endFrame)
-";
-
             // Lua reads NES _player_x ($043D, 16-bit lo|hi) and _player_y ($0441) every frame.
             // px = (read16(_player_x) >> 8) + 8 matches PathfinderEngine PathPoints (hitbox center).
             // The first replay X is used only to latch past the NES intro-freeze pre-step.
             // From then on the replay cursor is clocked by NES-local physics movement, never
             // by the predicted PF path; a real divergence therefore cannot retime the inputs.
             string replayPart =
-$@"
+$@"-- FamidashEditor Mesen replay script (auto-generated, do not edit)
 -- ── Replay injector ────────────────────────────────────────────────────────
 -- Output paths (written, never read).  Resolved at runtime from environment
 -- so the script contains no machine-specific paths.  Falls back to the
@@ -1508,7 +1115,7 @@ emu.addEventCallback(function()
     -- (debug text overlay removed)
 end, emu.eventType.endFrame)
 ";
-            return scrollPart + replayPart;
+            return replayPart;
         }
     }
 }

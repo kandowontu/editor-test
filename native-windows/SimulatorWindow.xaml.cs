@@ -5317,6 +5317,7 @@ namespace FamidashEditor
         private readonly System.Windows.Threading.DispatcherTimer timer;
         // Dedicated background simulation timer to keep simulation at a steady 60Hz
         private System.Threading.Timer? simTimer;
+        private int simTimerGeneration;
         private readonly object simLock = new object();
         // High-resolution timing for fixed-step simulation at 60Hz
         private System.Diagnostics.Stopwatch simStopwatch = new System.Diagnostics.Stopwatch();
@@ -5460,14 +5461,51 @@ namespace FamidashEditor
         {
             try
             {
-                if (simTimer != null) return; // Prevent starting multiple timers
+                if (windowClosed || simTimer != null) return;
 
                 // Start high-resolution stopwatch and use an accumulator to run fixed 60Hz steps.
                 simStopwatch.Restart();
                 simLastMs = simStopwatch.Elapsed.TotalMilliseconds;
                 simAccumulatedMs = 0.0;
-                // Run timer at a small interval and accumulate elapsed time to drive fixed steps.
-                simTimer = new System.Threading.Timer(_ => { try { TimerSimulationLoop(); } catch { } try { simTimer?.Change(10, System.Threading.Timeout.Infinite); } catch { } }, null, 0, System.Threading.Timeout.Infinite);
+                // Run a one-shot timer and let only that exact timer generation re-arm
+                // itself. A disposed callback can finish after Restart creates a new
+                // timer; referring to the shared simTimer field from the old callback
+                // used to re-arm the replacement and create overlapping simulation loops.
+                int generation = Interlocked.Increment(ref simTimerGeneration);
+                System.Threading.Timer? newTimer = null;
+                newTimer = new System.Threading.Timer(_ =>
+                {
+                    try
+                    {
+                        if (generation == Volatile.Read(ref simTimerGeneration) &&
+                            ReferenceEquals(Volatile.Read(ref simTimer), newTimer) &&
+                            !restartInProgress && !windowClosed)
+                        {
+                            TimerSimulationLoop();
+                        }
+                    }
+                    catch { }
+                    finally
+                    {
+                        try
+                        {
+                            if (generation == Volatile.Read(ref simTimerGeneration) &&
+                                ReferenceEquals(Volatile.Read(ref simTimer), newTimer) &&
+                                !restartInProgress && !windowClosed)
+                            {
+                                newTimer?.Change(10, System.Threading.Timeout.Infinite);
+                            }
+                        }
+                        catch { }
+                    }
+                }, null, System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
+
+                if (Interlocked.CompareExchange(ref simTimer, newTimer, null) != null)
+                {
+                    newTimer.Dispose();
+                    return;
+                }
+                newTimer.Change(0, System.Threading.Timeout.Infinite);
 
                 // NOTE: Do NOT reset playerY_fixed here - RestartButton_Click and constructor handle position initialization
 
@@ -5530,8 +5568,10 @@ namespace FamidashEditor
         // Stop the background simulation gracefully.
         public void StopSimulation()
         {
-            try { simTimer?.Dispose(); } catch { }
-            simTimer = null; // Clear the timer reference
+            // Invalidate first so an already-running callback cannot re-arm itself.
+            Interlocked.Increment(ref simTimerGeneration);
+            var timerToDispose = Interlocked.Exchange(ref simTimer, null);
+            try { timerToDispose?.Dispose(); } catch { }
             try { simStopwatch.Stop(); } catch { }
         }
 
@@ -6126,8 +6166,7 @@ namespace FamidashEditor
             {
                 windowClosed = true;
                 try { timer.Stop(); } catch { }
-                try { if (simTimer != null) { simTimer.Dispose(); simTimer = null; } } catch { }
-                try { System.Threading.Thread.Sleep(20); } catch { } // Give pending operations time to check windowClosed flag
+                try { StopSimulation(); } catch { }
                 try { System.Windows.Media.CompositionTarget.Rendering -= CompositionTarget_Rendering; } catch { }
             };
 
@@ -6987,6 +7026,7 @@ namespace FamidashEditor
         {
             try
             {
+                windowClosed = true;
                 // Stop simulation to prevent render thread errors
                 StopSimulation();
                 
@@ -7404,10 +7444,20 @@ namespace FamidashEditor
 
         private async void RestartButton_Click(object sender, RoutedEventArgs e)
         {
+            if (restartInProgress || windowClosed) return;
+            restartInProgress = true;
+            try { RestartButton.IsEnabled = false; } catch { }
+
             try
             {
                 // Stop current simulation
                 StopSimulation();
+                paused = true;
+
+                // Dispose does not wait for a callback that already entered the
+                // numeric step. Wait for that callback to leave simLock; the restart
+                // flag prevents it (and every later callback) from entering again.
+                lock (simLock) { }
 
                 // Check for START POS marker
                 int startX_px = 0;
@@ -7705,6 +7755,15 @@ namespace FamidashEditor
                 p2BallHoldCounter = 0;
                 Array.Clear(ufoOrbed, 0, ufoOrbed.Length);
 
+                // Return all visible/control state to the paused starting snapshot
+                // before any replacement timer is allowed to run.
+                paused = true;
+                try { PauseOverlay.Visibility = System.Windows.Visibility.Visible; } catch { }
+                deathTriggered = false;
+                levelCompleteTriggered = false;
+                processedEndLevelTriggers.Clear();
+                try { LevelCompleteOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+
                 // Stop music first (same as death) before restarting simulation
                 try
                 {
@@ -7713,24 +7772,17 @@ namespace FamidashEditor
                     AppendSimDebug($"[RESTART] Music stopped (isPlaying={this.Owner is MainWindow mw3 && mw3.IsMusicPlaying()})");
                 }
                 catch { }
-
-                // Restart simulation timer
-                StopSimulation();
-                await System.Threading.Tasks.Task.Delay(20).ConfigureAwait(false);
-                StartSimulation();
-
-                // Reset to initial paused state
-                paused = true;
-                try { PauseOverlay.Visibility = System.Windows.Visibility.Visible; } catch { }
-
-                // Clear death state if any
-                deathTriggered = false;
-                // Clear level complete state
-                levelCompleteTriggered = false;
-                processedEndLevelTriggers.Clear();
-                try { LevelCompleteOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
             }
             catch { }
+            finally
+            {
+                restartInProgress = false;
+                if (!windowClosed)
+                {
+                    StartSimulation();
+                    try { RestartButton.IsEnabled = true; } catch { }
+                }
+            }
         }
 
         public async System.Threading.Tasks.Task StartAndSeekMusicAsync()

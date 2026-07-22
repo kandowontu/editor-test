@@ -21,11 +21,17 @@ bool useBfs = args.Any(a => a.Equals("--bfs", StringComparison.OrdinalIgnoreCase
 string? probeArg = args.FirstOrDefault(a => a.StartsWith("--probe", StringComparison.OrdinalIgnoreCase));
 bool useProbe = probeArg != null;
 string? tasInputFile = null;
+string? bfsPrefixTrace = null;
+int bfsPrefixFrames = int.MaxValue;
 int tasPreRollFrames = 60; // default: TAS starts at 1 second (60 frames) into gameplay
 foreach (var a in args)
 {
     if (a.StartsWith("--tas=", StringComparison.OrdinalIgnoreCase))
         tasInputFile = a.Substring(6);
+    else if (a.StartsWith("--bfs-prefix=", StringComparison.OrdinalIgnoreCase))
+        bfsPrefixTrace = a.Substring(13);
+    else if (a.StartsWith("--bfs-prefix-frames=", StringComparison.OrdinalIgnoreCase))
+        bfsPrefixFrames = int.Parse(a.Substring(20));
     else if (a.StartsWith("--tas-preroll=", StringComparison.OrdinalIgnoreCase))
         tasPreRollFrames = int.Parse(a.Substring(14));
 }
@@ -330,6 +336,16 @@ engine.ConfigScrollYHi = metaScrollYHi;
 engine.ConfigScrollYLo = metaScrollYLo;
 engine.ConfigSpawnYLo = cliSpawnYLo ?? metaSpawnYLo;
 engine.UseNesSpawnScrollDefaults = true;
+if (bfsPrefixTrace != null)
+{
+    engine.DebugBfsPrefixInputs = File.ReadLines(bfsPrefixTrace)
+        .Skip(1)
+        .Select(line => line.Split(','))
+        .Where(fields => fields.Length > 4 && int.TryParse(fields[0], out _))
+        .Select(fields => fields[4] == "1")
+        .Take(bfsPrefixFrames)
+        .ToList();
+}
 
 if (preferCoins)
     Console.WriteLine("Coin collection mode ENABLED");
@@ -349,7 +365,45 @@ if (tasInputFile != null)
     var tasLines = File.ReadAllLines(tasInputFile);
     const string IDLE = "|..|........|........";
     var tasInputs = new List<bool>(tasLines.Length);
-    if (tasLines.Length > 0 && tasLines[0].StartsWith("frame,X_fixed,", StringComparison.Ordinal))
+    if (tasLines.Length > 0 && tasLines[0].StartsWith("emulator_frame,", StringComparison.Ordinal))
+    {
+        // Accept the full Mesen proof-capture format.  Select the attempt that
+        // travelled farthest, discard the frozen level-start rows, and begin
+        // with the input consumed by the frame after the intro pre-step (the
+        // engine has already applied that pre-step before replay begins).
+        string[] header = tasLines[0].Split(',');
+        int attemptCol = Array.IndexOf(header, "attempt");
+        int runFrameCol = Array.IndexOf(header, "run_frame");
+        int worldXCol = Array.IndexOf(header, "p1_world_x");
+        int joyHoldCol = Array.IndexOf(header, "joy1_hold");
+        if (attemptCol < 0 || runFrameCol < 0 || worldXCol < 0 || joyHoldCol < 0)
+            throw new InvalidDataException("Mesen capture is missing required columns.");
+
+        var captureRows = tasLines.Skip(1)
+            .Select(line => line.Split(','))
+            .Where(fields => fields.Length > joyHoldCol &&
+                int.TryParse(fields[attemptCol], out _) &&
+                long.TryParse(fields[worldXCol], out long x) && x >= 0 && x < 100000)
+            .ToList();
+        int bestAttempt = captureRows
+            .GroupBy(fields => int.Parse(fields[attemptCol]))
+            .OrderByDescending(group => group.Max(fields => long.Parse(fields[worldXCol])))
+            .ThenByDescending(group => group.Count())
+            .First().Key;
+        captureRows = captureRows
+            .Where(fields => int.Parse(fields[attemptCol]) == bestAttempt)
+            .OrderBy(fields => int.Parse(fields[runFrameCol]))
+            .ToList();
+        int firstMoved = captureRows.FindIndex(fields => long.Parse(fields[worldXCol]) > 8);
+        int firstInputRow = Math.Max(0, firstMoved + 1);
+        foreach (string[] fields in captureRows.Skip(firstInputRow))
+        {
+            int consumedPad = int.Parse(fields[joyHoldCol]);
+            tasInputs.Add((consumedPad & (0x80 | 0x08)) != 0);
+        }
+        Console.WriteLine($"Mesen capture: attempt={bestAttempt}, firstInputRow={firstInputRow}, inputs={tasInputs.Count}");
+    }
+    else if (tasLines.Length > 0 && tasLines[0].StartsWith("frame,X_fixed,", StringComparison.Ordinal))
     {
         // Accept a Pathfinder frame trace directly so a reported divergence can
         // be replayed byte-for-byte without first converting it to FCEUX TAS text.
@@ -378,7 +432,9 @@ if (tasInputFile != null)
 }
 
 TextWriter? originalErr = null;
-if (!verbose)
+bool preserveDiagnosticError = Environment.GetEnvironmentVariable(
+    "FAMIDASH_ROUTE_DIAG") == "1";
+if (!verbose && !preserveDiagnosticError)
 {
 	originalErr = Console.Error;
 	Console.SetError(TextWriter.Null);

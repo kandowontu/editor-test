@@ -179,9 +179,23 @@ public class PathfinderEngine
 
 		public bool Step2Ever;
 
-		// Search-only provenance. Additive safety seeds remain available, but tied
-		// descendants cannot displace the ordinary beam on a later frame.
-		public bool BfsReserved;
+		// Search-only provenance for a bounded set of spider trajectories that
+		// would otherwise disappear behind a large tied-score frontier.
+		public bool BfsSpiderReserved;
+
+		// Search-only jump/input timing preference. This never participates in NES
+		// physics or state deduplication: physically equivalent states remain
+		// equivalent, while the lower-cost history is retained. OpportunityAge is
+		// the length of the current local decision window or continuous-control
+		// deviation. LocalCost is deliberately not accumulated across unrelated
+		// actions, so the requested bias resumes immediately after a forced segment.
+		public int BfsTimingLocalCost;
+
+		public ushort BfsTimingOpportunityAge;
+
+		public byte BfsTimingTrackedModePlusOne;
+
+		public bool BfsTimingOpportunityOpen;
 
 		public int SlopeWasOnCounter;
 
@@ -218,6 +232,50 @@ public class PathfinderEngine
 		public bool WrapMode;
 
 		public int RainbowMaxMode;
+
+		// BFS-only lifetime of a universal random-portal section.  The NES may
+		// place several copies of the deterministic exit portal at the same X so
+		// each random mode can reach it.  Keep the source and the exact exit
+		// cluster separate from ProcessedSprites: different copies are distinct
+		// NES sprites, but are the same universal-section exit.
+		public bool RainbowUniversalActive;
+
+		public int RainbowSourcePortalX_px;
+
+		public int RainbowExitPortalX_px;
+
+		public int RainbowExitTargetModePlusOne;
+
+		public int RainbowExitPortalProcessKeyPlusOne;
+
+		public int RainbowExitPlayerX_fixed;
+
+		public int RainbowExitPlayerY_fixed;
+
+		public int RainbowExitVelX_fixed;
+
+		public int RainbowExitVelY_fixed;
+
+		public int RainbowExitStateFlags;
+
+		public int RainbowExitDashing;
+
+		// BFS-only random-portal bookkeeping.  A forced value is encoded as
+		// mode+1 so the default zero-initialized state means "canonical mode 0".
+		// RainbowPortalModeCount is an output event from the current StepFrame.
+		public int RainbowForcedModePlusOne;
+
+		public int RainbowPortalModeCount;
+
+		public bool RainbowBranchEnded;
+
+		// Search diagnostics carried only by a rejected universal candidate.
+		// Mode is stored as mode+1 so a normal/live state remains zero-initialized.
+		public int RainbowFailureModePlusOne;
+
+		public int RainbowFailureX_px;
+
+		public int RainbowFailureY_px;
 
 		public SimState[]? RainbowShadows;
 
@@ -317,9 +375,10 @@ public class PathfinderEngine
 		public int[] CoinSpeed;      // coin1/coin2/coin3 shared 8.8 speeds
 		public bool CoinAnimating;
 
-		public SimState Clone()
+		public SimState CloneBranch()
 		{
 			SimState result = this;
+			result.RainbowShadows = null;
 			result.ProcessedSprites = ProcessedSprites.Clone();
 			if (NesSlots != null)
 			{
@@ -332,26 +391,18 @@ public class PathfinderEngine
 			}
 			if (CoinTimer != null) result.CoinTimer = (int[])CoinTimer.Clone();
 			if (CoinSpeed != null) result.CoinSpeed = (int[])CoinSpeed.Clone();
+			return result;
+		}
+
+		public SimState Clone()
+		{
+			SimState result = CloneBranch();
 			if (RainbowShadows != null)
 			{
 				result.RainbowShadows = new SimState[RainbowShadows.Length];
 				for (int i = 0; i < RainbowShadows.Length; i++)
 				{
-					result.RainbowShadows[i] = RainbowShadows[i];
-					result.RainbowShadows[i].ProcessedSprites = RainbowShadows[i].ProcessedSprites.Clone();
-					if (RainbowShadows[i].NesSlots != null)
-					{
-						result.RainbowShadows[i].NesSlots = (int[])RainbowShadows[i].NesSlots.Clone();
-						result.RainbowShadows[i].NesSlotDead = (bool[])RainbowShadows[i].NesSlotDead.Clone();
-						result.RainbowShadows[i].NesSlotActive = (bool[])RainbowShadows[i].NesSlotActive.Clone();
-						result.RainbowShadows[i].NesSlotWorldY = (int[])RainbowShadows[i].NesSlotWorldY.Clone();
-						result.RainbowShadows[i].NesSlotRealX = (int[])RainbowShadows[i].NesSlotRealX.Clone();
-						result.RainbowShadows[i].NesSlotRealY = (int[])RainbowShadows[i].NesSlotRealY.Clone();
-					}
-					if (RainbowShadows[i].CoinTimer != null)
-						result.RainbowShadows[i].CoinTimer = (int[])RainbowShadows[i].CoinTimer.Clone();
-					if (RainbowShadows[i].CoinSpeed != null)
-						result.RainbowShadows[i].CoinSpeed = (int[])RainbowShadows[i].CoinSpeed.Clone();
+					result.RainbowShadows[i] = RainbowShadows[i].CloneBranch();
 				}
 			}
 			return result;
@@ -385,13 +436,22 @@ public class PathfinderEngine
 		int Y,
 		int ProcessKey,
 		int SpriteId,
-		int TargetMode);
+		int TargetMode,
+		int HitCenterY);
+
+	private readonly record struct BfsRainbowPortal(
+		int X,
+		int ProcessKey,
+		int ModeCount);
 
 	private sealed class BfsRouteArchive
 	{
 		public int Frame;
+		public int SourceX;
 		public int SplitY;
+		public bool IsInteriorBand;
 		public int TargetX;
+		public int TargetY;
 		public List<SimState> States = new();
 		public int[] Parents = Array.Empty<int>();
 		public bool[] Inputs = Array.Empty<bool>();
@@ -828,6 +888,8 @@ public class PathfinderEngine
 
 	private readonly List<BfsTransitionPortal> _bfsTransitionPortals;
 
+	private readonly List<BfsRainbowPortal> _bfsRainbowPortals;
+
 	private int _nextCoinCheckIdx;
 
 	private readonly HashSet<int> _forgivenCoins = new HashSet<int>();
@@ -984,6 +1046,9 @@ public class PathfinderEngine
 	public HashSet<int>? SkippedPadIndices { get; private set; }
 
 	public bool UseBFS { get; set; }
+
+	// Standalone-runner diagnostic checkpoint. The normal editor never sets this.
+	public IReadOnlyList<bool>? DebugBfsPrefixInputs { get; set; }
 
 	public bool Verbose { get; set; }
 
@@ -2323,23 +2388,37 @@ public class PathfinderEngine
 		_nesSpriteWorldX = nesWorldX.ToArray();
 		int nesSpriteCount = _nesSpritesArr.Length;
 		_bfsTransitionPortals = new List<BfsTransitionPortal>();
+		_bfsRainbowPortals = new List<BfsRainbowPortal>();
 		foreach (SpriteEntry portal in _nesSpritesArr)
 		{
-			if (IsGameModePortal(portal.SpriteId))
+			if (portal.SpriteId == 100 || portal.SpriteId == 126)
+			{
+				_bfsRainbowPortals.Add(new BfsRainbowPortal(
+					portal.AnchorX_px, portal.ProcessKey,
+					portal.SpriteId == 100 ? 8 : 12));
+			}
+			else if (IsGameModePortal(portal.SpriteId))
 			{
 				int targetMode = SpriteIdToGameMode(portal.SpriteId);
 				_bfsTransitionPortals.Add(new BfsTransitionPortal(
 					portal.AnchorX_px, portal.AnchorY_px, portal.ProcessKey,
-					portal.SpriteId, targetMode));
+					portal.SpriteId, targetMode,
+					(portal.HitTop + portal.HitBottom) / 2));
 			}
 			else if (IsMiniGrowthPortal(portal.SpriteId))
 			{
 				_bfsTransitionPortals.Add(new BfsTransitionPortal(
 					portal.AnchorX_px, portal.AnchorY_px, portal.ProcessKey,
-					portal.SpriteId, -1));
+					portal.SpriteId, -1,
+					(portal.HitTop + portal.HitBottom) / 2));
 			}
 		}
 		_bfsTransitionPortals.Sort((a, b) =>
+		{
+			int byX = a.X.CompareTo(b.X);
+			return byX != 0 ? byX : a.ProcessKey.CompareTo(b.ProcessKey);
+		});
+		_bfsRainbowPortals.Sort((a, b) =>
 		{
 			int byX = a.X.CompareTo(b.X);
 			return byX != 0 ? byX : a.ProcessKey.CompareTo(b.ProcessKey);
@@ -2542,7 +2621,7 @@ public class PathfinderEngine
 		InitNesSlots(ref s);
 		ApplyNesIntroFreezePrestep(ref s);
 		CheckSprObjects(ref s);
-		output.WriteLine("tasFrame,gameFrame,x,y,velY,jump,onGround,event");
+		output.WriteLine("tasFrame,gameFrame,x,y,velY,jump,onGround,mode,mini,gravity,event");
 		int num2 = preRollFrames + inputs.Count;
 		for (int i = 0; i < num2; i++)
 		{
@@ -2564,9 +2643,13 @@ public class PathfinderEngine
 			{
 				value3 = "END";
 			}
-			if (!flag2 || endLevel || (num3 >= 12200 && num3 <= 12900))
+			if (!flag2 || endLevel || i % 60 == 0 ||
+				(num3 >= 2200 && num3 <= 2650) ||
+				(num3 >= 12200 && num3 <= 12900))
 			{
-				output.WriteLine($"{i - preRollFrames},{value},{num3},{value2},0x{velY_fixed & 0xFFFF:X4},{flag},{onGround},{value3}");
+				output.WriteLine($"{i - preRollFrames},{value},{num3},{value2}," +
+					$"0x{velY_fixed & 0xFFFF:X4},{flag},{onGround}," +
+					$"{s.GameMode},{s.Mini},{s.GravFlipped},{value3}");
 			}
 			_frameCounter++;
 			if (!flag2 || endLevel)
@@ -2590,14 +2673,6 @@ public class PathfinderEngine
 		double jumpTimingBias = JumpTimingBias;
 		_autoForgivenCoins.Clear();
 		RunBFS(startX_px, startY_px, startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
-		if (!Success && Math.Abs(JumpTimingBias - 0.5) >= 0.05)
-		{
-			_log.WriteLine($"[BFS_RETRY] BFS failed with bias={JumpTimingBias:F2}, retrying with neutral bias...");
-			double jumpTimingBias2 = JumpTimingBias;
-			JumpTimingBias = 0.5;
-			RunBFS(startX_px, startY_px, startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
-			JumpTimingBias = jumpTimingBias2;
-		}
 		if (Success || UseBFS)
 		{
 			stopwatch.Stop();
@@ -3850,7 +3925,7 @@ public class PathfinderEngine
 		BfsHashMix(ref hash, unchecked((int)(value >> 32)));
 	}
 
-	private static long BfsRuntimeHash(ref SimState s)
+	private long BfsRuntimeHash(ref SimState s)
 	{
 		ulong hash = 14695981039346656037UL;
 		BfsHashMix(ref hash, s.ProcessedSprites.GetBitsHash64());
@@ -3896,6 +3971,18 @@ public class PathfinderEngine
 		BfsHashMix(ref hash, s.NoCamLockForced ? 1 : 0);
 		BfsHashMix(ref hash, s.WrapMode ? 1 : 0);
 		BfsHashMix(ref hash, s.RainbowMaxMode);
+		BfsHashMix(ref hash, s.RainbowUniversalActive ? 1 : 0);
+		BfsHashMix(ref hash, s.RainbowSourcePortalX_px);
+		BfsHashMix(ref hash, s.RainbowExitPortalX_px);
+		BfsHashMix(ref hash, s.RainbowExitTargetModePlusOne);
+		BfsHashMix(ref hash, s.RainbowExitPortalProcessKeyPlusOne);
+		BfsHashMix(ref hash, s.RainbowExitPlayerX_fixed);
+		BfsHashMix(ref hash, s.RainbowExitPlayerY_fixed);
+		BfsHashMix(ref hash, s.RainbowExitVelX_fixed);
+		BfsHashMix(ref hash, s.RainbowExitVelY_fixed);
+		BfsHashMix(ref hash, s.RainbowExitStateFlags);
+		BfsHashMix(ref hash, s.RainbowExitDashing);
+		BfsHashMix(ref hash, s.RainbowBranchEnded ? 1 : 0);
 		BfsHashMix(ref hash, s.DualActive ? 1 : 0);
 
 		if (s.DualActive)
@@ -3960,33 +4047,1318 @@ public class PathfinderEngine
 			}
 		}
 		BfsHashMix(ref hash, s.CoinAnimating ? 1 : 0);
+		if (s.RainbowShadows != null)
+		{
+			// Every random-mode outcome is future-observable.  Hash the complete
+			// ordered ensemble using the same physical/runtime identity as the main
+			// BFS key so dedup cannot discard a different set of surviving modes.
+			BfsHashMix(ref hash, s.RainbowShadows.Length);
+			for (int i = 0; i < s.RainbowShadows.Length; i++)
+			{
+				SimState shadow = s.RainbowShadows[i];
+				BfsHashMix(ref hash, BfsQuantizeKey(ref shadow));
+				BfsHashMix(ref hash, shadow.X_fixed);
+				BfsHashMix(ref hash, shadow.CameraY_fixed);
+				BfsHashMix(ref hash, shadow.TargetCameraY_fixed);
+				BfsHashMix(ref hash, shadow.ScrollYSubpx);
+				BfsHashMix(ref hash, shadow.NesSprDataPtr);
+				BfsHashMix(ref hash, BfsRuntimeHash(ref shadow));
+			}
+		}
 		return unchecked((long)hash);
+	}
+
+	private BfsDedupKey BuildBfsDedupKey(ref SimState s)
+	{
+		return new BfsDedupKey(
+			BfsQuantizeKey(ref s),
+			s.X_fixed,
+			s.CameraY_fixed,
+			s.TargetCameraY_fixed,
+			s.ScrollYSubpx,
+			s.NesSprDataPtr,
+			BfsRuntimeHash(ref s));
+	}
+
+	private void CollapseEquivalentRainbowBranches(List<SimState> branches)
+	{
+		if (branches.Count <= 1)
+			return;
+
+		// Random outcomes are a set of possible current states, not permanent
+		// identities. Once two outcomes have the same complete BFS state, every
+		// future common input affects them identically. Keeping both only multiplies
+		// work at every later frame and at every later random portal.
+		Dictionary<BfsDedupKey, int> seen = new(branches.Count);
+		int write = 0;
+		for (int read = 0; read < branches.Count; read++)
+		{
+			SimState branch = branches[read];
+			BfsDedupKey key = BuildBfsDedupKey(ref branch);
+			if (seen.TryGetValue(key, out int existingIndex))
+			{
+				SimState existing = branches[existingIndex];
+				KeepWorseBfsTimingHistory(ref existing, in branch);
+				branches[existingIndex] = existing;
+				branch.ReturnAllSpriteResources();
+				continue;
+			}
+			seen[key] = write;
+			branches[write++] = branch;
+		}
+		if (write < branches.Count)
+			branches.RemoveRange(write, branches.Count - write);
+		if (write == 1)
+		{
+			SimState merged = branches[0];
+			ClearRainbowUniversalState(ref merged);
+			branches[0] = merged;
+		}
+	}
+
+	private static void ClearRainbowUniversalState(ref SimState state)
+	{
+		state.RainbowMaxMode = 0;
+		state.RainbowUniversalActive = false;
+		state.RainbowSourcePortalX_px = 0;
+		state.RainbowExitPortalX_px = 0;
+		state.RainbowExitTargetModePlusOne = 0;
+		state.RainbowExitPortalProcessKeyPlusOne = 0;
+		state.RainbowExitPlayerX_fixed = 0;
+		state.RainbowExitPlayerY_fixed = 0;
+		state.RainbowExitVelX_fixed = 0;
+		state.RainbowExitVelY_fixed = 0;
+		state.RainbowExitStateFlags = 0;
+		state.RainbowExitDashing = 0;
+	}
+
+	private static bool RainbowIntArraysEqual(int[]? a, int[]? b)
+	{
+		if (ReferenceEquals(a, b)) return true;
+		if (a == null || b == null || a.Length != b.Length) return false;
+		for (int i = 0; i < a.Length; i++)
+		{
+			if (a[i] != b[i]) return false;
+		}
+		return true;
+	}
+
+	private static bool RainbowBoolArraysEqual(bool[]? a, bool[]? b)
+	{
+		if (ReferenceEquals(a, b)) return true;
+		if (a == null || b == null || a.Length != b.Length) return false;
+		for (int i = 0; i < a.Length; i++)
+		{
+			if (a[i] != b[i]) return false;
+		}
+		return true;
+	}
+
+	private static bool BfsRainbowExitStatesMatch(in SimState a,
+		in SimState b)
+	{
+		// This is deliberately exact.  A shared pixel with a different velocity,
+		// latch, camera, or live NES slot is not convergence; it can diverge on the
+		// very next frame.  Only permanent ProcessedSprites history is considered
+		// separately, where records wholly behind the player are no longer visible.
+		if (a.X_fixed != b.X_fixed || a.Y_fixed != b.Y_fixed ||
+			a.VelY_fixed != b.VelY_fixed || a.VelX_fixed != b.VelX_fixed ||
+			a.GlobalSpeed_fixed != b.GlobalSpeed_fixed ||
+			a.GameMode != b.GameMode || a.GravFlipped != b.GravFlipped ||
+			a.GravFlippedAtFrameStart != b.GravFlippedAtFrameStart ||
+			a.OrbUseFrameStartGravitySign != b.OrbUseFrameStartGravitySign ||
+			a.Mini != b.Mini || a.GravMul != b.GravMul ||
+			BitConverter.DoubleToInt64Bits(a.GravityMod) !=
+				BitConverter.DoubleToInt64Bits(b.GravityMod) ||
+			a.WasZeroedByCollision != b.WasZeroedByCollision ||
+			a.OnGround != b.OnGround ||
+			a.BallFlipCooldown != b.BallFlipCooldown ||
+			a.BallInputBuffer != b.BallInputBuffer ||
+			a.BallCooldownFrames != b.BallCooldownFrames ||
+			a.RobotJumpTime != b.RobotJumpTime ||
+			a.RobotJumpRequested != b.RobotJumpRequested ||
+			a.NinjaJumps != b.NinjaJumps ||
+			a.PendingOrbIndex != b.PendingOrbIndex ||
+			a.PendingOrbSpriteId != b.PendingOrbSpriteId ||
+			a.PendingOrbExtra1Index != b.PendingOrbExtra1Index ||
+			a.PendingOrbExtra1SpriteId != b.PendingOrbExtra1SpriteId ||
+			a.PendingOrbExtra2Index != b.PendingOrbExtra2Index ||
+			a.PendingOrbExtra2SpriteId != b.PendingOrbExtra2SpriteId ||
+			a.Dashing != b.Dashing || a.Orbed != b.Orbed ||
+			a.UfoOrbed != b.UfoOrbed || a.BlackOrbed != b.BlackOrbed ||
+			a.AirPressLatch != b.AirPressLatch ||
+			a.PrevInputHeld != b.PrevInputHeld ||
+			a.JBlocked != b.JBlocked || a.FBlocked != b.FBlocked ||
+			a.HBlocked != b.HBlocked || a.Dblocked != b.Dblocked ||
+			a.Step2Ejected != b.Step2Ejected || a.Step2Ever != b.Step2Ever ||
+			a.SlopeWasOnCounter != b.SlopeWasOnCounter ||
+			a.SlopeFrames != b.SlopeFrames || a.SlopeType != b.SlopeType ||
+			a.SlopeJumpHigher != b.SlopeJumpHigher ||
+			a.LastSlopeType != b.LastSlopeType || a.EjectU != b.EjectU ||
+			a.EjectD != b.EjectD || a.InvincibleCounter != b.InvincibleCounter ||
+			a.CameraY_fixed != b.CameraY_fixed ||
+			a.ScrollYSubpx != b.ScrollYSubpx ||
+			a.TargetCameraY_fixed != b.TargetCameraY_fixed ||
+			a.ExitPortalTimer != b.ExitPortalTimer ||
+			a.NoCamLockForced != b.NoCamLockForced || a.WrapMode != b.WrapMode ||
+			a.RainbowBranchEnded != b.RainbowBranchEnded ||
+			a.DualActive != b.DualActive ||
+			a.TeleportOutputY_px != b.TeleportOutputY_px ||
+			a.NesSprDataPtr != b.NesSprDataPtr ||
+			a.CoinAnimating != b.CoinAnimating)
+		{
+			return false;
+		}
+
+		if (a.DualActive &&
+			(a.P2_Y_fixed != b.P2_Y_fixed ||
+			a.P2_VelX_fixed != b.P2_VelX_fixed ||
+			a.P2_VelY_fixed != b.P2_VelY_fixed ||
+			a.P2_GravFlipped != b.P2_GravFlipped ||
+			a.P2_GravMul != b.P2_GravMul || a.P2_Mini != b.P2_Mini ||
+			a.P2_WasZeroedByCollision != b.P2_WasZeroedByCollision ||
+			a.P2_OnGround != b.P2_OnGround ||
+			a.P2_BallFlipCooldown != b.P2_BallFlipCooldown ||
+			a.P2_BallInputBuffer != b.P2_BallInputBuffer ||
+			a.P2_BallCooldownFrames != b.P2_BallCooldownFrames ||
+			a.P2_RobotJumpTime != b.P2_RobotJumpTime ||
+			a.P2_RobotJumpRequested != b.P2_RobotJumpRequested ||
+			a.P2_NinjaJumps != b.P2_NinjaJumps ||
+			a.P2_SlopeWasOnCounter != b.P2_SlopeWasOnCounter ||
+			a.P2_SlopeFrames != b.P2_SlopeFrames ||
+			a.P2_SlopeType != b.P2_SlopeType ||
+			a.P2_LastSlopeType != b.P2_LastSlopeType ||
+			a.P2_Orbed != b.P2_Orbed || a.P2_UfoOrbed != b.P2_UfoOrbed ||
+			a.P2_BlackOrbed != b.P2_BlackOrbed ||
+			a.P2_AirPressLatch != b.P2_AirPressLatch ||
+			a.P2_PrevInputHeld != b.P2_PrevInputHeld ||
+			a.P2_Dashing != b.P2_Dashing ||
+			a.P2_JBlocked != b.P2_JBlocked || a.P2_FBlocked != b.P2_FBlocked ||
+			a.P2_HBlocked != b.P2_HBlocked || a.P2_Dblocked != b.P2_Dblocked ||
+			a.P2_PendingOrbIndex != b.P2_PendingOrbIndex ||
+			a.P2_PendingOrbSpriteId != b.P2_PendingOrbSpriteId ||
+			a.P2_PendingOrbExtra1Index != b.P2_PendingOrbExtra1Index ||
+			a.P2_PendingOrbExtra1SpriteId != b.P2_PendingOrbExtra1SpriteId ||
+			a.P2_PendingOrbExtra2Index != b.P2_PendingOrbExtra2Index ||
+			a.P2_PendingOrbExtra2SpriteId != b.P2_PendingOrbExtra2SpriteId ||
+			a.P2_SingleExitCaptured != b.P2_SingleExitCaptured ||
+			a.P2_SingleExitY_fixed != b.P2_SingleExitY_fixed ||
+			a.P2_SingleExitVelY_fixed != b.P2_SingleExitVelY_fixed ||
+			a.P2_SingleExitGravFlipped != b.P2_SingleExitGravFlipped ||
+			a.P2_SingleExitGravMul != b.P2_SingleExitGravMul))
+		{
+			return false;
+		}
+
+		return RainbowIntArraysEqual(a.NesSlots, b.NesSlots) &&
+			RainbowBoolArraysEqual(a.NesSlotDead, b.NesSlotDead) &&
+			RainbowBoolArraysEqual(a.NesSlotActive, b.NesSlotActive) &&
+			RainbowIntArraysEqual(a.NesSlotWorldY, b.NesSlotWorldY) &&
+			RainbowIntArraysEqual(a.NesSlotRealX, b.NesSlotRealX) &&
+			RainbowIntArraysEqual(a.NesSlotRealY, b.NesSlotRealY) &&
+			RainbowIntArraysEqual(a.CoinTimer, b.CoinTimer) &&
+			RainbowIntArraysEqual(a.CoinSpeed, b.CoinSpeed);
+	}
+
+	private bool BfsRainbowFutureHistoryMatches(in SimState a, in SimState b)
+	{
+		// Different modes intentionally leave different activated records behind.
+		// Those bits are historical once exact player/camera state has converged;
+		// sprites ahead cannot have been touched yet. Coins remain observable search
+		// state, so coin preference still requires identical collection history.
+		if (PreferCoins)
+		{
+			foreach (SpriteEntry coin in allCoins)
+			{
+				if (a.ProcessedSprites.Contains(coin.Index) !=
+					b.ProcessedSprites.Contains(coin.Index))
+				{
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	private static bool TryGetCommonRainbowExit(List<SimState> branches,
+		out int exitX, out int targetModePlusOne)
+	{
+		exitX = 0;
+		targetModePlusOne = 0;
+		if (branches.Count <= 1) return false;
+
+		SimState first = branches[0];
+		if (!first.RainbowUniversalActive ||
+			first.RainbowExitTargetModePlusOne == 0 ||
+			first.RainbowExitPortalX_px <= first.RainbowSourcePortalX_px)
+		{
+			return false;
+		}
+		exitX = first.RainbowExitPortalX_px;
+		targetModePlusOne = first.RainbowExitTargetModePlusOne;
+		for (int i = 1; i < branches.Count; i++)
+		{
+			SimState branch = branches[i];
+			if (!branch.RainbowUniversalActive ||
+				branch.RainbowSourcePortalX_px != first.RainbowSourcePortalX_px ||
+				branch.RainbowExitPortalX_px != exitX ||
+				branch.RainbowExitTargetModePlusOne != targetModePlusOne)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static bool BfsRainbowExitRecordsMatch(in SimState a,
+		in SimState b)
+	{
+		return a.RainbowExitPortalX_px == b.RainbowExitPortalX_px &&
+			a.RainbowExitTargetModePlusOne == b.RainbowExitTargetModePlusOne &&
+			a.RainbowExitPortalProcessKeyPlusOne ==
+				b.RainbowExitPortalProcessKeyPlusOne &&
+			a.RainbowExitPlayerX_fixed == b.RainbowExitPlayerX_fixed &&
+			a.RainbowExitPlayerY_fixed == b.RainbowExitPlayerY_fixed &&
+			a.RainbowExitVelX_fixed == b.RainbowExitVelX_fixed &&
+			a.RainbowExitVelY_fixed == b.RainbowExitVelY_fixed &&
+			a.RainbowExitStateFlags == b.RainbowExitStateFlags &&
+			a.RainbowExitDashing == b.RainbowExitDashing;
+	}
+
+	private static bool BfsRainbowExitRecordsCompatible(
+		List<SimState> branches)
+	{
+		int firstExited = -1;
+		for (int i = 0; i < branches.Count; i++)
+		{
+			if (branches[i].RainbowExitTargetModePlusOne == 0) continue;
+			if (firstExited < 0)
+			{
+				firstExited = i;
+				continue;
+			}
+			SimState first = branches[firstExited];
+			SimState branch = branches[i];
+			if (!BfsRainbowExitRecordsMatch(in first, in branch)) return false;
+		}
+		return true;
+	}
+
+	private static bool BfsRainbowCurrentCoreStatesMatch(in SimState a,
+		in SimState b)
+	{
+		// A random mode's collision/ejection/slope bytes remain live after the
+		// deterministic exit portal.  Pyrophoric's ship outcome demonstrated that
+		// matching X/Y/velocity for a frame is not enough: a stale byte changed the
+		// following collision snap by one pixel and the later cube jump diverged.
+		// Collapse only after every future-observable NES/PF state field agrees.
+		return BfsRainbowExitStatesMatch(in a, in b);
+	}
+
+	private bool TryCollapseConvergedRainbowBranches(List<SimState> branches)
+	{
+		if (!TryGetCommonRainbowExit(branches, out int exitX, out _)) return false;
+
+		SimState representative = branches[0];
+		if ((representative.X_fixed >> 8) <= exitX + 32) return false;
+		for (int i = 1; i < branches.Count; i++)
+		{
+			SimState branch = branches[i];
+			if (!BfsRainbowCurrentCoreStatesMatch(in representative, in branch) ||
+				!BfsRainbowFutureHistoryMatches(in representative, in branch))
+			{
+				return false;
+			}
+			KeepWorseBfsTimingHistory(ref representative, in branch);
+		}
+
+		for (int i = 1; i < branches.Count; i++)
+			branches[i].ReturnAllSpriteResources();
+		branches.RemoveRange(1, branches.Count - 1);
+		ClearRainbowUniversalState(ref representative);
+		branches[0] = representative;
+		return true;
+	}
+
+	private bool TryGetNextBfsRainbowPortal(ref SimState s,
+		out BfsRainbowPortal portal)
+	{
+		int playerX = s.X_fixed >> 8;
+		int lo = 0;
+		int hi = _bfsRainbowPortals.Count;
+		while (lo < hi)
+		{
+			int mid = (lo + hi) >> 1;
+			if (_bfsRainbowPortals[mid].X < playerX)
+				lo = mid + 1;
+			else
+				hi = mid;
+		}
+		for (int i = lo; i < _bfsRainbowPortals.Count; i++)
+		{
+			BfsRainbowPortal candidate = _bfsRainbowPortals[i];
+			if (s.ProcessedSprites.Contains(candidate.ProcessKey))
+				continue;
+			portal = candidate;
+			return true;
+		}
+		portal = default;
+		return false;
+	}
+
+	private int BfsRainbowSearchOutcomeCount(List<SimState> candidates,
+		List<int> candidateIndexes, out int nextPortalX)
+	{
+		// Keep the rainbow-specific beam local to the random-mode segment.  Applying
+		// its much smaller frontier cap from the beginning of a level can discard the
+		// only prefix that reaches the portal (especially on long levels such as
+		// ExtraordinaryExcitement).  One screen is too little preparation for paths
+		// that must line up several modes; 1024 px still gives the universal selector
+		// hundreds of frames to diversify before activation without pruning the rest
+		// of the level.
+		const int RainbowPreparationHorizonPx = 1024;
+		nextPortalX = -1;
+		int outcomes = 0;
+		foreach (int candidateIndex in candidateIndexes)
+		{
+			SimState candidate = candidates[candidateIndex];
+			if (candidate.RainbowShadows != null)
+				outcomes = Math.Max(outcomes, 1 + candidate.RainbowShadows.Length);
+		}
+		if (outcomes > 0 || candidateIndexes.Count == 0)
+			return outcomes;
+
+		// Shortly before the first random portal, reduce and diversify the prefix
+		// frontier as well. Otherwise 120k prefixes each become an eight/twelve-state
+		// deep clone on the activation frame, exhausting time and memory before the
+		// universal section can make meaningful progress.
+		int sampleCount = Math.Min(128, candidateIndexes.Count);
+		for (int sample = 0; sample < sampleCount; sample++)
+		{
+			int pos = (int)((long)sample * candidateIndexes.Count / sampleCount);
+			SimState candidate = candidates[candidateIndexes[pos]];
+			if (!TryGetNextBfsRainbowPortal(ref candidate, out BfsRainbowPortal portal))
+				continue;
+			int distanceToPortal = portal.X - (candidate.X_fixed >> 8);
+			if (distanceToPortal > RainbowPreparationHorizonPx)
+				continue;
+			outcomes = Math.Max(outcomes, portal.ModeCount);
+			if (nextPortalX < 0 || portal.X < nextPortalX)
+				nextPortalX = portal.X;
+		}
+		return outcomes;
+	}
+
+	private static int BfsRainbowFrontierCap(int outcomeCount)
+	{
+		if (int.TryParse(Environment.GetEnvironmentVariable(
+			"FAMIDASH_RAINBOW_CAP"), out int diagnosticCap))
+		{
+			return Math.Clamp(diagnosticCap, 1024, 65536);
+		}
+		// Bound work by simulated mode states, rather than by ensemble count.
+		// Expansion tests both inputs, so 65,536 retained branch states produces
+		// at most about 131k StepFrame calls per BFS frame.
+		const int BranchStateBudget = 65536;
+		return Math.Clamp(BranchStateBudget / Math.Max(1, outcomeCount), 1024, 8192);
+	}
+
+	private long BfsRainbowLocalPhase(ref SimState s)
+	{
+		ulong hash = 14695981039346656037UL;
+		int screenY = SharedPhysics.NesPlayerScreenY_px(
+			s.Y_fixed, s.CameraY_fixed);
+		int motion = (s.GravFlipped ? 1 : 0) |
+			(s.Mini ? 2 : 0) |
+			(s.OnGround ? 4 : 0) |
+			(s.PrevInputHeld ? 8 : 0) |
+			(s.AirPressLatch ? 16 : 0) |
+			(s.Orbed ? 32 : 0) |
+			(s.UfoOrbed ? 64 : 0) |
+			(s.BlackOrbed ? 128 : 0);
+		BfsHashMix(ref hash, s.GameMode);
+		BfsHashMix(ref hash, screenY >> 2);
+		BfsHashMix(ref hash, s.VelY_fixed >> 5);
+		BfsHashMix(ref hash, s.X_fixed & 0x1FF);
+		BfsHashMix(ref hash, s.VelX_fixed);
+		BfsHashMix(ref hash, motion);
+		BfsHashMix(ref hash, s.Dashing);
+		BfsHashMix(ref hash, s.RobotJumpTime);
+		BfsHashMix(ref hash, s.NinjaJumps);
+		BfsHashMix(ref hash, s.BallFlipCooldown | (s.BallInputBuffer << 8));
+		BfsHashMix(ref hash, s.SlopeType | (s.LastSlopeType << 8));
+		BfsHashMix(ref hash, Math.Min(s.SlopeFrames, 15) |
+			(Math.Min(s.SlopeWasOnCounter, 15) << 4));
+		BfsHashMix(ref hash, s.EjectU | (s.EjectD << 8));
+		BfsHashMix(ref hash, s.PendingOrbIndex);
+		BfsHashMix(ref hash, s.PendingOrbSpriteId);
+		BfsHashMix(ref hash, s.CameraY_fixed >> 10);
+		BfsHashMix(ref hash, s.TargetCameraY_fixed >> 10);
+		BfsHashMix(ref hash, s.ScrollYSubpx);
+		BfsHashMix(ref hash, s.NesSprDataPtr >> 2);
+		if (s.GameMode == 6 || s.GameMode == 10)
+		{
+			// Wave and snake corridors can depend on exact diagonal subpixel phase.
+			BfsHashMix(ref hash, s.Y_fixed & 0xFF);
+			BfsHashMix(ref hash, s.VelY_fixed & 0xFF);
+		}
+		return unchecked((long)hash);
+	}
+
+	private static int BfsRainbowBranchCount(ref SimState s)
+	{
+		return 1 + (s.RainbowShadows?.Length ?? 0);
+	}
+
+	private long BfsRainbowBranchPhase(ref SimState candidate, int branch)
+	{
+		if (branch == 0)
+		{
+			SimState main = candidate;
+			main.RainbowShadows = null;
+			return BfsRainbowLocalPhase(ref main);
+		}
+		SimState shadow = candidate.RainbowShadows![branch - 1];
+		return BfsRainbowLocalPhase(ref shadow);
+	}
+
+	private static int BfsRainbowBranchPortalDistance(ref SimState branch,
+		in BfsTransitionPortal portal)
+	{
+		int wave = branch.GameMode == 6 || branch.GameMode == 10 ? 1 : 0;
+		int hitboxH = wave != 0 ? 8 : GetHitboxH(branch.Mini);
+		int hitboxOffsetY = wave != 0
+			? 0
+			: GetHitboxOffsetY(branch.GameMode, branch.Mini,
+				branch.GravFlipped);
+		int playerCenterY = (branch.Y_fixed >> 8) + hitboxOffsetY +
+			hitboxH / 2;
+		return Math.Abs(playerCenterY - portal.HitCenterY);
+	}
+
+	private static bool BfsRainbowBranchNeedsSingleTransition(
+		ref SimState branch, in BfsTransitionPortal portal)
+	{
+		if (branch.RainbowBranchEnded ||
+			branch.ProcessedSprites.Contains(portal.ProcessKey))
+		{
+			return false;
+		}
+		if (portal.TargetMode >= 0)
+			return branch.GameMode != portal.TargetMode;
+		bool targetMini = portal.SpriteId == 24;
+		return branch.Mini != targetMini;
+	}
+
+	private static bool BfsRainbowSameTransitionCluster(
+		in BfsTransitionPortal a, in BfsTransitionPortal b)
+	{
+		return a.X == b.X && a.TargetMode == b.TargetMode &&
+			(a.TargetMode >= 0 || a.SpriteId == b.SpriteId);
+	}
+
+	private static bool BfsRainbowBranchReachedTransitionCluster(
+		ref SimState branch, List<BfsTransitionPortal> portals,
+		int xBlockStart, int xBlockEnd, in BfsTransitionPortal cluster)
+	{
+		if (branch.RainbowBranchEnded) return true;
+		if (cluster.TargetMode >= 0 &&
+			branch.RainbowExitPortalX_px == cluster.X &&
+			branch.RainbowExitTargetModePlusOne == cluster.TargetMode + 1)
+		{
+			return true;
+		}
+		for (int i = xBlockStart; i < xBlockEnd; i++)
+		{
+			BfsTransitionPortal portal = portals[i];
+			if (!BfsRainbowSameTransitionCluster(in portal, in cluster)) continue;
+			if (branch.ProcessedSprites.Contains(portal.ProcessKey)) return true;
+		}
+		return false;
+	}
+
+	private static bool BfsRainbowBranchReachedExactTransition(
+		ref SimState branch, in BfsTransitionPortal portal)
+	{
+		if (branch.RainbowBranchEnded) return true;
+		if (branch.RainbowExitPortalProcessKeyPlusOne == portal.ProcessKey + 1)
+			return true;
+		return branch.ProcessedSprites.Contains(portal.ProcessKey);
+	}
+
+	private static int BfsRainbowBranchTransitionClusterDistance(
+		ref SimState branch, List<BfsTransitionPortal> portals,
+		int xBlockStart, int xBlockEnd, in BfsTransitionPortal cluster)
+	{
+		int best = int.MaxValue;
+		for (int i = xBlockStart; i < xBlockEnd; i++)
+		{
+			BfsTransitionPortal portal = portals[i];
+			if (!BfsRainbowSameTransitionCluster(in portal, in cluster)) continue;
+			best = Math.Min(best,
+				BfsRainbowBranchPortalDistance(ref branch, in portal));
+		}
+		return best == int.MaxValue ? 0 : best;
+	}
+
+	private static bool TryGetCommonRainbowExit(ref SimState candidate,
+		out int exitX, out int targetModePlusOne)
+	{
+		exitX = 0;
+		targetModePlusOne = 0;
+		if (candidate.RainbowShadows == null ||
+			!candidate.RainbowUniversalActive ||
+			candidate.RainbowExitTargetModePlusOne == 0 ||
+			candidate.RainbowExitPortalX_px <= candidate.RainbowSourcePortalX_px)
+		{
+			return false;
+		}
+		exitX = candidate.RainbowExitPortalX_px;
+		targetModePlusOne = candidate.RainbowExitTargetModePlusOne;
+		for (int i = 0; i < candidate.RainbowShadows.Length; i++)
+		{
+			SimState shadow = candidate.RainbowShadows[i];
+			if (!shadow.RainbowUniversalActive ||
+				shadow.RainbowSourcePortalX_px != candidate.RainbowSourcePortalX_px ||
+				shadow.RainbowExitPortalX_px != exitX ||
+				shadow.RainbowExitTargetModePlusOne != targetModePlusOne)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static int BfsRainbowPostExitConvergenceCost(ref SimState candidate)
+	{
+		int minX = candidate.X_fixed;
+		int maxX = minX;
+		int minY = candidate.Y_fixed;
+		int maxY = minY;
+		int minVelY = candidate.VelY_fixed;
+		int maxVelY = minVelY;
+		int minCameraY = candidate.CameraY_fixed;
+		int maxCameraY = minCameraY;
+		int minTargetY = candidate.TargetCameraY_fixed;
+		int maxTargetY = minTargetY;
+		int stateMismatch = 0;
+		SimState reference = candidate;
+		reference.RainbowShadows = null;
+		SimState[] shadows = candidate.RainbowShadows!;
+		for (int i = 0; i < shadows.Length; i++)
+		{
+			SimState branch = shadows[i];
+			minX = Math.Min(minX, branch.X_fixed);
+			maxX = Math.Max(maxX, branch.X_fixed);
+			minY = Math.Min(minY, branch.Y_fixed);
+			maxY = Math.Max(maxY, branch.Y_fixed);
+			minVelY = Math.Min(minVelY, branch.VelY_fixed);
+			maxVelY = Math.Max(maxVelY, branch.VelY_fixed);
+			minCameraY = Math.Min(minCameraY, branch.CameraY_fixed);
+			maxCameraY = Math.Max(maxCameraY, branch.CameraY_fixed);
+			minTargetY = Math.Min(minTargetY, branch.TargetCameraY_fixed);
+			maxTargetY = Math.Max(maxTargetY, branch.TargetCameraY_fixed);
+			if (branch.GameMode != reference.GameMode ||
+				branch.GravFlipped != reference.GravFlipped ||
+				branch.Mini != reference.Mini ||
+				branch.OnGround != reference.OnGround ||
+				branch.PrevInputHeld != reference.PrevInputHeld ||
+				branch.AirPressLatch != reference.AirPressLatch ||
+				branch.Dashing != reference.Dashing)
+			{
+				stateMismatch++;
+			}
+		}
+		long rawCost = (long)(maxY - minY) * 256L +
+			(long)(maxVelY - minVelY) * 16L +
+			(long)(maxX - minX) * 256L +
+			(long)(maxCameraY - minCameraY) / 16L +
+			(long)(maxTargetY - minTargetY) / 16L +
+			(long)stateMismatch * 100_000_000L;
+		return (int)Math.Min(int.MaxValue - 1L, rawCost);
+	}
+
+	private bool TryGetBfsRainbowConvergenceCost(ref SimState candidate,
+		int horizonPx, out int cost)
+	{
+		cost = int.MaxValue;
+		if (candidate.RainbowShadows == null)
+			return false;
+		SimState[] shadows = candidate.RainbowShadows;
+		if (TryGetCommonRainbowExit(ref candidate, out _, out _))
+		{
+			cost = BfsRainbowPostExitConvergenceCost(ref candidate);
+			return true;
+		}
+
+		int playerX = candidate.X_fixed >> 8;
+		int sourceX = candidate.RainbowUniversalActive
+			? candidate.RainbowSourcePortalX_px
+			: playerX;
+		int lo = 0;
+		int hi = _bfsTransitionPortals.Count;
+		while (lo < hi)
+		{
+			int mid = (lo + hi) >> 1;
+			if (_bfsTransitionPortals[mid].X <= sourceX)
+				lo = mid + 1;
+			else
+				hi = mid;
+		}
+		for (int xBlockStart = lo;
+			xBlockStart < _bfsTransitionPortals.Count;)
+		{
+			int xBlockEnd = xBlockStart + 1;
+			int portalX = _bfsTransitionPortals[xBlockStart].X;
+			while (xBlockEnd < _bfsTransitionPortals.Count &&
+				_bfsTransitionPortals[xBlockEnd].X == portalX)
+			{
+				xBlockEnd++;
+			}
+			if (portalX - playerX > horizonPx)
+				break;
+
+			for (int clusterIndex = xBlockStart;
+				clusterIndex < xBlockEnd; clusterIndex++)
+			{
+				BfsTransitionPortal cluster =
+					_bfsTransitionPortals[clusterIndex];
+				bool duplicateIdentity = false;
+				for (int prior = xBlockStart; prior < clusterIndex; prior++)
+				{
+					BfsTransitionPortal priorPortal =
+						_bfsTransitionPortals[prior];
+					if (BfsRainbowSameTransitionCluster(
+						in priorPortal, in cluster))
+					{
+						duplicateIdentity = true;
+						break;
+					}
+				}
+				if (duplicateIdentity) continue;
+				int clusterCopyCount = 0;
+				for (int copy = xBlockStart; copy < xBlockEnd; copy++)
+				{
+					BfsTransitionPortal copyPortal =
+						_bfsTransitionPortals[copy];
+					if (BfsRainbowSameTransitionCluster(
+						in copyPortal, in cluster))
+					{
+						clusterCopyCount++;
+					}
+				}
+
+				SimState main = candidate;
+				main.RainbowShadows = null;
+				if (clusterCopyCount == 1)
+				{
+					int maxDistance = 0;
+					int totalDistance = 0;
+					int neededBranches = 0;
+					if (portalX >= playerX &&
+						BfsRainbowBranchNeedsSingleTransition(ref main, in cluster))
+					{
+						int distance = BfsRainbowBranchPortalDistance(
+							ref main, in cluster);
+						maxDistance = distance;
+						totalDistance = distance;
+						neededBranches = 1;
+					}
+					for (int i = 0; i < shadows.Length; i++)
+					{
+						SimState shadow = shadows[i];
+						if (portalX < playerX ||
+							!BfsRainbowBranchNeedsSingleTransition(ref shadow, in cluster))
+						{
+							continue;
+						}
+						int distance = BfsRainbowBranchPortalDistance(
+							ref shadow, in cluster);
+						maxDistance = Math.Max(maxDistance, distance);
+						totalDistance += distance;
+						neededBranches++;
+					}
+					if (neededBranches == 0) continue;
+					cost = maxDistance * 4096 + totalDistance;
+					return true;
+				}
+
+				// Vertically duplicated copies provide coverage for different random
+				// modes. Before every branch has crossed the cluster, guide each mode
+				// toward its nearest reachable copy. Exact shared-state convergence is
+				// enforced in the post-exit segment below, after all are ships/balls/etc.
+				int maxClusterDistance = 0;
+				int totalClusterDistance = 0;
+				int clusterNeededBranches = 0;
+				if (!BfsRainbowBranchReachedTransitionCluster(ref main,
+					_bfsTransitionPortals, xBlockStart, xBlockEnd, in cluster))
+				{
+					int distance = BfsRainbowBranchTransitionClusterDistance(
+						ref main, _bfsTransitionPortals, xBlockStart,
+						xBlockEnd, in cluster);
+					maxClusterDistance = distance;
+					totalClusterDistance = distance;
+					clusterNeededBranches = 1;
+				}
+				for (int i = 0; i < shadows.Length; i++)
+				{
+					SimState shadow = shadows[i];
+					if (BfsRainbowBranchReachedTransitionCluster(ref shadow,
+						_bfsTransitionPortals, xBlockStart, xBlockEnd, in cluster))
+					{
+						continue;
+					}
+					int distance = BfsRainbowBranchTransitionClusterDistance(
+						ref shadow, _bfsTransitionPortals, xBlockStart,
+						xBlockEnd, in cluster);
+					maxClusterDistance = Math.Max(maxClusterDistance, distance);
+					totalClusterDistance += distance;
+					clusterNeededBranches++;
+				}
+				if (clusterNeededBranches == 0) continue;
+				cost = maxClusterDistance * 4096 + totalClusterDistance;
+				return true;
+			}
+			xBlockStart = xBlockEnd;
+		}
+		return false;
+	}
+
+	private long BfsRainbowEnsemblePhase(ref SimState candidate)
+	{
+		ulong hash = 14695981039346656037UL;
+		int branchCount = BfsRainbowBranchCount(ref candidate);
+		BfsHashMix(ref hash, branchCount);
+		SimState main = candidate;
+		main.RainbowShadows = null;
+		BfsHashMix(ref hash, BfsRainbowLocalPhase(ref main));
+		if (candidate.RainbowShadows != null)
+		{
+			for (int i = 0; i < candidate.RainbowShadows.Length; i++)
+			{
+				SimState shadow = candidate.RainbowShadows[i];
+				BfsHashMix(ref hash, BfsRainbowLocalPhase(ref shadow));
+			}
+		}
+		return unchecked((long)hash);
+	}
+
+	private void BfsRainbowRecordLocalPhases(ref SimState candidate,
+		HashSet<(int Branch, long Phase)> seen)
+	{
+		SimState main = candidate;
+		main.RainbowShadows = null;
+		seen.Add((0, BfsRainbowLocalPhase(ref main)));
+		if (candidate.RainbowShadows != null)
+		{
+			for (int i = 0; i < candidate.RainbowShadows.Length; i++)
+			{
+				SimState shadow = candidate.RainbowShadows[i];
+				seen.Add((i + 1, BfsRainbowLocalPhase(ref shadow)));
+			}
+		}
+	}
+
+	private List<int> OrderBfsRainbowCandidates(List<SimState> candidates,
+		List<int> scoreOrderedIndexes, int frontierCap)
+	{
+		int keepCount = Math.Min(frontierCap, scoreOrderedIndexes.Count);
+		if (keepCount >= scoreOrderedIndexes.Count)
+			return scoreOrderedIndexes;
+
+		List<int> selectionOrder = scoreOrderedIndexes;
+		const int RainbowConvergenceHorizonPx = 1536;
+		int[] convergenceCost = new int[candidates.Count];
+		Array.Fill(convergenceCost, int.MaxValue);
+		bool[] postExitConvergence = new bool[candidates.Count];
+		bool hasConvergenceTarget = false;
+		bool hasPostExitConvergence = false;
+		for (int rank = 0; rank < scoreOrderedIndexes.Count; rank++)
+		{
+			int candidateIndex = scoreOrderedIndexes[rank];
+			SimState candidate = candidates[candidateIndex];
+			if (!TryGetBfsRainbowConvergenceCost(ref candidate,
+				RainbowConvergenceHorizonPx, out int candidateCost))
+			{
+				continue;
+			}
+			convergenceCost[candidateIndex] = candidateCost;
+			hasConvergenceTarget = true;
+			if (TryGetCommonRainbowExit(ref candidate, out _, out _))
+			{
+				postExitConvergence[candidateIndex] = true;
+				hasPostExitConvergence = true;
+			}
+		}
+		if (hasConvergenceTarget)
+		{
+			int[] originalRank = new int[candidates.Count];
+			for (int rank = 0; rank < scoreOrderedIndexes.Count; rank++)
+				originalRank[scoreOrderedIndexes[rank]] = rank;
+			selectionOrder = new List<int>(scoreOrderedIndexes);
+			selectionOrder.Sort((a, b) =>
+			{
+				if (hasPostExitConvergence &&
+					postExitConvergence[a] != postExitConvergence[b])
+				{
+					return postExitConvergence[b].CompareTo(postExitConvergence[a]);
+				}
+				int byCost = convergenceCost[a].CompareTo(convergenceCost[b]);
+				return byCost != 0 ? byCost : originalRank[a].CompareTo(originalRank[b]);
+			});
+		}
+
+		List<int> ordered = new(scoreOrderedIndexes.Count);
+		bool[] selected = new bool[candidates.Count];
+		void Select(int candidateIndex)
+		{
+			if (selected[candidateIndex]) return;
+			selected[candidateIndex] = true;
+			ordered.Add(candidateIndex);
+		}
+
+		// A normal 0.5-bias BFS intentionally gives most same-coin candidates an
+		// equal score. Keep a small stable prefix, then let every possible mode take
+		// turns introducing a trajectory phase. The previous "novel in any mode"
+		// pass could spend its entire diversity budget on an easy mode while every
+		// useful phase of the limiting mode was discarded.
+		int scoreQuota = Math.Max(1, keepCount / 8);
+		for (int i = 0; i < scoreQuota; i++)
+			Select(scoreOrderedIndexes[i]);
+
+		// Convergence is a reserved slice, not the whole ordering. It is needed to
+		// retain ship/ball/etc. entries into a common exit portal, but making every
+		// slot locally portal-greedy erases jump setups needed just after the exit.
+		if (hasConvergenceTarget)
+		{
+			int convergenceTarget = hasPostExitConvergence
+				? keepCount / 2
+				: Math.Min(keepCount, ordered.Count + keepCount / 4);
+			for (int i = 0;
+				i < selectionOrder.Count && ordered.Count < convergenceTarget;
+				i++)
+			{
+				Select(selectionOrder[i]);
+			}
+		}
+
+		HashSet<(int Branch, long Phase)> localPhases = new();
+		foreach (int candidateIndex in ordered)
+		{
+			SimState candidate = candidates[candidateIndex];
+			BfsRainbowRecordLocalPhases(ref candidate, localPhases);
+		}
+		int localPhaseTarget = keepCount * 3 / 4;
+		int maxBranchCount = 1;
+		foreach (int candidateIndex in scoreOrderedIndexes)
+		{
+			SimState candidate = candidates[candidateIndex];
+			maxBranchCount = Math.Max(maxBranchCount,
+				BfsRainbowBranchCount(ref candidate));
+		}
+		int[] branchCursors = new int[maxBranchCount];
+		bool addedInRound = true;
+		while (ordered.Count < localPhaseTarget && addedInRound)
+		{
+			addedInRound = false;
+			for (int branch = 0;
+				branch < maxBranchCount && ordered.Count < localPhaseTarget;
+				branch++)
+			{
+				while (branchCursors[branch] < scoreOrderedIndexes.Count)
+				{
+					int candidateIndex = scoreOrderedIndexes[branchCursors[branch]++];
+					if (selected[candidateIndex]) continue;
+					SimState candidate = candidates[candidateIndex];
+					if (BfsRainbowBranchCount(ref candidate) <= branch) continue;
+					long phase = BfsRainbowBranchPhase(ref candidate, branch);
+					if (localPhases.Contains((branch, phase))) continue;
+					Select(candidateIndex);
+					BfsRainbowRecordLocalPhases(ref candidate, localPhases);
+					addedInRound = true;
+					break;
+				}
+			}
+		}
+
+		HashSet<long> ensemblePhases = new();
+		foreach (int candidateIndex in ordered)
+		{
+			SimState candidate = candidates[candidateIndex];
+			ensemblePhases.Add(BfsRainbowEnsemblePhase(ref candidate));
+		}
+		foreach (int candidateIndex in scoreOrderedIndexes)
+		{
+			if (ordered.Count >= keepCount) break;
+			if (selected[candidateIndex]) continue;
+			SimState candidate = candidates[candidateIndex];
+			if (!ensemblePhases.Add(BfsRainbowEnsemblePhase(ref candidate))) continue;
+			Select(candidateIndex);
+		}
+		foreach (int candidateIndex in scoreOrderedIndexes)
+		{
+			if (ordered.Count >= keepCount) break;
+			Select(candidateIndex);
+		}
+		// Keep the rejected indexes available to the ordinary resource cleanup.
+		foreach (int candidateIndex in scoreOrderedIndexes)
+		{
+			if (!selected[candidateIndex]) ordered.Add(candidateIndex);
+		}
+		return ordered;
+	}
+
+	private bool StepBfsRainbowBranch(ref SimState stepped, in SimState original,
+		bool input, List<SimState> output, out byte deathType,
+		out int failureModePlusOne, out int failureX_px, out int failureY_px)
+	{
+		deathType = 0;
+		failureModePlusOne = 0;
+		failureX_px = 0;
+		failureY_px = 0;
+		if (stepped.RainbowBranchEnded)
+		{
+			output.Add(stepped);
+			return true;
+		}
+
+		AdvanceBfsTimingPreference(ref stepped, in original, input);
+		bool alive = StepFrame(ref stepped, input, out bool ended);
+		int portalModeCount = stepped.RainbowPortalModeCount;
+		stepped.RainbowPortalModeCount = 0;
+		stepped.RainbowForcedModePlusOne = 0;
+		stepped.RainbowBranchEnded = ended;
+		output.Add(stepped);
+		if (!alive)
+		{
+			deathType = stepped.DeathType;
+			failureModePlusOne = stepped.GameMode + 1;
+			failureX_px = stepped.X_fixed >> 8;
+			failureY_px = stepped.Y_fixed >> 8;
+			return false;
+		}
+
+		// A later random portal re-randomizes independently.  Expand the branch
+		// again from its exact pre-frame state, preserving every history rather
+		// than assuming all prior modes have converged.
+		for (int mode = 1; mode < portalModeCount; mode++)
+		{
+			SimState alternate = original.CloneBranch();
+			alternate.RainbowForcedModePlusOne = mode + 1;
+			AdvanceBfsTimingPreference(ref alternate, in original, input);
+			bool alternateAlive = StepFrame(ref alternate, input, out bool alternateEnded);
+			int alternatePortalModeCount = alternate.RainbowPortalModeCount;
+			alternate.RainbowPortalModeCount = 0;
+			alternate.RainbowForcedModePlusOne = 0;
+			alternate.RainbowBranchEnded = alternateEnded;
+			output.Add(alternate);
+			if (!alternateAlive || alternatePortalModeCount != portalModeCount)
+			{
+				deathType = alternate.DeathType;
+				failureModePlusOne = alternate.GameMode + 1;
+				failureX_px = alternate.X_fixed >> 8;
+				failureY_px = alternate.Y_fixed >> 8;
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private bool StepBfsRainbowEnsemble(ref SimState candidate, in SimState parent,
+		bool input, out bool endLevel)
+	{
+		SimState[] candidateShadows = candidate.RainbowShadows ?? Array.Empty<SimState>();
+		SimState[] parentShadows = parent.RainbowShadows ?? Array.Empty<SimState>();
+		SimState main = candidate;
+		main.RainbowShadows = null;
+		List<SimState> branches = new(1 + candidateShadows.Length + 11);
+		bool alive = StepBfsRainbowBranch(ref main, in parent, input, branches,
+			out byte universalDeathType, out int failureModePlusOne,
+			out int failureX_px, out int failureY_px);
+
+		int shadowIndex = 0;
+		for (; shadowIndex < candidateShadows.Length && alive; shadowIndex++)
+		{
+			SimState shadow = candidateShadows[shadowIndex];
+			SimState original = parentShadows[shadowIndex];
+			alive = StepBfsRainbowBranch(ref shadow, in original, input, branches,
+				out universalDeathType, out failureModePlusOne,
+				out failureX_px, out failureY_px);
+		}
+		// Keep ownership of unstepped branch resources on a failed candidate so
+		// the ordinary BFS rejection path can return everything exactly once.
+		for (; shadowIndex < candidateShadows.Length; shadowIndex++)
+		{
+			branches.Add(candidateShadows[shadowIndex]);
+		}
+
+		if (alive)
+		{
+			if (!TryCollapseConvergedRainbowBranches(branches))
+			{
+				CollapseEquivalentRainbowBranches(branches);
+			}
+		}
+		candidate = branches[0];
+		if (branches.Count > 1)
+		{
+			candidate.RainbowShadows = new SimState[branches.Count - 1];
+			for (int i = 1; i < branches.Count; i++)
+				candidate.RainbowShadows[i - 1] = branches[i];
+		}
+		else
+		{
+			candidate.RainbowShadows = null;
+		}
+		if (!alive)
+		{
+			candidate.DeathType = universalDeathType;
+			candidate.RainbowFailureModePlusOne = failureModePlusOne;
+			candidate.RainbowFailureX_px = failureX_px;
+			candidate.RainbowFailureY_px = failureY_px;
+			endLevel = false;
+			return false;
+		}
+
+		endLevel = candidate.RainbowBranchEnded;
+		if (candidate.RainbowShadows != null)
+		{
+			for (int i = 0; i < candidate.RainbowShadows.Length; i++)
+				endLevel &= candidate.RainbowShadows[i].RainbowBranchEnded;
+		}
+		return true;
+	}
+
+	private static bool BfsTimingHasPendingInteraction(in SimState s)
+	{
+		return s.PendingOrbIndex >= 0 || s.PendingOrbExtra1Index >= 0 ||
+			s.PendingOrbExtra2Index >= 0 ||
+			(s.DualActive && (s.P2_PendingOrbIndex >= 0 ||
+				s.P2_PendingOrbExtra1Index >= 0 ||
+				s.P2_PendingOrbExtra2Index >= 0));
+	}
+
+	private static bool BfsTimingIsContinuousMode(int gameMode)
+	{
+		return gameMode == 1 || gameMode == 6 || gameMode == 10;
+	}
+
+	private static bool BfsTimingNeedsFreshPress(int gameMode)
+	{
+		return gameMode == 2 || gameMode == 3 || gameMode == 5 ||
+			gameMode == 7 || gameMode == 8 || gameMode == 9;
+	}
+
+	private static bool BfsTimingActionAvailable(in SimState s)
+	{
+		if (s.Dashing != 0 || (s.DualActive && s.P2_Dashing != 0))
+			return false;
+		if (BfsTimingHasPendingInteraction(in s))
+			return true;
+
+		bool p1Grounded = s.OnGround && s.VelY_fixed == 0;
+		bool p2Grounded = s.DualActive && s.P2_OnGround &&
+			s.P2_VelY_fixed == 0;
+		bool eitherReleased = !s.PrevInputHeld ||
+			(s.DualActive && !s.P2_PrevInputHeld);
+		return s.GameMode switch
+		{
+			0 => p1Grounded || p2Grounded,
+			1 => true,
+			2 => ((p1Grounded && s.BallFlipCooldown == 0) ||
+				(p2Grounded && s.P2_BallFlipCooldown == 0)) &&
+				eitherReleased,
+			3 => eitherReleased,
+			4 => p1Grounded || p2Grounded,
+			5 => (p1Grounded || p2Grounded) && eitherReleased && !s.Orbed,
+			6 => true,
+			7 => eitherReleased && !s.Orbed,
+			8 => eitherReleased &&
+				(p1Grounded || s.NinjaJumps > 0 || p2Grounded ||
+					(s.DualActive && s.P2_NinjaJumps > 0)),
+			9 => eitherReleased && !s.Orbed,
+			10 => true,
+			_ => false
+		};
+	}
+
+	private static bool BfsTimingDidAction(in SimState s, bool input)
+	{
+		bool p1FreshPress = input && !s.PrevInputHeld;
+		bool p2FreshPress = input && s.DualActive && !s.P2_PrevInputHeld;
+		bool freshPress = p1FreshPress || p2FreshPress;
+		if (BfsTimingHasPendingInteraction(in s) && freshPress)
+			return true;
+
+		bool p1Grounded = s.OnGround && s.VelY_fixed == 0;
+		bool p2Grounded = s.DualActive && s.P2_OnGround &&
+			s.P2_VelY_fixed == 0;
+		if (BfsTimingIsContinuousMode(s.GameMode))
+		{
+			return input != s.PrevInputHeld ||
+				(s.DualActive && input != s.P2_PrevInputHeld);
+		}
+		return s.GameMode switch
+		{
+			0 => input && (p1Grounded || p2Grounded),
+			2 => freshPress &&
+				((p1Grounded && s.BallFlipCooldown == 0) ||
+				 (p2Grounded && s.P2_BallFlipCooldown == 0)),
+			3 => freshPress,
+			4 => input && (p1Grounded || p2Grounded),
+			5 => freshPress && (p1Grounded || p2Grounded),
+			7 => freshPress,
+			8 => freshPress &&
+				(p1Grounded || s.NinjaJumps > 0 || p2Grounded ||
+					(s.DualActive && s.P2_NinjaJumps > 0)),
+			9 => freshPress,
+			_ => false
+		};
+	}
+
+	private int BfsTimingWeight()
+	{
+		// Positive means earlier is preferred; negative means later is preferred.
+		// The five UI choices therefore remain ordered while 0.5 is truly neutral.
+		double bias = Math.Clamp(JumpTimingBias, 0.0, 1.0);
+		return (int)Math.Round((0.5 - bias) * 200.0);
+	}
+
+	private void AdvanceBfsTimingPreference(ref SimState stepped,
+		in SimState parent, bool input)
+	{
+		int weight = BfsTimingWeight();
+		if (weight == 0)
+		{
+			stepped.BfsTimingLocalCost = 0;
+			stepped.BfsTimingOpportunityAge = 0;
+			stepped.BfsTimingTrackedModePlusOne = 0;
+			stepped.BfsTimingOpportunityOpen = false;
+			return;
+		}
+
+		int trackedMode = parent.GameMode + 1;
+		bool sameWindowMode = parent.BfsTimingTrackedModePlusOne == trackedMode;
+		int age = sameWindowMode ? parent.BfsTimingOpportunityAge : 0;
+		stepped.BfsTimingLocalCost = 0;
+		stepped.BfsTimingTrackedModePlusOne = (byte)trackedMode;
+
+		// Ship, wave, and snake have continuous held controls rather than discrete
+		// jump windows. "Early" means establish the held control sooner; "late"
+		// means remain released longer. Charge only frames that depart from that
+		// preference, so a necessary correction lasts as briefly as survival allows
+		// instead of rewarding rapid press/release toggling.
+		if (BfsTimingIsContinuousMode(parent.GameMode))
+		{
+			bool preferredInput = weight > 0;
+			bool deviating = input != preferredInput;
+			if (deviating)
+			{
+				stepped.BfsTimingOpportunityAge = (ushort)Math.Min(
+					ushort.MaxValue, age + 1);
+				stepped.BfsTimingLocalCost = Math.Min(250000,
+					Math.Abs(weight) * stepped.BfsTimingOpportunityAge);
+			}
+			else
+			{
+				stepped.BfsTimingOpportunityAge = 0;
+			}
+			stepped.BfsTimingOpportunityOpen = false;
+			return;
+		}
+
+		// Tap modes cannot reactivate while the button is still held from the prior
+		// mode/action. For an early bias, that stale hold is itself a local delay:
+		// prefer the route that releases and becomes action-ready sooner. A late bias
+		// does not penalize the lockout because it is already deferring the next tap.
+		bool staleHeld = parent.PrevInputHeld ||
+			(parent.DualActive && parent.P2_PrevInputHeld);
+		if (weight > 0 && BfsTimingNeedsFreshPress(parent.GameMode) &&
+			staleHeld && !BfsTimingHasPendingInteraction(in parent))
+		{
+			stepped.BfsTimingOpportunityAge = (ushort)Math.Min(
+				ushort.MaxValue, age + 1);
+			stepped.BfsTimingLocalCost = Math.Min(250000,
+				weight * stepped.BfsTimingOpportunityAge);
+			stepped.BfsTimingOpportunityOpen = false;
+			return;
+		}
+
+		bool available = BfsTimingActionAvailable(in parent);
+		bool action = available && BfsTimingDidAction(in parent, input);
+		if (action)
+		{
+			long localCost = (long)weight * age;
+			stepped.BfsTimingLocalCost = (int)Math.Clamp(localCost,
+				-250000L, 250000L);
+			stepped.BfsTimingOpportunityAge = 0;
+			stepped.BfsTimingOpportunityOpen = false;
+			return;
+		}
+
+		if (!available)
+		{
+			stepped.BfsTimingOpportunityAge = 0;
+			stepped.BfsTimingOpportunityOpen = false;
+			return;
+		}
+
+		stepped.BfsTimingOpportunityAge = (ushort)Math.Min(ushort.MaxValue,
+			age + 1);
+		stepped.BfsTimingOpportunityOpen = true;
+	}
+
+	private int BfsTimingPreferenceScore(ref SimState s)
+	{
+		long score = s.BfsTimingLocalCost;
+		if (s.BfsTimingOpportunityOpen)
+			score += (long)BfsTimingWeight() * s.BfsTimingOpportunityAge;
+		return (int)Math.Clamp(score, -250000L, 250000L);
+	}
+
+	private void KeepWorseBfsTimingHistory(ref SimState destination,
+		in SimState other)
+	{
+		SimState destinationCopy = destination;
+		SimState otherCopy = other;
+		if (BfsTimingPreferenceScore(ref otherCopy) <=
+			BfsTimingPreferenceScore(ref destinationCopy))
+		{
+			return;
+		}
+		destination.BfsTimingLocalCost = other.BfsTimingLocalCost;
+		destination.BfsTimingOpportunityAge = other.BfsTimingOpportunityAge;
+		destination.BfsTimingTrackedModePlusOne =
+			other.BfsTimingTrackedModePlusOne;
+		destination.BfsTimingOpportunityOpen = other.BfsTimingOpportunityOpen;
 	}
 
 	private int BfsScore(ref SimState s, int coinsCollected)
 	{
-		int num = -coinsCollected * 1000000;
-		int num2 = 0;
-		if (JumpTimingBias < 0.45)
+		int score = BfsScoreBranch(ref s, coinsCollected);
+		if (s.RainbowShadows != null)
 		{
-			num2 = (s.Y_fixed >> 8) / 4;
+			for (int i = 0; i < s.RainbowShadows.Length; i++)
+			{
+				SimState shadow = s.RainbowShadows[i];
+				score = Math.Max(score, BfsScoreBranch(ref shadow, coinsCollected));
+			}
 		}
-		else if (JumpTimingBias > 0.55)
-		{
-			num2 = -(s.Y_fixed >> 8) / 4;
-		}
-		int num3 = 0;
-		int num4 = 0;
-		return num + num2 + num3 + num4;
+		return score;
+	}
+
+	private int BfsScoreBranch(ref SimState s, int coinsCollected)
+	{
+		// Coins remain lexicographically primary. Timing is a soft preference among
+		// otherwise viable same-coin states; no world-Y proxy is used.
+		return -coinsCollected * 1000000 + BfsTimingPreferenceScore(ref s);
 	}
 
 	private static (int Mode, int ScreenY, int VelY, int Motion,
-		int Slope, int Horizontal, int Camera, int P2) BfsTrajectoryPhase(ref SimState s)
+		int Slope, int Horizontal, int Camera, int Ejection) BfsSpiderTrajectoryPhase(
+		ref SimState s)
 	{
-		int mode = (s.GameMode << 3) |
-			(s.Mini ? 4 : 0) |
-			(s.GravFlipped ? 2 : 0) |
-			(s.DualActive ? 1 : 0);
+		int mode = (s.Mini ? 2 : 0) | (s.GravFlipped ? 1 : 0);
 		int screenY = SharedPhysics.NesPlayerScreenY_px(
 			s.Y_fixed, s.CameraY_fixed) >> 1;
 		int velY = s.VelY_fixed >> 6;
@@ -3994,8 +5366,7 @@ public class PathfinderEngine
 			(s.PrevInputHeld ? 2 : 0) |
 			(s.AirPressLatch ? 4 : 0) |
 			(s.Orbed ? 8 : 0) |
-			(s.BlackOrbed ? 16 : 0) |
-			((s.Dashing & 0x07) << 5);
+			(s.BlackOrbed ? 16 : 0);
 		int slope = (s.SlopeType & 0xFF) |
 			((s.LastSlopeType & 0xFF) << 8) |
 			((Math.Min(s.SlopeFrames, 7) & 0x07) << 16) |
@@ -4005,26 +5376,11 @@ public class PathfinderEngine
 		int camera = (s.CameraY_fixed & 0xFF) |
 			((s.ScrollYSubpx & 0xFF) << 8) |
 			(((s.TargetCameraY_fixed >> 8) & 0x3FF) << 16);
-		int p2 = 0;
-		if (s.DualActive)
-		{
-			int p2ScreenY = SharedPhysics.NesPlayerScreenY_px(
-				s.P2_Y_fixed, s.CameraY_fixed) >> 2;
-			// Keep selection deterministic across processes; System.HashCode is
-			// deliberately randomized and this value participates in BFS ordering.
-			unchecked
-			{
-				p2 = p2ScreenY;
-				p2 = p2 * 397 + (s.P2_VelY_fixed >> 6);
-				p2 = p2 * 397 + s.GameMode;
-				p2 = p2 * 397 + (s.P2_Mini ? 1 : 0);
-				p2 = p2 * 397 + (s.P2_GravFlipped ? 1 : 0);
-				p2 = p2 * 397 + (s.P2_OnGround ? 1 : 0);
-				p2 = p2 * 397 + (s.P2_PrevInputHeld ? 1 : 0);
-				p2 = p2 * 397 + (s.P2_AirPressLatch ? 1 : 0);
-			}
-		}
-		return (mode, screenY, velY, motion, slope, horizontal, camera, p2);
+		// Spider orb/pad handlers consume these persistent NES globals. Two states
+		// with the same visible trajectory but different stale eject bytes can land
+		// on opposite sides of a later hazard.
+		int ejection = s.EjectU | (s.EjectD << 8);
+		return (mode, screenY, velY, motion, slope, horizontal, camera, ejection);
 	}
 
 	private static bool TryFindBfsVerticalRouteSplit(List<SimState> candidates,
@@ -4085,16 +5441,41 @@ public class PathfinderEngine
 		return upperCount >= 512 && lowerCount >= 512;
 	}
 
+	private static string BfsRainbowDiagnosticState(string label,
+		in SimState state)
+	{
+		return $"[RAINBOW_STATE] {label} x={state.X_fixed} y={state.Y_fixed} " +
+			$"vy={state.VelY_fixed} vx={state.VelX_fixed} gm={state.GameMode} " +
+			$"grav={(state.GravFlipped ? 1 : 0)} mini={(state.Mini ? 1 : 0)} " +
+			$"ground={(state.OnGround ? 1 : 0)} prev={(state.PrevInputHeld ? 1 : 0)} " +
+			$"latch={(state.AirPressLatch ? 1 : 0)} dash={state.Dashing} " +
+			$"cam={state.CameraY_fixed} target={state.TargetCameraY_fixed} " +
+			$"scroll={state.ScrollYSubpx} timer={state.ExitPortalTimer} " +
+			$"ptr={state.NesSprDataPtr} exitX={state.RainbowExitPortalX_px} " +
+			$"exitMode={state.RainbowExitTargetModePlusOne}";
+	}
+
 	private void RunBFS(int startX_px, int startY_px, int startSpeedUiIndex, int startGameMode, bool startGravFlipped, bool startMini)
 	{
+		const int BaseCoinFrontierCap = 120000;
+		int coinFrontierCap = int.TryParse(
+			Environment.GetEnvironmentVariable("FAMIDASH_BFS_CAP"), out int diagnosticCap)
+			? Math.Max(BaseCoinFrontierCap, diagnosticCap)
+			: BaseCoinFrontierCap;
+		bool routeDiagnostics = Environment.GetEnvironmentVariable(
+			"FAMIDASH_ROUTE_DIAG") == "1";
+		int rainbowEndRejectLogged = 0;
+		int diagnosticSpiderOrbKey = routeDiagnostics
+			? _nesSpritesArr.FirstOrDefault(sprite =>
+				sprite.SpriteId == 85 && sprite.AnchorX_px >= 10000 &&
+				sprite.AnchorX_px <= 11000).ProcessKey
+			: -1;
 		Stopwatch stopwatch = Stopwatch.StartNew();
 		BfsRouteArchive? routeArchive = null;
 		bool routeBacktrackAttempted = false;
-		int backtrackRouteMaxY = int.MaxValue;
-		int backtrackRouteTargetX = -1;
 		if (Verbose)
 		{
-			_log.WriteLine($"[BFS] Starting exhaustive BFS exploration (frontier cap={120000})");
+			_log.WriteLine($"[BFS] Starting exhaustive BFS exploration (frontier cap={BaseCoinFrontierCap})");
 		}
 		if (Verbose)
 		{
@@ -4146,11 +5527,14 @@ public class PathfinderEngine
 			int num5 = -1;
 			int num6 = -1;
 			int num7 = -1;
+			int bestWinningTimingScore = int.MaxValue;
 			bool item = false;
 			SimState simState2 = default(SimState);
 			int num8 = -1;
 			int num9 = -1;
 			int num10 = startX_px;
+			List<bool>? primaryFailedInputs = null;
+			int primaryFailedX = startX_px;
 			int num11 = 240000;
 			SimState[] rState = new SimState[num11];
 			bool[] rAlive = new bool[num11];
@@ -4166,7 +5550,28 @@ public class PathfinderEngine
 			// different records to a slot.  Keep those phases in the dedup key so the
 			// BFS cannot discard a valid branch merely because player Y/velocity match.
 			Dictionary<BfsDedupKey, int> dictionary = new Dictionary<BfsDedupKey, int>(num11);
-			for (int frame = 0; frame < 28800; frame++)
+			int bfsStartFrame = 0;
+			int lastRainbowOutcomeCount = -1;
+			if (DebugBfsPrefixInputs is { Count: > 0 } prefixInputs)
+			{
+				for (int prefixFrame = 0; prefixFrame < prefixInputs.Count; prefixFrame++)
+				{
+					_frameCounter = prefixFrame;
+					if (!StepFrame(ref s, prefixInputs[prefixFrame], out bool prefixEnded) ||
+						prefixEnded)
+					{
+						throw new InvalidOperationException(
+							$"BFS diagnostic prefix stopped at frame {prefixFrame}.");
+					}
+					list.Add(new[] { 0 });
+					list2.Add(new[] { prefixInputs[prefixFrame] });
+				}
+				frontier[0] = s;
+				bfsStartFrame = prefixInputs.Count;
+				num3 = s.X_fixed >> 8;
+				num10 = num3;
+			}
+			for (int frame = bfsStartFrame; frame < 28800; frame++)
 			{
 				if (frontier.Count <= 0)
 				{
@@ -4201,74 +5606,61 @@ public class PathfinderEngine
 				{
 					int index6 = k >> 1;
 					bool input2 = (k & 1) == 1;
-					SimState s8 = frontier[index6].Clone();
+					SimState parentState = frontier[index6];
+					SimState s8 = parentState.Clone();
 					bool endLevel3;
-					bool flag14 = StepFrame(ref s8, input2, out endLevel3);
-					if (flag14 && !endLevel3)
+					bool flag14;
+					if (parentState.RainbowShadows != null)
 					{
-						bool num165 = s8.RainbowMaxMode > 0 && frontier[index6].RainbowMaxMode == 0;
-						bool flag15 = s8.RainbowShadows != null;
-						bool endLevel4;
-						if (num165)
+						flag14 = StepBfsRainbowEnsemble(ref s8, in parentState,
+							input2, out endLevel3);
+					}
+					else
+					{
+						AdvanceBfsTimingPreference(ref s8, in parentState, input2);
+						flag14 = StepFrame(ref s8, input2, out endLevel3);
+						int rainbowModeCount = s8.RainbowPortalModeCount;
+						s8.RainbowPortalModeCount = 0;
+						s8.RainbowForcedModePlusOne = 0;
+						s8.RainbowBranchEnded = endLevel3;
+						if (flag14 && rainbowModeCount > 0)
 						{
-							int rainbowMaxMode = s8.RainbowMaxMode;
-							SimState[] array12 = new SimState[rainbowMaxMode - 1];
-							int num166 = 0;
-							for (int num167 = 0; num167 < rainbowMaxMode && flag14; num167++)
+							SimState[] rainbowShadows = new SimState[rainbowModeCount - 1];
+							int created = 0;
+							for (int mode = 1; mode < rainbowModeCount && flag14; mode++)
 							{
-								if (num167 != s8.GameMode)
+								SimState alternate = parentState.CloneBranch();
+								alternate.RainbowForcedModePlusOne = mode + 1;
+								AdvanceBfsTimingPreference(ref alternate,
+									in parentState, input2);
+								bool alternateAlive = StepFrame(ref alternate, input2,
+									out bool alternateEnded);
+								int alternateModeCount = alternate.RainbowPortalModeCount;
+								alternate.RainbowPortalModeCount = 0;
+								alternate.RainbowForcedModePlusOne = 0;
+								alternate.RainbowBranchEnded = alternateEnded;
+								if (!alternateAlive || alternateModeCount != rainbowModeCount)
 								{
-									SimState s9 = frontier[index6].Clone();
-									s9.GameMode = num167;
-									s9.RainbowMaxMode = rainbowMaxMode;
-									s9.RainbowShadows = null;
-									if (frontier[index6].GameMode == 6 || frontier[index6].GameMode == 10)
-									{
-										s9.VelY_fixed = 0;
-									}
-									if (!StepFrame(ref s9, input2, out endLevel4))
-									{
-										s9.ProcessedSprites.Return();
-										flag14 = false;
-										for (int num168 = 0; num168 < num166; num168++)
-										{
-											array12[num168].ProcessedSprites.Return();
-										}
-									}
-									else
-									{
-										array12[num166++] = s9;
-									}
+									s8.RainbowFailureModePlusOne = alternate.GameMode + 1;
+									s8.RainbowFailureX_px = alternate.X_fixed >> 8;
+									s8.RainbowFailureY_px = alternate.Y_fixed >> 8;
+									s8.DeathType = alternate.DeathType;
+									alternate.ReturnAllSpriteResources();
+									flag14 = false;
+									for (int i = 0; i < created; i++)
+										rainbowShadows[i].ReturnAllSpriteResources();
+								}
+								else
+								{
+									rainbowShadows[created++] = alternate;
 								}
 							}
 							if (flag14)
 							{
-								s8.RainbowShadows = array12;
-							}
-						}
-						else if (flag15)
-						{
-								SimState[]? rainbowShadows = s8.RainbowShadows;
-								for (int num169 = 0; rainbowShadows != null && num169 < rainbowShadows.Length && flag14; num169++)
-							{
-								if (!StepFrame(ref rainbowShadows[num169], input2, out endLevel4))
-								{
-									flag14 = false;
-									rainbowShadows[num169].ProcessedSprites.Return();
-									for (int num170 = num169 + 1; num170 < rainbowShadows.Length; num170++)
-									{
-										rainbowShadows[num170].ProcessedSprites.Return();
-									}
-									s8.RainbowShadows = null;
-								}
-							}
-							if (flag14 && s8.RainbowMaxMode == 0 && s8.RainbowShadows != null)
-							{
-								for (int num171 = 0; num171 < s8.RainbowShadows.Length; num171++)
-								{
-									s8.RainbowShadows[num171].ProcessedSprites.Return();
-								}
-								s8.RainbowShadows = null;
+								s8.RainbowShadows = rainbowShadows;
+								endLevel3 = s8.RainbowBranchEnded;
+								for (int i = 0; i < rainbowShadows.Length; i++)
+									endLevel3 &= rainbowShadows[i].RainbowBranchEnded;
 							}
 						}
 					}
@@ -4314,6 +5706,7 @@ public class PathfinderEngine
 				List<string>[]? partGravDeathLogs = ((Verbose && frame >= 1890) ? new List<string>[workerCount] : null);
 				bool[] partHasWin = new bool[workerCount];
 				int[] partWinCoins = new int[workerCount];
+				int[] partWinTimingScore = new int[workerCount];
 				int[] partWinParent = new int[workerCount];
 				bool[] partWinInput = new bool[workerCount];
 				SimState[] partWinState = new SimState[workerCount];
@@ -4337,6 +5730,7 @@ public class PathfinderEngine
 					List<string>? list32 = ((Verbose && frame >= 1890) ? new List<string>(3) : null);
 					bool flag11 = false;
 					int num158 = 0;
+					int bestWorkerTimingScore = int.MaxValue;
 					int num159 = -1;
 					bool flag12 = false;
 					SimState simState12 = default(SimState);
@@ -4347,11 +5741,41 @@ public class PathfinderEngine
 						if (rEnd[num160])
 						{
 							SimState s6 = rState[num160];
+							// Crossing the deterministic exit in every random mode is not
+							// enough by itself.  A route that reaches level-end while those
+							// outcomes still have distinct states never satisfied the common
+							// exit-position contract and must not be reported as a solution.
+							if (s6.RainbowShadows != null &&
+								TryGetCommonRainbowExit(ref s6, out _, out _))
+							{
+								SimState[] unconvergedShadows = s6.RainbowShadows!;
+								if (routeDiagnostics && System.Threading.Interlocked.CompareExchange(
+									ref rainbowEndRejectLogged, 1, 0) == 0)
+								{
+									Console.Error.WriteLine(
+										$"[RAINBOW_UNCONVERGED_END] f={frame} branches={1 + unconvergedShadows.Length}");
+									Console.Error.WriteLine(BfsRainbowDiagnosticState("main", in s6));
+									for (int branchIndex = 0;
+										branchIndex < unconvergedShadows.Length; branchIndex++)
+									{
+										SimState branch = unconvergedShadows[branchIndex];
+										Console.Error.WriteLine(BfsRainbowDiagnosticState(
+											$"s{branchIndex + 1}", in branch));
+									}
+								}
+								s6.ReturnAllSpriteResources();
+								num154++;
+								continue;
+							}
 							int num162 = CountBfsCoins(ref s6);
-							if (!flag11 || num162 > num158)
+							int timingScore = BfsTimingPreferenceScore(ref s6);
+							if (!flag11 || num162 > num158 ||
+								(num162 == num158 &&
+								 timingScore < bestWorkerTimingScore))
 							{
 								flag11 = true;
 								num158 = num162;
+								bestWorkerTimingScore = timingScore;
 								num159 = num161;
 								flag12 = flag13;
 								simState12 = s6;
@@ -4403,16 +5827,6 @@ public class PathfinderEngine
 						else
 						{
 							SimState s7 = rState[num160];
-							bool leftArchivedUpperRoute = routeBacktrackAttempted &&
-								backtrackRouteTargetX > 0 &&
-								(s7.X_fixed >> 8) < backtrackRouteTargetX &&
-								(s7.Y_fixed >> 8) > backtrackRouteMaxY;
-							if (leftArchivedUpperRoute)
-							{
-								s7.ReturnAllSpriteResources();
-								num154++;
-								continue;
-							}
 							int num164 = CountBfsCoins(ref s7);
 							int item2 = BfsScore(ref s7, num164);
 							list26.Add(s7);
@@ -4446,6 +5860,7 @@ public class PathfinderEngine
 					}
 					partHasWin[wi] = flag11;
 					partWinCoins[wi] = num158;
+					partWinTimingScore[wi] = bestWorkerTimingScore;
 					partWinParent[wi] = num159;
 					partWinInput[wi] = flag12;
 					partWinState[wi] = simState12;
@@ -4456,12 +5871,16 @@ public class PathfinderEngine
 					if (partHasWin[i])
 					{
 						int num20 = partWinCoins[i];
-						if (num5 < 0 || num20 > num7)
+						int timingScore = partWinTimingScore[i];
+						if (num5 < 0 || num20 > num7 ||
+							(num20 == num7 &&
+							 timingScore < bestWinningTimingScore))
 						{
 							num5 = frame;
 							num6 = partWinParent[i];
 							item = partWinInput[i];
 							num7 = num20;
+							bestWinningTimingScore = timingScore;
 							simState2 = partWinState[i];
 							_log.WriteLine($"[BFS] Level complete at frame {frame}! coins={num20} X\ufffd{simState2.X_fixed >> 8}px");
 						}
@@ -4636,6 +6055,22 @@ public class PathfinderEngine
 				if (list3.Count == 0 && num5 < 0 && routeArchive != null &&
 					!routeBacktrackAttempted)
 				{
+					// Preserve the primary search result before rewinding. A route fallback
+					// is exploratory and must never replace a farther failed path with a
+					// worse one (Windy Landscape exposed this as 78% becoming 21%).
+					if (num9 >= 0 && list.Count > 0)
+					{
+						List<bool> savedInputs = new();
+						int savedIndex = num9;
+						for (int savedFrame = num8; savedFrame >= 0; savedFrame--)
+						{
+							savedInputs.Add(list2[savedFrame][savedIndex]);
+							savedIndex = list[savedFrame][savedIndex];
+						}
+						savedInputs.Reverse();
+						primaryFailedInputs = savedInputs;
+						primaryFailedX = num10;
+					}
 					routeBacktrackAttempted = true;
 					foreach (SimState state in frontier)
 						state.ReturnAllSpriteResources();
@@ -4647,16 +6082,8 @@ public class PathfinderEngine
 					list.Add(routeArchive.Parents);
 					list2.Add(routeArchive.Inputs);
 					frontier = routeArchive.States;
-					for (int restoredIndex = 0; restoredIndex < frontier.Count; restoredIndex++)
-					{
-						SimState restoredState = frontier[restoredIndex];
-						restoredState.BfsReserved = false;
-						frontier[restoredIndex] = restoredState;
-					}
 					int restoredFrame = routeArchive.Frame;
 					int restoredSplitY = routeArchive.SplitY;
-					backtrackRouteMaxY = restoredSplitY + 32;
-					backtrackRouteTargetX = routeArchive.TargetX;
 					routeArchive = null;
 
 					num3 = frontier.Max(state => state.X_fixed >> 8);
@@ -4674,9 +6101,14 @@ public class PathfinderEngine
 						}
 					}
 					_log.WriteLine($"[BFS_BACKTRACK] dead end at frame {frame}; " +
-						$"restoring {frontier.Count} upper-route states from frame " +
-						$"{restoredFrame} (maxY={backtrackRouteMaxY}, " +
-						$"targetX={backtrackRouteTargetX})");
+						$"restoring {frontier.Count} fork states from frame " +
+						$"{restoredFrame} (splitY={restoredSplitY})");
+					if (routeDiagnostics)
+					{
+						Console.Error.WriteLine($"[BFS_BACKTRACK] dead={frame} " +
+							$"restore={restoredFrame} states={frontier.Count} " +
+							$"splitY={restoredSplitY}");
+					}
 					frame = restoredFrame;
 					continue;
 				}
@@ -4685,18 +6117,29 @@ public class PathfinderEngine
 					_log.WriteLine($"[BFS] ALL DEAD at frame {frame} (X~{num3}px pct={num13}% expanded={frontier.Count * 2} deaths={num15})");
 					Console.Error.WriteLine($"[BFS] Frontier before expansion: {frontier.Count} states");
 					_log.WriteLine($"[BFS] Frontier before expansion: {frontier.Count} states");
-					for (int num42 = 0; num42 < frontier.Count; num42++)
+					int frontierSampleCount = Math.Min(frontier.Count, 16);
+					for (int num42 = 0; num42 < frontierSampleCount; num42++)
 					{
 						SimState simState4 = frontier[num42];
 						Console.Error.WriteLine($"  [{num42}] X={simState4.X_fixed >> 8} Y={simState4.Y_fixed >> 8} VelY=0x{simState4.VelY_fixed:X} grav={simState4.GravFlipped} mini={simState4.Mini}");
 						_log.WriteLine($"  [{num42}] X={simState4.X_fixed >> 8} Y={simState4.Y_fixed >> 8} VelY=0x{simState4.VelY_fixed:X} grav={simState4.GravFlipped} mini={simState4.Mini}");
 					}
+					if (frontier.Count > frontierSampleCount)
+					{
+						string omitted = $"  ... {frontier.Count - frontierSampleCount} additional states omitted";
+						Console.Error.WriteLine(omitted);
+						_log.WriteLine(omitted);
+					}
 					int[] array4 = new int[13];
+					int[] rainbowModeDeaths = new int[12];
 					for (int num43 = 0; num43 < expandCount; num43++)
 					{
 						if (!rAlive[num43] && !rEnd[num43])
 						{
 							array4[rState[num43].DeathType]++;
+							int failedMode = rState[num43].RainbowFailureModePlusOne - 1;
+							if ((uint)failedMode < (uint)rainbowModeDeaths.Length)
+								rainbowModeDeaths[failedMode]++;
 						}
 					}
 					string[] array5 = new string[13]
@@ -4714,6 +6157,20 @@ public class PathfinderEngine
 					}
 					_log.WriteLine("[BFS] Death types: " + string.Join(" ", list14));
 					Console.Error.WriteLine("[BFS] Death types: " + string.Join(" ", list14));
+					List<string> rainbowDeaths = new List<string>();
+					for (int failedMode = 0; failedMode < rainbowModeDeaths.Length;
+						failedMode++)
+					{
+						if (rainbowModeDeaths[failedMode] > 0)
+							rainbowDeaths.Add($"m{failedMode}={rainbowModeDeaths[failedMode]}");
+					}
+					if (rainbowDeaths.Count > 0)
+					{
+						string rainbowDeathText = "[BFS] Rainbow failing modes: " +
+							string.Join(" ", rainbowDeaths);
+						_log.WriteLine(rainbowDeathText);
+						Console.Error.WriteLine(rainbowDeathText);
+					}
 					int num45 = 0;
 					for (int num46 = 0; num46 < expandCount; num46++)
 					{
@@ -4727,7 +6184,11 @@ public class PathfinderEngine
 							int index = num46 >> 1;
 							SimState simState6 = frontier[index];
 							_log.WriteLine($"[BFS_DEAD] parent X=0x{simState6.X_fixed:X} Y=0x{simState6.Y_fixed:X} VelY=0x{simState6.VelY_fixed:X} grav={simState6.GravFlipped} mini={simState6.Mini} dual={simState6.DualActive} P2_Y=0x{simState6.P2_Y_fixed:X} P2_grav={simState6.P2_GravFlipped} | child X=0x{simState5.X_fixed:X} Y=0x{simState5.Y_fixed:X} VelY=0x{simState5.VelY_fixed:X} grav={simState5.GravFlipped} mini={simState5.Mini} dt={simState5.DeathType} inp={(num46 & 1) == 1}");
-							Console.Error.WriteLine($"[BFS_DEAD] parent Y={simState6.Y_fixed >> 8} VelY=0x{simState6.VelY_fixed:X} grav={simState6.GravFlipped} | child Y={simState5.Y_fixed >> 8} VelY=0x{simState5.VelY_fixed:X} dt={array5[simState5.DeathType]} inp={(num46 & 1) == 1}");
+							string rainbowFailure = simState5.RainbowFailureModePlusOne > 0
+								? $" rainbowMode={simState5.RainbowFailureModePlusOne - 1}" +
+								  $" rainbowXY=({simState5.RainbowFailureX_px},{simState5.RainbowFailureY_px})"
+								: "";
+							Console.Error.WriteLine($"[BFS_DEAD] parent Y={simState6.Y_fixed >> 8} VelY=0x{simState6.VelY_fixed:X} grav={simState6.GravFlipped} | child Y={simState5.Y_fixed >> 8} VelY=0x{simState5.VelY_fixed:X} dt={array5[simState5.DeathType]} inp={(num46 & 1) == 1}{rainbowFailure}");
 							num45++;
 						}
 					}
@@ -4830,18 +6291,11 @@ public class PathfinderEngine
 				for (int num62 = 0; num62 < list3.Count; num62++)
 				{
 					SimState s3 = list3[num62];
-					BfsDedupKey key = new BfsDedupKey(
-						BfsQuantizeKey(ref s3),
-						s3.X_fixed,
-						s3.CameraY_fixed,
-						s3.TargetCameraY_fixed,
-						s3.ScrollYSubpx,
-						s3.NesSprDataPtr,
-						BfsRuntimeHash(ref s3));
+					BfsDedupKey key = BuildBfsDedupKey(ref s3);
 					if (!dictionary.TryGetValue(key, out var value3) ||
 						candScore[num62] < candScore[value3] ||
 						(candScore[num62] == candScore[value3] &&
-						 list3[value3].BfsReserved && !s3.BfsReserved))
+						 list3[value3].BfsSpiderReserved && !s3.BfsSpiderReserved))
 					{
 						dictionary[key] = num62;
 					}
@@ -4849,6 +6303,42 @@ public class PathfinderEngine
 				if (Verbose && list3.Count > 0 && list3.Count != dictionary.Count)
 				{
 					Console.Error.WriteLine($"[DEDUP] f={frame} cand={list3.Count} deduped={dictionary.Count} (lost {list3.Count - dictionary.Count})");
+				}
+				int diagnosticCandidateOrbCount = 0;
+				int diagnosticDedupOrbCount = 0;
+				int diagnosticRawOrbCount = 0;
+				int diagnosticRawTeleportCount = 0;
+				int diagnosticAliveTeleportCount = 0;
+				int diagnosticCandidateTeleportCount = 0;
+				int diagnosticDedupTeleportCount = 0;
+				int diagnosticX = list3.Count > 0 ? list3[0].X_fixed >> 8 : -1;
+				if (routeDiagnostics && diagnosticSpiderOrbKey >= 0 &&
+					diagnosticX >= 10380 && diagnosticX <= 10440)
+				{
+					for (int resultIndex = 0; resultIndex < expandCount; resultIndex++)
+					{
+						SimState resultState = rState[resultIndex];
+						if (resultState.ProcessedSprites.Contains(diagnosticSpiderOrbKey))
+							diagnosticRawOrbCount++;
+						if (resultState.GameMode == 5 && !resultState.GravFlipped &&
+							(resultState.Y_fixed >> 8) >= 360)
+						{
+							diagnosticRawTeleportCount++;
+							if (rAlive[resultIndex])
+								diagnosticAliveTeleportCount++;
+						}
+					}
+					diagnosticCandidateOrbCount = list3.Count(state =>
+						state.ProcessedSprites.Contains(diagnosticSpiderOrbKey));
+					diagnosticDedupOrbCount = dictionary.Values.Count(candidateIndex =>
+						list3[candidateIndex].ProcessedSprites.Contains(diagnosticSpiderOrbKey));
+					diagnosticCandidateTeleportCount = list3.Count(state =>
+						state.GameMode == 5 && !state.GravFlipped &&
+						(state.Y_fixed >> 8) >= 360);
+					diagnosticDedupTeleportCount = dictionary.Values.Count(candidateIndex =>
+						list3[candidateIndex].GameMode == 5 &&
+						!list3[candidateIndex].GravFlipped &&
+						(list3[candidateIndex].Y_fixed >> 8) >= 360);
 				}
 				if (Verbose && frame >= 4400 && frame <= 4600 && dictionary.Count > 0)
 				{
@@ -4940,35 +6430,82 @@ public class PathfinderEngine
 						_log.WriteLine($"[GF_PIPE] f={frame} frontGF={num69} gfDied={num17}{text} candGF={num66} dedupGF={num67} gfY=[{((num70 == int.MaxValue) ? "N/A" : num70.ToString())}..{((num71 == int.MinValue) ? "N/A" : num71.ToString())}]");
 					}
 				}
-				// Search-safety seeds are additive. Keep their descendants outside the
-				// ordinary 120k selection so they can never consume a slot that the
-				// established beam would otherwise retain (Windy Landscape/Heliopolis).
+				// Additive seeds are one-generation candidates. Their children rejoin
+				// the ordinary beam, matching the selector that produced the known-good
+				// Windy Landscape and Heliopolis paths.
 				List<int> list15 = new List<int>(dictionary.Count);
-				List<int> inheritedReservedIndexes = new List<int>();
+				List<int> inheritedSpiderReserveIndexes = new List<int>();
 				foreach (int candidateIndex in dictionary.Values)
 				{
-					if (list3[candidateIndex].BfsReserved)
-						inheritedReservedIndexes.Add(candidateIndex);
+					SimState candidate = list3[candidateIndex];
+					if (candidate.RainbowShadows == null &&
+						candidate.BfsSpiderReserved && candidate.GameMode == 5)
+					{
+						inheritedSpiderReserveIndexes.Add(candidateIndex);
+					}
 					else
+					{
+						if (candidate.BfsSpiderReserved)
+						{
+							candidate.BfsSpiderReserved = false;
+							list3[candidateIndex] = candidate;
+						}
 						list15.Add(candidateIndex);
+					}
 				}
 				list15.Sort((int a, int b) =>
 				{
 					return candScore[a].CompareTo(candScore[b]);
 				});
-				inheritedReservedIndexes.Sort((int a, int b) =>
+				inheritedSpiderReserveIndexes.Sort((int a, int b) =>
 					candScore[a].CompareTo(candScore[b]));
-				const int BaseCoinFrontierCap = 120000;
-				int num75 = PreferCoins ? BaseCoinFrontierCap : int.MaxValue;
+				int nextRainbowPortalX;
+				int rainbowOutcomeCount = BfsRainbowSearchOutcomeCount(
+					list3, list15, out nextRainbowPortalX);
+				bool rainbowSelectiveSearch = rainbowOutcomeCount > 0;
+				int rainbowFrontierCap = rainbowSelectiveSearch
+					? BfsRainbowFrontierCap(rainbowOutcomeCount)
+					: int.MaxValue;
+				if (rainbowSelectiveSearch)
+				{
+					list15 = OrderBfsRainbowCandidates(
+						list3, list15, rainbowFrontierCap);
+				}
+				if (Verbose && rainbowSelectiveSearch &&
+					(frame % 30 == 0 || rainbowOutcomeCount != lastRainbowOutcomeCount))
+				{
+					string portalText = nextRainbowPortalX >= 0
+						? nextRainbowPortalX.ToString()
+						: "active";
+					_log.WriteLine($"[RAINBOW_SELECT] f={frame} outcomes={rainbowOutcomeCount} " +
+						$"cap={rainbowFrontierCap} candidates={list15.Count} portalX={portalText}");
+				}
+				lastRainbowOutcomeCount = rainbowOutcomeCount;
+				// A recovered corridor uses the same safe cap as the primary search.
+				// Expanding a retry to hundreds of thousands of states made a known-dead
+				// route dramatically slower without exposing an additional input branch.
+				int num75 = rainbowSelectiveSearch
+					? rainbowFrontierCap
+					: (PreferCoins ? coinFrontierCap : int.MaxValue);
 				int selectedCapacity = Math.Min(dictionary.Count, num75);
 				List<SimState> list16 = new List<SimState>(selectedCapacity);
 				List<int> list17 = new List<int>(selectedCapacity);
 				List<bool> list18 = new List<bool>(selectedCapacity);
+				HashSet<int>? recoverySelectedIndexes = routeBacktrackAttempted
+					? new HashSet<int>()
+					: null;
 				// Preserve the established beam ordering exactly. Long-lived route recovery
 				// is handled by the independent archive below, not by changing which ordinary
 				// candidates this selector retains.
-				int num76 = Math.Min(PreferCoins ? num75 * 3 / 4 : list15.Count,
-					list15.Count);
+				// A cap is an upper bound, not a target.  If every deduplicated state
+				// fits, retain every one; the score/diversity split is needed only when
+				// actual truncation is unavoidable.
+				int scorePrefixCount = rainbowSelectiveSearch
+					? Math.Min(num75, list15.Count)
+					: (!PreferCoins || list15.Count <= num75
+						? list15.Count
+						: num75 * 3 / 4);
+				int num76 = Math.Min(scorePrefixCount, list15.Count);
 				for (int num77 = 0; num77 < num76; num77++)
 				{
 					if (list16.Count >= num75)
@@ -4979,6 +6516,7 @@ public class PathfinderEngine
 					list16.Add(list3[index3]);
 					list17.Add(list4[index3]);
 					list18.Add(list5[index3]);
+					recoverySelectedIndexes?.Add(index3);
 				}
 				if (!PreferCoins && list15.Count > num76)
 				{
@@ -4992,9 +6530,10 @@ public class PathfinderEngine
 						list16.Add(list3[index4]);
 						list17.Add(list4[index4]);
 						list18.Add(list5[index4]);
+						recoverySelectedIndexes?.Add(index4);
 					}
 				}
-				else if (list15.Count > num76)
+				else if (!rainbowSelectiveSearch && list15.Count > num76)
 				{
 					int num79 = 16;
 					Dictionary<int, int> dictionary2 = new Dictionary<int, int>();
@@ -5036,10 +6575,15 @@ public class PathfinderEngine
 					// mode/size transition. These are additions above the ordinary frontier
 					// cap, so portal awareness never evicts an existing candidate.
 					const int TransitionApproachHorizonPx = 2048;
-					const int TransitionSeedsPerPortal = 128;
+					// A route-archive retry exists specifically because the ordinary tied-score
+					// beam already discarded a needed corridor.  Preserve more approach phases
+					// during that retry, additively, until it reaches the transition portal.
+					// The ordinary pass keeps a bounded but broad phase sample; recovery gets
+					// extra room because it is already isolated to a failed corridor.
+					int transitionSeedsPerPortal = routeBacktrackAttempted ? 2048 : 128;
 					// One representative per vertical/velocity/input phase prevents all of
 					// the reserved slots from collapsing onto the same attractive but
-					// ultimately invalid arc.  These states are additions above the normal
+					// ultimately invalid arc. These states are additions above the normal
 					// cap, so this can only preserve paths.
 					Dictionary<(int Portal, int Phase), (int Index, int Distance)>
 						transitionPhaseBest = new();
@@ -5080,22 +6624,24 @@ public class PathfinderEngine
 						}
 						var candidate = phaseCandidate.Value;
 						queue.Enqueue(candidate, -candidate.Distance);
-						if (queue.Count > TransitionSeedsPerPortal)
+						if (queue.Count > transitionSeedsPerPortal)
 							queue.Dequeue();
 					}
 					HashSet<int> seededTransitionCandidates = new HashSet<int>();
-					foreach (var queue in transitionQueues.Values)
+					foreach (var portalQueue in transitionQueues)
 					{
+						int portalKey = portalQueue.Key;
+						var queue = portalQueue.Value;
 						foreach (var queued in queue.UnorderedItems)
 						{
 							int seedIndex = queued.Element.Index;
 							if (!seededTransitionCandidates.Add(seedIndex))
 								continue;
-							SimState seedState = list3[seedIndex];
-							seedState.BfsReserved = true;
-							list16.Add(seedState);
+						SimState seedState = list3[seedIndex];
+						list16.Add(seedState);
 							list17.Add(list4[seedIndex]);
 							list18.Add(list5[seedIndex]);
+							recoverySelectedIndexes?.Add(seedIndex);
 							int seedYBucket = (seedState.Y_fixed >> 8) / num79;
 							dictionary2.TryGetValue(seedYBucket, out int seedYCount);
 							dictionary2[seedYBucket] = seedYCount + 1;
@@ -5124,10 +6670,10 @@ public class PathfinderEngine
 						{
 							continue;
 						}
-						seedState.BfsReserved = true;
 						list16.Add(seedState);
 						list17.Add(list4[seedIndex]);
 						list18.Add(list5[seedIndex]);
+						recoverySelectedIndexes?.Add(seedIndex);
 						seededSizeModeCandidates.Add(seedIndex);
 						dictionary3[seedClass] = 1;
 						int seedYBucket = (seedState.Y_fixed >> 8) / num79;
@@ -5186,6 +6732,7 @@ public class PathfinderEngine
 							list16.Add(list3[index5]);
 							list17.Add(list4[index5]);
 							list18.Add(list5[index5]);
+							recoverySelectedIndexes?.Add(index5);
 							dictionary2[key3] = value7 + 1;
 							if (list3[index5].GravFlipped)
 							{
@@ -5205,76 +6752,188 @@ public class PathfinderEngine
 						}
 					}
 				}
-				// Exact state tracking can produce more than 120k future-distinct
-				// candidates whose ordinary score is tied. Preserve a bounded sample
-				// of missing trajectory phases after the normal selection. These are
-				// additions above the cap, so no already-retained path is displaced.
-				const int MaxTrajectoryPhaseSeeds = 8192;
-				int trajectoryPhaseSeedsAdded = 0;
+				// The recovery pass has already paid to restore a separate corridor and
+				// is allowed a larger frontier. The diversity predicates above can stop
+				// accepting candidates while tens of thousands of recovery slots remain
+				// unused. Fill only those unused slots in the existing score order; this
+				// retains every state already chosen by the selector and cannot remove a
+				// trajectory from the fallback search.
+				if (routeBacktrackAttempted && list16.Count < num75 &&
+					recoverySelectedIndexes != null)
+				{
+					for (int fillPos = num76;
+						fillPos < list15.Count && list16.Count < num75;
+						fillPos++)
+					{
+						int fillIndex = list15[fillPos];
+						if (!recoverySelectedIndexes.Add(fillIndex))
+							continue;
+						list16.Add(list3[fillIndex]);
+						list17.Add(list4[fillIndex]);
+						list18.Add(list5[fillIndex]);
+					}
+				}
+				// Spider orb/pad destinations depend on persistent eject bytes that are
+				// invisible in the ordinary score. Keep a bounded, phase-distinct sample
+				// as additions above the normal beam, and carry only those spider samples
+				// forward while mode 5 remains active. This cannot displace an ordinary
+				// candidate or affect other game modes.
+				const int MaxSpiderPhaseReserve = 8192;
+				var selectedSpiderPhases = new HashSet<(int Mode, int ScreenY, int VelY,
+					int Motion, int Slope, int Horizontal, int Camera, int Ejection)>();
+				foreach (SimState selectedState in list16)
+				{
+					if (selectedState.RainbowShadows != null ||
+						selectedState.GameMode != 5)
+						continue;
+					SimState phaseState = selectedState;
+					selectedSpiderPhases.Add(BfsSpiderTrajectoryPhase(ref phaseState));
+				}
+				int spiderPhaseSeedsAdded = 0;
 				if (PreferCoins && list15.Count > num76)
 				{
-					var selectedTrajectoryPhases = new HashSet<(int Mode, int ScreenY,
-						int VelY, int Motion, int Slope, int Horizontal, int Camera, int P2)>();
-					foreach (SimState selectedState in list16)
-					{
-						SimState phaseState = selectedState;
-						selectedTrajectoryPhases.Add(BfsTrajectoryPhase(ref phaseState));
-					}
 					for (int seedPos = num76;
-						seedPos < list15.Count && trajectoryPhaseSeedsAdded < MaxTrajectoryPhaseSeeds;
+						seedPos < list15.Count && spiderPhaseSeedsAdded < MaxSpiderPhaseReserve;
 						seedPos++)
 					{
 						int seedIndex = list15[seedPos];
 						SimState seedState = list3[seedIndex];
-						if (!selectedTrajectoryPhases.Add(BfsTrajectoryPhase(ref seedState)))
+						if (seedState.RainbowShadows != null ||
+							seedState.GameMode != 5 ||
+							!selectedSpiderPhases.Add(BfsSpiderTrajectoryPhase(ref seedState)))
+						{
 							continue;
-						seedState.BfsReserved = true;
+						}
+						seedState.BfsSpiderReserved = true;
 						list16.Add(seedState);
 						list17.Add(list4[seedIndex]);
 						list18.Add(list5[seedIndex]);
-						trajectoryPhaseSeedsAdded++;
+						spiderPhaseSeedsAdded++;
 					}
 				}
-				if (Verbose && trajectoryPhaseSeedsAdded > 0 && frame % 20 == 0)
+				int inheritedSpiderReserveAdded = 0;
+				foreach (int reserveIndex in inheritedSpiderReserveIndexes)
 				{
-					_log.WriteLine($"[PHASE_SELECT] f={frame} added={trajectoryPhaseSeedsAdded} " +
-						$"ordinaryCap={num75} candidates={list15.Count}");
+					if (inheritedSpiderReserveAdded >= MaxSpiderPhaseReserve)
+						break;
+					SimState reserveState = list3[reserveIndex];
+					if (!selectedSpiderPhases.Add(BfsSpiderTrajectoryPhase(ref reserveState)))
+						continue;
+					list16.Add(reserveState);
+					list17.Add(list4[reserveIndex]);
+					list18.Add(list5[reserveIndex]);
+					inheritedSpiderReserveAdded++;
 				}
-				const int MaxInheritedReserveStates = 8192;
-				int inheritedReserveAdded = 0;
-				if (PreferCoins && inheritedReservedIndexes.Count > 0)
+				// Bias is a preference, never a hard input restriction. When the ordinary
+				// coin beam is capped, retain a small additive sample of timing-distinct
+				// states from outside its selected prefix. These states cannot displace the
+				// requested-bias path. If that path is unsafe, they carry the nearest local
+				// delay/advance through the obstacle and are rescored under the requested
+				// bias immediately afterward.
+				const int MaxTimingFallbackReserve = 4096;
+				int timingFallbackAdded = 0;
+				if (PreferCoins && Math.Abs(JumpTimingBias - 0.5) >= 0.01 &&
+					list15.Count > num76)
 				{
-					var selectedReservePhases = new HashSet<(int Mode, int ScreenY,
-						int VelY, int Motion, int Slope, int Horizontal, int Camera, int P2)>();
+					HashSet<SpriteSet> alreadySelected = new(list16.Count);
+					var timingPhases = new HashSet<(int Mode, int Gravity,
+						int Input, int Age, int ScreenY, int VelY, int Cost)>();
 					foreach (SimState selectedState in list16)
 					{
-						SimState phaseState = selectedState;
-						selectedReservePhases.Add(BfsTrajectoryPhase(ref phaseState));
+						alreadySelected.Add(selectedState.ProcessedSprites);
+						timingPhases.Add((selectedState.GameMode,
+							selectedState.GravFlipped ? 1 : 0,
+							selectedState.PrevInputHeld ? 1 : 0,
+							Math.Min(31, selectedState.BfsTimingOpportunityAge >> 1),
+							SharedPhysics.NesPlayerScreenY_px(selectedState.Y_fixed,
+								selectedState.CameraY_fixed) >> 3,
+							selectedState.VelY_fixed >> 7,
+							selectedState.BfsTimingLocalCost >> 12));
 					}
-					foreach (int reserveIndex in inheritedReservedIndexes)
+					for (int seedPos = num76; seedPos < list15.Count &&
+						timingFallbackAdded < MaxTimingFallbackReserve; seedPos++)
 					{
-						if (inheritedReserveAdded >= MaxInheritedReserveStates)
-							break;
-						SimState reserveState = list3[reserveIndex];
-						if (!selectedReservePhases.Add(BfsTrajectoryPhase(ref reserveState)))
+						int seedIndex = list15[seedPos];
+						SimState seedState = list3[seedIndex];
+						if (alreadySelected.Contains(seedState.ProcessedSprites))
 							continue;
-						list16.Add(reserveState);
-						list17.Add(list4[reserveIndex]);
-						list18.Add(list5[reserveIndex]);
-						inheritedReserveAdded++;
+						var phase = (seedState.GameMode,
+							seedState.GravFlipped ? 1 : 0,
+							seedState.PrevInputHeld ? 1 : 0,
+							Math.Min(31, seedState.BfsTimingOpportunityAge >> 1),
+							SharedPhysics.NesPlayerScreenY_px(seedState.Y_fixed,
+								seedState.CameraY_fixed) >> 3,
+							seedState.VelY_fixed >> 7,
+							seedState.BfsTimingLocalCost >> 12);
+						if (!timingPhases.Add(phase))
+							continue;
+						alreadySelected.Add(seedState.ProcessedSprites);
+						list16.Add(seedState);
+						list17.Add(list4[seedIndex]);
+						list18.Add(list5[seedIndex]);
+						timingFallbackAdded++;
 					}
 				}
-				if (Verbose && inheritedReserveAdded > 0 && frame % 20 == 0)
+				if (Verbose && timingFallbackAdded > 0 && frame % 30 == 0)
 				{
-					_log.WriteLine($"[RESERVE_SELECT] f={frame} added={inheritedReserveAdded} " +
-						$"available={inheritedReservedIndexes.Count}");
+					_log.WriteLine($"[TIMING_FALLBACK] f={frame} " +
+						$"bias={JumpTimingBias:F2} added={timingFallbackAdded}");
 				}
-
-				// When a capped search is visibly split into separate vertical corridors,
-				// keep an independent snapshot of the upper route. The ordinary search is
-				// unchanged; this snapshot is used only if its locally preferred route later
-				// reaches an all-dead wall. Dastardly's lower bypass remains safe for over a
-				// thousand frames before doing exactly that.
+				if (routeDiagnostics && diagnosticSpiderOrbKey >= 0 &&
+					diagnosticX >= 10380 && diagnosticX <= 10440)
+				{
+					int selectedOrbCount = list16.Count(state =>
+						state.ProcessedSprites.Contains(diagnosticSpiderOrbKey));
+					int selectedTeleportCount = list16.Count(state =>
+						state.GameMode == 5 && !state.GravFlipped &&
+						(state.Y_fixed >> 8) >= 360);
+					int readyParents = frontier.Count(state => state.GameMode == 5 &&
+						state.GravFlipped && (state.Y_fixed >> 8) >= 345 &&
+						(state.Y_fixed >> 8) <= 355);
+					int readyReleasedParents = frontier.Count(state => state.GameMode == 5 &&
+						state.GravFlipped && (state.Y_fixed >> 8) >= 345 &&
+						(state.Y_fixed >> 8) <= 355 && !state.PrevInputHeld);
+					int readyLatchedParents = frontier.Count(state => state.GameMode == 5 &&
+						state.GravFlipped && (state.Y_fixed >> 8) >= 345 &&
+						(state.Y_fixed >> 8) <= 355 && state.AirPressLatch);
+					string ejectPhases = string.Join(",", frontier
+						.Where(state => state.GameMode == 5 && state.GravFlipped &&
+							(state.Y_fixed >> 8) >= 345 && (state.Y_fixed >> 8) <= 355)
+						.GroupBy(state => state.EjectU)
+						.OrderByDescending(group => group.Count()).Take(8)
+						.Select(group => $"{group.Key:X2}:{group.Count()}"));
+					string activationPhases = diagnosticX >= 10405 && diagnosticX <= 10412
+						? string.Join(",", frontier
+							.Where(state => state.GameMode == 5 && state.GravFlipped &&
+								(state.Y_fixed >> 8) >= 348 && (state.Y_fixed >> 8) <= 354)
+							.GroupBy(state => (Y: state.Y_fixed >> 8, state.PrevInputHeld,
+								state.AirPressLatch, state.EjectU))
+							.OrderByDescending(group => group.Count()).Take(16)
+							.Select(group => $"{group.Key.Y}:p{(group.Key.PrevInputHeld ? 1 : 0)}" +
+								$"l{(group.Key.AirPressLatch ? 1 : 0)}e{group.Key.EjectU:X2}:" +
+								$"{group.Count()}"))
+						: "";
+					int minY = list16.Count > 0 ? list16.Min(state => state.Y_fixed >> 8) : -1;
+					int maxY = list16.Count > 0 ? list16.Max(state => state.Y_fixed >> 8) : -1;
+					Console.Error.WriteLine($"[SPIDER_ORB_SEARCH] f={frame} x={diagnosticX} " +
+						$"orb={diagnosticCandidateOrbCount}/{diagnosticDedupOrbCount}/{selectedOrbCount} " +
+						$"raw={diagnosticRawOrbCount}/{diagnosticRawTeleportCount} " +
+						$"tele={diagnosticAliveTeleportCount}/{diagnosticCandidateTeleportCount}/" +
+						$"{diagnosticDedupTeleportCount}/{selectedTeleportCount} " +
+						$"counts={list3.Count}/{dictionary.Count}/{list16.Count} " +
+						$"ready={readyParents}/{readyReleasedParents}/{readyLatchedParents} " +
+						$"ejU=[{ejectPhases}] phase=[{activationPhases}] y={minY}..{maxY} " +
+						$"seed={spiderPhaseSeedsAdded} inherited={inheritedSpiderReserveAdded}");
+				}
+				if (routeDiagnostics && routeBacktrackAttempted && frame % 30 == 0)
+				{
+					Console.Error.WriteLine($"[ROUTE_RECOVERY] f={frame} " +
+						$"x={list16[0].X_fixed >> 8} candidates={list15.Count} " +
+						$"selected={list16.Count} cap={num75}");
+				}
+				// When a capped search splits into separate vertical corridors, preserve
+				// the non-selected upper corridor. Restoring every corridor together simply
+				// lets the score choose the same lower dead end a second time.
 				const int MaxRouteArchiveStates = 60000;
 				if (PreferCoins && !routeBacktrackAttempted &&
 					list15.Count > BaseCoinFrontierCap &&
@@ -5285,40 +6944,118 @@ public class PathfinderEngine
 					if (TryGetUpcomingBfsTransitionPortal(ref routeProbe, 2048,
 						out BfsTransitionPortal routePortal))
 					{
-						List<int> upperRouteIndexes = new(Math.Min(upperRouteCount,
+						int routeSourceX = routeProbe.X_fixed >> 8;
+						List<int> forkRouteIndexes = new(Math.Min(upperRouteCount,
 							MaxRouteArchiveStates));
 						foreach (int candidateIndex in list15)
 						{
 							if ((list3[candidateIndex].Y_fixed >> 8) <= routeSplitY)
-								upperRouteIndexes.Add(candidateIndex);
+								forkRouteIndexes.Add(candidateIndex);
 						}
+						bool isInteriorBand = false;
+						int archiveSplitY = routeSplitY;
 
-						if (upperRouteIndexes.Count >= 2048 && routeArchive == null)
+						// Early jump arcs can look like separate routes even though they merge
+						// immediately. Prefer a materially later split when one remains visible;
+						// that snapshot is much closer to the actual corridor commitment and
+						// avoids replaying hundreds of frames of the same locally preferred path.
+						bool materiallyLaterSplit = routeArchive == null ||
+							routeSourceX >= routeArchive.SourceX + 256;
+						// Do not keep sliding the only fallback checkpoint into the
+						// final approach. A beam can discard the viable setup several
+						// jumps before the visible portal; rewinding to a snapshot taken
+						// after that commitment simply repeats the same dead corridor.
+						const int RouteCommitmentWindowPx = 768;
+						bool beforeCommitmentWindow =
+							routeSourceX <= routePortal.X - RouteCommitmentWindowPx;
+						if (forkRouteIndexes.Count >= 2048 && materiallyLaterSplit &&
+							beforeCommitmentWindow)
 						{
 							BfsRouteArchive replacement = new()
 							{
 								Frame = list.Count,
-								SplitY = routeSplitY,
-								TargetX = routePortal.X
+								SourceX = routeSourceX,
+								SplitY = archiveSplitY,
+								IsInteriorBand = isInteriorBand,
+								TargetX = routePortal.X,
+								TargetY = routePortal.Y
 							};
-							int archiveCount = Math.Min(MaxRouteArchiveStates,
-								upperRouteIndexes.Count);
+							// A straight even sample can retain tens of thousands of runtime-distinct
+							// states that nevertheless share the same physical arc.  Seed the archive
+							// with every distinct approach phase first, then use the remaining capacity
+							// for the ordinary even sample.  This keeps rare jump-off/slope phases needed
+							// to enter Dastardly's ship portal without changing the normal beam.
+							List<int> archiveIndexes = new(Math.Min(MaxRouteArchiveStates,
+								forkRouteIndexes.Count));
+							HashSet<int> archivedCandidateIndexes = new();
+							HashSet<(int X, int ScreenY, int VelY, int Motion, int Slope)>
+								archivedPhases = new();
+							foreach (int candidateIndex in forkRouteIndexes)
+							{
+								SimState phaseState = list3[candidateIndex];
+								int motion = (phaseState.OnGround ? 1 : 0) |
+									(phaseState.PrevInputHeld ? 2 : 0) |
+									(phaseState.AirPressLatch ? 4 : 0) |
+									(phaseState.GravFlipped ? 8 : 0);
+								int slope = (phaseState.SlopeType & 0xFF) |
+									((phaseState.LastSlopeType & 0xFF) << 8) |
+									((Math.Min(phaseState.SlopeFrames, 7) & 0x07) << 16) |
+									((Math.Min(phaseState.SlopeWasOnCounter, 7) & 0x07) << 19);
+								var phase = (
+									phaseState.X_fixed >> 7,
+									SharedPhysics.NesPlayerScreenY_px(phaseState.Y_fixed,
+										phaseState.CameraY_fixed) >> 1,
+									phaseState.VelY_fixed >> 5,
+									motion,
+									slope);
+								if (!archivedPhases.Add(phase))
+									continue;
+								archiveIndexes.Add(candidateIndex);
+								archivedCandidateIndexes.Add(candidateIndex);
+								if (archiveIndexes.Count >= MaxRouteArchiveStates)
+									break;
+							}
+							int desiredArchiveCount = Math.Min(MaxRouteArchiveStates,
+								forkRouteIndexes.Count);
+							for (int archivePos = 0;
+								archiveIndexes.Count < desiredArchiveCount &&
+								archivePos < desiredArchiveCount;
+								archivePos++)
+							{
+								int routePos = (int)((long)archivePos *
+									forkRouteIndexes.Count / desiredArchiveCount);
+								int candidateIndex = forkRouteIndexes[routePos];
+								if (archivedCandidateIndexes.Add(candidateIndex))
+									archiveIndexes.Add(candidateIndex);
+							}
+							int archiveCount = archiveIndexes.Count;
 							int[] archiveParents = new int[archiveCount];
 							bool[] archiveInputs = new bool[archiveCount];
 							for (int archivePos = 0; archivePos < archiveCount; archivePos++)
 							{
-								int routePos = (int)((long)archivePos *
-									upperRouteIndexes.Count / archiveCount);
-								int candidateIndex = upperRouteIndexes[routePos];
+								int candidateIndex = archiveIndexes[archivePos];
 								SimState archivedState = list3[candidateIndex].Clone();
-								archivedState.BfsReserved = true;
 								replacement.States.Add(archivedState);
 								archiveParents[archivePos] = list4[candidateIndex];
 								archiveInputs[archivePos] = list5[candidateIndex];
 							}
 							replacement.Parents = archiveParents;
 							replacement.Inputs = archiveInputs;
+							routeArchive?.ReturnResources();
 							routeArchive = replacement;
+							if (routeDiagnostics)
+							{
+								int[] routeYs = list15.Select(candidateIndex =>
+									list3[candidateIndex].Y_fixed >> 8).OrderBy(y => y).ToArray();
+								Console.Error.WriteLine($"[ROUTE_ARCHIVE] f={frame} " +
+									$"x={routeProbe.X_fixed >> 8} splitY={routeSplitY} " +
+									$"archiveSplitY={archiveSplitY} interior={(isInteriorBand ? 1 : 0)} " +
+									$"upper={upperRouteCount} lower={lowerRouteCount} " +
+									$"saved={archiveCount} target=({routePortal.X},{routePortal.Y}) " +
+									$"ys={routeYs[0]}/{routeYs[routeYs.Length / 4]}/" +
+									$"{routeYs[routeYs.Length / 2]}/{routeYs[routeYs.Length * 3 / 4]}/" +
+									$"{routeYs[^1]}");
+							}
 							if (Verbose)
 							{
 								_log.WriteLine($"[ROUTE_ARCHIVE] f={frame} splitY={routeSplitY} " +
@@ -5430,6 +7167,20 @@ public class PathfinderEngine
 							}
 						}
 						value10 = $" DUAL P2_Y=[{num97}..{num98}]";
+					}
+					int rainbowEnsembles = 0;
+					int maxRainbowBranches = 1;
+					foreach (SimState rainbowState in frontier)
+					{
+						if (rainbowState.RainbowShadows == null)
+							continue;
+						rainbowEnsembles++;
+						maxRainbowBranches = Math.Max(maxRainbowBranches,
+							1 + rainbowState.RainbowShadows.Length);
+					}
+					if (rainbowEnsembles > 0)
+					{
+						value10 += $" RAINBOW={rainbowEnsembles}x{maxRainbowBranches}";
 					}
 					int[] array7 = new int[12];
 					foreach (SimState item17 in frontier)
@@ -5755,18 +7506,23 @@ public class PathfinderEngine
 			else
 			{
 				_speculativeDepth = 0;
+				List<bool>? bestFailedInputs = null;
 				if (num9 >= 0 && list.Count > 0)
 				{
-					List<bool> list25 = new List<bool>();
+					bestFailedInputs = new List<bool>();
 					int num149 = num9;
 					for (int num150 = num8; num150 >= 0; num150--)
 					{
-						list25.Add(list2[num150][num149]);
+						bestFailedInputs.Add(list2[num150][num149]);
 						num149 = list[num150][num149];
 					}
-					list25.Reverse();
-					ReplayBfsPath(list25, startX_px, startY_px, startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
+					bestFailedInputs.Reverse();
 				}
+				if (primaryFailedInputs != null && primaryFailedX > num10)
+					bestFailedInputs = primaryFailedInputs;
+				if (bestFailedInputs != null)
+					ReplayBfsPath(bestFailedInputs, startX_px, startY_px,
+						startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
 				int num151 = ((PathPoints.Count > 0) ? PathPoints[PathPoints.Count - 1].x : 0);
 				int value13 = ((num2 > 0) ? (num151 * 100 / num2) : 0);
 				ResultMessage = $"BFS failed ~ best path to X={num151}px ({value13}%)";
@@ -5799,6 +7555,20 @@ public class PathfinderEngine
 		{
 			return 0;
 		}
+		int minimum = CountBfsCoinsForBranch(ref s);
+		if (s.RainbowShadows != null)
+		{
+			for (int i = 0; i < s.RainbowShadows.Length; i++)
+			{
+				SimState shadow = s.RainbowShadows[i];
+				minimum = Math.Min(minimum, CountBfsCoinsForBranch(ref shadow));
+			}
+		}
+		return minimum;
+	}
+
+	private int CountBfsCoinsForBranch(ref SimState s)
+	{
 		int num = 0;
 		foreach (SpriteEntry allCoin in allCoins)
 		{
@@ -9624,6 +11394,7 @@ public class PathfinderEngine
 	{
 		_stepFrameInputHeld = input;
 		endLevel = false;
+		s.RainbowPortalModeCount = 0;
 		// A PF frame is one replay/sim_cursor tick, not one rendered NES frame.
 		// Slow mode inserts rendered frames on which X does not move; the Mesen
 		// replay clock deliberately holds the same input and cursor across them.
@@ -12723,7 +14494,7 @@ public class PathfinderEngine
 		int hitboxOffsetY = (s.Mini ? (16 - height >> 1) : 0);
 		int currplayerWorldX_px = s.X_fixed >> 8;
 		int playerX_px = currplayerWorldX_px + playerXBias;
-		int currplayerScreenX_px = currplayerWorldX_px - Math.Max(0, currplayerWorldX_px - NES_PLAYER_SCREEN_X_PX);
+		int currplayerScreenX_px = playerX_px - Math.Max(0, playerX_px - NES_PLAYER_SCREEN_X_PX);
 		int screenY_fixed = s.Y_fixed - s.CameraY_fixed;
 		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=SpiderScanUp.in X={playerX_px} Ywld={s.Y_fixed >> 8} Yscr={screenY_fixed >> 8} w={width} h={height} offY={hitboxOffsetY} camY={s.CameraY_fixed >> 8}");
 		for (int i = 0; i < 200; i++)
@@ -12765,7 +14536,7 @@ public class PathfinderEngine
 		int num2 = (s.Mini ? (16 - num >> 1) : 0);
 		int currplayerWorldX_px = s.X_fixed >> 8;
 		int playerX_px = currplayerWorldX_px + playerXBias;
-		int currplayerScreenX_px = currplayerWorldX_px - Math.Max(0, currplayerWorldX_px - NES_PLAYER_SCREEN_X_PX);
+		int currplayerScreenX_px = playerX_px - Math.Max(0, playerX_px - NES_PLAYER_SCREEN_X_PX);
 		int screenY_fixed = s.Y_fixed - s.CameraY_fixed;
 		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=SpiderScanDown.in X={playerX_px} Ywld={s.Y_fixed >> 8} Yscr={screenY_fixed >> 8} w={width} h={num} offY={num2} camY={s.CameraY_fixed >> 8}");
 		for (int i = 0; i < 200; i++)
@@ -12863,10 +14634,10 @@ public class PathfinderEngine
 		int num2 = num / 16 + _collisionMap.GroundRowsToReserve;
 		if (num2 >= _collisionMap.MapHeight)
 		{
-			// The TMX array ending is not terrain. spider_down_wait keeps scanning
-			// empty NES collision-map space until its $F8 screen-byte death guard.
-			if (!useEjectProbes)
-				return (hit: false, ejectAmount: 0);
+			// The streamed NES collision map exposes its reserved bottom boundary as
+			// terrain. Heliopolis' spider_down_wait lands on that boundary one row
+			// beyond the TMX payload; treating it as empty runs the scan to $F8 and
+			// falsely sets the spider death bit.
 			int num3 = (mapHeight - groundRowsToReserve) * 16;
 			return (hit: true, ejectAmount: num - num3);
 		}
@@ -12921,10 +14692,7 @@ public class PathfinderEngine
 		int num = collisionProbeY / 16 + _collisionMap.GroundRowsToReserve;
 		if (num < 0)
 		{
-			// Likewise, spider_up_wait owns the top-boundary death; an absent TMX
-			// row must not become a synthetic ceiling landing.
-			if (!useEjectProbes)
-				return (hit: false, ejectAmount: 0);
+			// Mirror the reserved top boundary used by the NES collision map.
 			return (hit: true, ejectAmount: -playerY_px);
 		}
 		if (num >= _collisionMap.MapHeight)
@@ -13708,15 +15476,8 @@ public class PathfinderEngine
 					bool yOv = NesAxisOverlaps(plTop, hitboxH, sprTop, sprHeight);
 					if (xOv && yOv)
 					{
-						if (s.RainbowMaxMode == 0)
-						{
-							if (s.GameMode == 6 || s.GameMode == 10) s.VelY_fixed = 0;
-							s.RainbowMaxMode = (sid == 100) ? 8 : 12;
-						}
-						if (s.GameMode != 0 && s.GameMode != 4 && s.GameMode != 8 && s.GameMode != 9 && !dualActive)
-						{
-							s.TargetCameraY_fixed = NesNtCameraTarget_fixed(spr.AnchorY_px - 8);
-						}
+						ApplyRainbowPortal(ref s, sid, spr.AnchorX_px,
+							spr.AnchorY_px - 8);
 						s.ProcessedSprites.Add(processKey);
 					}
 				}
@@ -13772,7 +15533,7 @@ public class PathfinderEngine
 					// drops the final overlap frame and advances the camera ramp.
 					if (sid == 0 || sid == 4)
 						s.ExitPortalTimer = 10;
-					bool applied = ApplyPortalSprite(ref s, sid);
+					bool applied = ApplyPortalSprite(ref s, sid, spr.AnchorX_px);
 					if (applied)
 					{
 						// Unlike all other game-mode portals, the NES cube and robot
@@ -13784,6 +15545,7 @@ public class PathfinderEngine
 						// write during the same sprite_collide pass.
 						if (s.GameMode != 0 && s.GameMode != 4 && s.GameMode != 8 && s.GameMode != 9 && !s.DualActive)
 							s.TargetCameraY_fixed = NesNtCameraTarget_fixed(spr.AnchorY_px - 8);
+						RecordRainbowExit(ref s, sid, spr.AnchorX_px, processKey);
 					}
 				}
 				continue;
@@ -14522,19 +16284,8 @@ public class PathfinderEngine
 				{
 					continue;
 				}
-				if (s.RainbowMaxMode == 0)
-				{
-					if (s.GameMode == 6 || s.GameMode == 10)
-					{
-						s.VelY_fixed = 0;
-					}
-					s.RainbowMaxMode = ((spriteId4 == 100) ? 8 : 12);
-				}
-				if (s.GameMode != 0 && s.GameMode != 4 && s.GameMode != 8 && s.GameMode != 9 && !dualActive)
-				{
-					int portalWorldY_px = reference8.AnchorY_px - 8;
-					s.TargetCameraY_fixed = NesNtCameraTarget_fixed(portalWorldY_px);
-				}
+				ApplyRainbowPortal(ref s, spriteId4, reference8.AnchorX_px,
+					reference8.AnchorY_px - 8);
 				s.ProcessedSprites.Add(reference8.Index);
 				continue;
 			}
@@ -14574,7 +16325,8 @@ public class PathfinderEngine
 				}
 				if (flag13)
 				{
-					bool flag14 = ApplyPortalSprite(ref s, spriteId4);
+					bool flag14 = ApplyPortalSprite(ref s, spriteId4,
+						reference8.AnchorX_px);
 					if (flag14)
 					{
 						s.ProcessedSprites.Add(reference8.Index);
@@ -14584,6 +16336,9 @@ public class PathfinderEngine
 						int portalWorldY_px2 = reference8.AnchorY_px - 8;
 						s.TargetCameraY_fixed = NesNtCameraTarget_fixed(portalWorldY_px2);
 					}
+					if (IsGameModePortal(spriteId4) && flag14)
+						RecordRainbowExit(ref s, spriteId4,
+							reference8.AnchorX_px, reference8.ProcessKey);
 					if (IsEndLevel(spriteId4))
 					{
 						return true;
@@ -14993,7 +16748,8 @@ public class PathfinderEngine
 			bool flag = num10 + 1 >= reference.HitTop && reference.HitBottom >= num9;
 			if (num11 && flag)
 			{
-				bool flag2 = ApplyPortalSprite(ref s, spriteId);
+				bool flag2 = ApplyPortalSprite(ref s, spriteId,
+					reference.AnchorX_px);
 				if (flag2)
 				{
 					s.ProcessedSprites.Add(reference.Index);
@@ -15003,6 +16759,9 @@ public class PathfinderEngine
 					int portalWorldY_px = reference.AnchorY_px - 8;
 					s.TargetCameraY_fixed = NesNtCameraTarget_fixed(portalWorldY_px);
 				}
+				if (IsGameModePortal(spriteId) && flag2)
+					RecordRainbowExit(ref s, spriteId,
+						reference.AnchorX_px, reference.ProcessKey);
 				break;
 			}
 		}
@@ -15070,7 +16829,68 @@ public class PathfinderEngine
 		}
 	}
 
-	private bool ApplyPortalSprite(ref SimState s, int sid)
+	private void ApplyRainbowPortal(ref SimState s, int sid, int portalWorldX_px,
+		int portalWorldY_px)
+	{
+		int modeCount = sid == 100 ? 8 : 12;
+		int oldMode = s.GameMode;
+		if (oldMode == 6 || oldMode == 10)
+			s.VelY_fixed = 0;
+
+		int selectedMode = s.RainbowForcedModePlusOne > 0
+			? s.RainbowForcedModePlusOne - 1
+			: 0;
+		if ((uint)selectedMode >= (uint)modeCount)
+			selectedMode = 0;
+		s.RainbowForcedModePlusOne = 0;
+		s.GameMode = selectedMode;
+		s.RainbowMaxMode = modeCount;
+		s.RainbowPortalModeCount = modeCount;
+		s.RainbowUniversalActive = true;
+		s.RainbowSourcePortalX_px = portalWorldX_px;
+		s.RainbowExitPortalX_px = 0;
+		s.RainbowExitTargetModePlusOne = 0;
+		s.RainbowExitPortalProcessKeyPlusOne = 0;
+		s.RainbowExitPlayerX_fixed = 0;
+		s.RainbowExitPlayerY_fixed = 0;
+		s.RainbowExitVelX_fixed = 0;
+		s.RainbowExitVelY_fixed = 0;
+		s.RainbowExitStateFlags = 0;
+		s.RainbowExitDashing = 0;
+
+		// NES gamemode_stuff clears robotjumpframe for both players and always
+		// retargets the camera in single-player, independent of the selected mode.
+		s.RobotJumpTime = 0;
+		s.P2_RobotJumpTime = 0;
+		if (!s.DualActive)
+			s.TargetCameraY_fixed = NesNtCameraTarget_fixed(portalWorldY_px);
+	}
+
+	private static void RecordRainbowExit(ref SimState s, int sid,
+		int portalWorldX_px, int portalProcessKey)
+	{
+		int targetMode = SpriteIdToGameMode(sid);
+		if (targetMode < 0 || !s.RainbowUniversalActive ||
+			s.RainbowExitTargetModePlusOne != 0 ||
+			portalWorldX_px <= s.RainbowSourcePortalX_px)
+		{
+			return;
+		}
+		s.RainbowExitPortalX_px = portalWorldX_px;
+		s.RainbowExitTargetModePlusOne = targetMode + 1;
+		s.RainbowExitPortalProcessKeyPlusOne = portalProcessKey + 1;
+		s.RainbowExitPlayerX_fixed = s.X_fixed;
+		s.RainbowExitPlayerY_fixed = s.Y_fixed;
+		s.RainbowExitVelX_fixed = s.VelX_fixed;
+		s.RainbowExitVelY_fixed = s.VelY_fixed;
+		s.RainbowExitStateFlags = (s.GravFlipped ? 1 : 0) |
+			(s.Mini ? 2 : 0) | (s.OnGround ? 4 : 0) |
+			(s.PrevInputHeld ? 8 : 0) | (s.AirPressLatch ? 16 : 0);
+		s.RainbowExitDashing = s.Dashing;
+	}
+
+	private bool ApplyPortalSprite(ref SimState s, int sid,
+		int portalWorldX_px = int.MinValue)
 	{
 		if (IsEndLevel(sid))
 		{
@@ -15645,7 +17465,12 @@ public class PathfinderEngine
 		// PF carries the stale ceiling-slope type into the next frame's decrement.
 		int probeX = playerX_px + (hbW >> 1) - 1;
 		int probeY = playerY_px + hbH / 2 + hbOffY;
-		MetatileCollision probeCol = GetTileCollision(probeX / 16, probeY / 16);
+		// 6502 level coordinates use arithmetic/floor tile division. C# integer
+		// division truncates toward zero, which incorrectly maps Y -1..-15 to row
+		// zero and can re-arm a ceiling slope that the NES probe has already left.
+		int probeTileX = probeX >= 0 ? probeX / 16 : (probeX - 15) / 16;
+		int probeTileY = probeY >= 0 ? probeY / 16 : (probeY - 15) / 16;
+		MetatileCollision probeCol = GetTileCollision(probeTileX, probeTileY);
 		// polluteSlopeState is false for the extra post-x-movement probe: NES runs
 		// bg_coll_death exactly once per frame at the pre-move Generic.x, so only
 		// that call may replicate the bg_coll_slope side effects.

@@ -1,9 +1,12 @@
 using Microsoft.Win32;
 using System;
+using System.Buffers;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Threading;
 using System.Windows;
 using System.Threading.Tasks;
 using System.Windows.Controls;
@@ -1156,6 +1159,8 @@ namespace FamidashEditor
     private int dragOrigX = 0, dragOrigY = 0; // original selection top-left
     private Point dragOffset; // offset from mouse to selection top-left when dragging
     private int ghostLogicalWidth = 0, ghostLogicalHeight = 0; // logical size of ghost bitmap
+    private int dragGhostNativeOriginX = 0, dragGhostNativeOriginY = 0;
+    private bool dragUsesSpriteOffsets = false;
     private double lastDragScale = 1.0; // last scale value during drag for zoom rescaling
     private int dragFinalTileX = 0, dragFinalTileY = 0; // final snapped tile position during drag
     private int dragFinalOffsetX = 0, dragFinalOffsetY = 0; // final snapped pixel offset during drag
@@ -2371,6 +2376,9 @@ namespace FamidashEditor
     private RenderTargetBitmap? groundRtb = null;
     private RenderTargetBitmap? gridRtb = null;
     private WriteableBitmap? tilesWb = null;
+    // Invalidates async tile rebuilds when a tab/map/tileset is replaced or a
+    // newer synchronous rebuild has already produced the authoritative image.
+    private int tileRenderGeneration;
     private WriteableBitmap? portalsWb = null; // new portal background layer (incremental updates)
     private WriteableBitmap? spritesWb = null;
     // Pre-scaled tile pixel caches keyed by integer scale key (scale*100)
@@ -2497,6 +2505,11 @@ namespace FamidashEditor
         public bool EditorPreviewMode { get { return previewMode; } }
     private int timerTicks = 0; // Counts all timer ticks for frame skipping logic
     private System.Windows.Threading.DispatcherTimer? previewTimer;
+    private CancellationTokenSource? previewModeTransitionCts;
+    private int previewModeTransitionVersion;
+    private int spriteRenderGeneration;
+    private int spriteRebuildActive;
+    private readonly SemaphoreSlim spriteRenderGate = new SemaphoreSlim(1, 1);
     // Animated saw frames: stored as separate tile images (4 tiles per frame, 2 frames)
     private BitmapSource[]? sawFrame1Tiles; // 4 tiles: top-left, top-right, bottom-left, bottom-right
     private BitmapSource[]? sawFrame2Tiles; // 4 tiles: top-left, top-right, bottom-left, bottom-right
@@ -2748,6 +2761,7 @@ namespace FamidashEditor
         private readonly int capacity;
         private readonly Dictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>> map = new Dictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>>();
         private readonly LinkedList<KeyValuePair<TKey, TValue>> list = new LinkedList<KeyValuePair<TKey, TValue>>();
+        private readonly object sync = new object();
 
         public LruCache(int capacity)
         {
@@ -2756,16 +2770,19 @@ namespace FamidashEditor
 
         public bool TryGetValue(TKey key, out TValue? value)
         {
-            if (map.TryGetValue(key, out var node))
+            lock (sync)
             {
-                // move to front
-                list.Remove(node);
-                list.AddFirst(node);
-                value = node.Value.Value;
-                return true;
+                if (map.TryGetValue(key, out var node))
+                {
+                    // move to front
+                    list.Remove(node);
+                    list.AddFirst(node);
+                    value = node.Value.Value;
+                    return true;
+                }
+                value = default;
+                return false;
             }
-            value = default;
-            return false;
         }
 
         public TValue? this[TKey key]
@@ -2778,26 +2795,29 @@ namespace FamidashEditor
             }
         }
 
-                public void Put(TKey key, TValue? value)
+        public void Put(TKey key, TValue? value)
         {
-            if (map.TryGetValue(key, out var node))
+            lock (sync)
             {
-                node.Value = new KeyValuePair<TKey, TValue>(key, value!);
-                list.Remove(node);
-                list.AddFirst(node);
-            }
-            else
-            {
-                var kv = new KeyValuePair<TKey, TValue>(key, value!);
-                var n = list.AddFirst(kv);
-                map[key] = n;
-                if (map.Count > capacity)
+                if (map.TryGetValue(key, out var node))
                 {
-                    var last = list.Last;
-                    if (last != null)
+                    node.Value = new KeyValuePair<TKey, TValue>(key, value!);
+                    list.Remove(node);
+                    list.AddFirst(node);
+                }
+                else
+                {
+                    var kv = new KeyValuePair<TKey, TValue>(key, value!);
+                    var n = list.AddFirst(kv);
+                    map[key] = n;
+                    if (map.Count > capacity)
                     {
-                        map.Remove(last.Value.Key);
-                        list.RemoveLast();
+                        var last = list.Last;
+                        if (last != null)
+                        {
+                            map.Remove(last.Value.Key);
+                            list.RemoveLast();
+                        }
                     }
                 }
             }
@@ -2805,8 +2825,11 @@ namespace FamidashEditor
 
         public void Clear()
         {
-            map.Clear();
-            list.Clear();
+            lock (sync)
+            {
+                map.Clear();
+                list.Clear();
+            }
         }
     }
 
@@ -2815,6 +2838,45 @@ namespace FamidashEditor
     private readonly LruCache<long, BitmapSource?> tintedCustomCache = new LruCache<long, BitmapSource?>(TintCacheCapacity);
     // Lock for thread-safe access to the tinted caches when precomputing on background threads
     private readonly object tintedCacheLock = new object();
+    private readonly object tintedPrecomputeLock = new object();
+    private Task? tintedPrecomputeTask;
+    private sealed class CachedBitmapPixels
+    {
+        public int Width { get; }
+        public int Height { get; }
+        public int Stride { get; }
+        public byte[] Pixels { get; }
+
+        public CachedBitmapPixels(int width, int height, int stride,
+            byte[] pixels)
+        {
+            Width = width;
+            Height = height;
+            Stride = stride;
+            Pixels = pixels;
+        }
+    }
+    private readonly ConditionalWeakTable<BitmapSource, CachedBitmapPixels>
+        previewBitmapPixelCache = new();
+
+    private CachedBitmapPixels GetPreviewBitmapPixels(BitmapSource source)
+    {
+        return previewBitmapPixelCache.GetValue(source, static bitmap =>
+        {
+            BitmapSource converted = bitmap;
+            if (bitmap.Format != PixelFormats.Bgra32)
+            {
+                converted = new FormatConvertedBitmap(bitmap,
+                    PixelFormats.Bgra32, null, 0);
+            }
+            int width = converted.PixelWidth;
+            int height = converted.PixelHeight;
+            int stride = checked(width * 4);
+            byte[] pixels = new byte[checked(height * stride)];
+            converted.CopyPixels(pixels, stride, 0);
+            return new CachedBitmapPixels(width, height, stride, pixels);
+        });
+    }
     // Decoration sprite ids that should receive player tinting
     private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x2E, 0x2F, 0x30, 0x31, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B, 0x2A, 0x3A, 0x49, 0x4A };
     private readonly System.Collections.Generic.HashSet<int> nonPlayerTintSpriteIds = new System.Collections.Generic.HashSet<int> { 0x07, 0x1A, 0x1B, 0x6E };
@@ -3585,16 +3647,6 @@ namespace FamidashEditor
             if (MenuRunFamidashMesen != null) MenuRunFamidashMesen.Click += MenuRunFamidashMesen_Click;
             if (MenuCaptureRamMesen != null) MenuCaptureRamMesen.Click += MenuCaptureRamMesen_Click;
             if (MenuBuildAndTest != null) MenuBuildAndTest.Click += MenuBuildAndTest_Click;
-                if (MenuOverlayAndFollow != null)
-                {
-                    MenuOverlayAndFollow.IsChecked = _overlayAndFollow;
-                    MenuOverlayAndFollow.Click += (s, e) => { _overlayAndFollow = MenuOverlayAndFollow.IsChecked; try { SaveEditorSettings(); } catch { } };
-                }
-                if (MenuCamFollow != null)
-                {
-                    MenuCamFollow.IsChecked = _camFollow;
-                    MenuCamFollow.Click += (s, e) => { _camFollow = MenuCamFollow.IsChecked; try { SaveEditorSettings(); } catch { } };
-                }
             if (MenuFileLoad != null) MenuFileLoad.Click += LoadButton_Click;
             if (MenuFileClose != null) MenuFileClose.Click += MenuFileClose_Click;
             if (MenuFileExit != null) MenuFileExit.Click += (s, e) => { this.Close(); };
@@ -4032,88 +4084,12 @@ namespace FamidashEditor
             {
                 PreviewModeCheckbox.Checked += async (s, e) =>
                 {
-                    System.Diagnostics.Debug.WriteLine($"Preview Mode CHECKED at {DateTime.Now}");
-                    previewMode = true;
-                    StartPreviewTimer();
-
-                    LoadingWindow? loading = null;
-                    try
-                    {
-                        loading = new LoadingWindow { Owner = this };
-                        loading.SetMessage("Enabling preview mode... rendering frames");
-                        loading.Show();
-
-                        // Allow the UI to render the dialog and the checkbox change before heavy work
-                        await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
-
-                        // Start background precomputation of tinted decoration sprites to reduce per-frame tint work
-                        var _ = PrecomputeTintedCachesAsync();
-
-                        // Perform the rebuilds (still on UI thread for safety) after UI had a chance to update
-                        RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
-                        RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
-                    }
-                    finally
-                    {
-                        if (loading != null)
-                        {
-                            loading.Close();
-                        }
-                    }
+                    await SetPreviewModeAsync(true);
                 };
 
                 PreviewModeCheckbox.Unchecked += async (s, e) =>
                 {
-                    System.Diagnostics.Debug.WriteLine($"Preview Mode UNCHECKED at {DateTime.Now}");
-                    previewMode = false;
-                    StopPreviewTimer();
-                    animationFrame = 0;
-
-                    LoadingWindow? loading = null;
-                    try
-                    {
-                        loading = new LoadingWindow { Owner = this };
-                        loading.SetMessage("Disabling preview mode... rebuilding frames");
-                        loading.Show();
-
-                        await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
-
-                        // Kick off a background refresh of tinted cache (keeps cache warm for next toggle)
-                        var __ = PrecomputeTintedCachesAsync();
-
-                        // Clear portal layer and redraw to show non-animated tiles and sprites
-                        if (portalsWb != null)
-                        {
-                            try
-                            {
-                                portalsWb.Lock();
-                                unsafe
-                                {
-                                    IntPtr pBackBuffer = portalsWb.BackBuffer;
-                                    if (pBackBuffer != IntPtr.Zero)
-                                    {
-                                        int stride = portalsWb.BackBufferStride;
-                                        int bytesTotal = stride * cachedPixelHeight;
-                                        byte* ptr = (byte*)pBackBuffer.ToPointer();
-                                        for (int i = 0; i < bytesTotal; i++) ptr[i] = 0;
-                                    }
-                                }
-                                portalsWb.AddDirtyRect(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight));
-                            }
-                            finally { try { portalsWb.Unlock(); } catch { } }
-                        }
-
-                        // Redraw to show non-animated tiles and sprites
-                        RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
-                        RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
-                    }
-                    finally
-                    {
-                        if (loading != null)
-                        {
-                            loading.Close();
-                        }
-                    }
+                    await SetPreviewModeAsync(false);
                 };
             }
             
@@ -4701,11 +4677,114 @@ namespace FamidashEditor
             }
         }
 
+        private async Task SetPreviewModeAsync(bool enabled)
+        {
+            int transitionVersion = Interlocked.Increment(ref previewModeTransitionVersion);
+            var transitionCts = new CancellationTokenSource();
+            CancellationTokenSource? previous = Interlocked.Exchange(
+                ref previewModeTransitionCts, transitionCts);
+            try { previous?.Cancel(); } catch { }
+
+            CancellationToken cancellationToken = transitionCts.Token;
+            StopPreviewTimer();
+            previewMode = enabled;
+            if (!enabled) animationFrame = 0;
+
+            LoadingWindow? loading = null;
+            try
+            {
+                loading = new LoadingWindow { Owner = this };
+                loading.SetMessage(enabled
+                    ? "Enabling preview mode... rendering frames"
+                    : "Disabling preview mode... rebuilding frames");
+                loading.Show();
+
+                // Let the checkbox/loading window paint before beginning the rebuild.
+                await System.Windows.Threading.Dispatcher.Yield(
+                    System.Windows.Threading.DispatcherPriority.Background);
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (enabled)
+                {
+                    // The cache is bounded; one warm-up is enough. Disabling preview
+                    // must not launch another background image-conversion pass.
+                    _ = PrecomputeTintedCachesAsync();
+                }
+                else
+                {
+                    ClearPortalPreviewBitmap();
+                }
+
+                double scale = ZoomSlider?.Value ?? 1.0;
+                RebuildAllTilesBitmap(scale, mapViewportPadding);
+                cancellationToken.ThrowIfCancellationRequested();
+                await RebuildAllSpritesBitmapAsync(scale, mapViewportPadding,
+                    cancellationToken);
+
+                if (!cancellationToken.IsCancellationRequested &&
+                    transitionVersion == Volatile.Read(ref previewModeTransitionVersion) &&
+                    enabled && previewMode)
+                {
+                    // Animation starts only after the full static frame exists. Starting
+                    // it earlier lets timer writes compete with the full-map rebuild.
+                    StartPreviewTimer();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // A newer checkbox state superseded this transition.
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"Preview mode transition failed: {ex.Message}");
+                if (StatusText != null)
+                    StatusText.Text = "Preview mode update failed: " + ex.Message;
+            }
+            finally
+            {
+                try { loading?.Close(); } catch { }
+                if (ReferenceEquals(previewModeTransitionCts, transitionCts))
+                    Interlocked.CompareExchange(ref previewModeTransitionCts,
+                        null, transitionCts);
+                transitionCts.Dispose();
+            }
+        }
+
+        private void ClearPortalPreviewBitmap()
+        {
+            WriteableBitmap? bitmap = portalsWb;
+            if (bitmap == null || bitmap.PixelWidth <= 0 || bitmap.PixelHeight <= 0)
+                return;
+
+            bitmap.Lock();
+            try
+            {
+                unsafe
+                {
+                    IntPtr backBuffer = bitmap.BackBuffer;
+                    if (backBuffer != IntPtr.Zero)
+                    {
+                        int bytesTotal = bitmap.BackBufferStride * bitmap.PixelHeight;
+                        byte* ptr = (byte*)backBuffer.ToPointer();
+                        for (int i = 0; i < bytesTotal; i++) ptr[i] = 0;
+                    }
+                }
+                bitmap.AddDirtyRect(new Int32Rect(
+                    0, 0, bitmap.PixelWidth, bitmap.PixelHeight));
+            }
+            finally
+            {
+                bitmap.Unlock();
+            }
+        }
+
         private void StartPreviewTimer()
         {
             if (previewTimer == null)
             {
-                // Timer at reasonable rate, but we'll throttle actual animation updates
+                // Keep the dispatcher heartbeat at 60 Hz; expensive pixel updates are
+                // throttled below according to zoom.
                 previewTimer = new System.Windows.Threading.DispatcherTimer
                 {
                     Interval = TimeSpan.FromMilliseconds(1000.0 / 60.0)
@@ -4751,12 +4830,15 @@ namespace FamidashEditor
 
         private void PreviewTimer_Tick(object? sender, EventArgs e)
         {
+            if (!previewMode || Volatile.Read(ref spriteRebuildActive) != 0)
+                return;
+
             timerTicks++;
             
-            // Only update visuals every 2nd tick at 1x zoom to slow down animation
-            // At higher zooms, update every tick since rendering is slower
+            // Cap animation writes at 30 FPS at normal zoom and 15 FPS when
+            // zoomed in. Higher zoom means more pixels, not more spare time.
             double currentZoom = (ZoomSlider != null ? ZoomSlider.Value : 1.0);
-            int skipFrames = (currentZoom <= 1.0) ? 2 : 1;
+            int skipFrames = (currentZoom <= 1.0) ? 2 : 4;
             
             // Skip rendering on non-update ticks, but don't increment animation frame
             if (timerTicks % skipFrames != 0)
@@ -4767,13 +4849,6 @@ namespace FamidashEditor
             // Only increment animation frame when we actually render
             animationFrame++;
 
-            // Debug: Log frame switching every 60 frames (once per second)
-            if (animationFrame % 60 == 0)
-            {
-                bool frame2 = ((animationFrame / 1) % 2) == 1;
-                System.Diagnostics.Debug.WriteLine($"Animation frame {animationFrame}, showing frame {(frame2 ? 2 : 1)}, sawFrame1Tiles={sawFrame1Tiles?.Length}, sawFrame2Tiles={sawFrame2Tiles?.Length}, smallSawFrame1={smallSawFrame1Tiles?.Length}, smallSawFrame2={smallSawFrame2Tiles?.Length}, largeSawFrame1={largeSawFrame1Tiles?.Length}, largeSawFrame2={largeSawFrame2Tiles?.Length}");
-            }
-            
             // Only rebuild tiles if we have animated saws on screen
             // This is much more efficient than rebuilding everything every frame
             if (tilesWb != null && 
@@ -4781,11 +4856,6 @@ namespace FamidashEditor
                  (smallSawFrame1Tiles != null && smallSawFrame2Tiles != null) ||
                  (largeSawFrame1Tiles != null && largeSawFrame2Tiles != null)))
             {
-                // Helper to compute visible tile bounds
-                GetVisibleTileBounds(out _, out _, out _, out _);
-                // Helper to compute visible tile bounds
-                int visMinX = 0, visMaxX = mapWidth - 1, visMinY = 0, visMaxY = mapHeight - 1;
-                GetVisibleTileBounds(out visMinX, out visMaxX, out visMinY, out visMaxY);
                 // Find visible tile bounds and update only saw tiles inside the viewport
                 GetVisibleTileBounds(out int sMinX, out int sMaxX, out int sMinY, out int sMaxY);
                 // Find and update only the saw tiles in the visible region
@@ -4997,22 +5067,26 @@ namespace FamidashEditor
                     }
                 }
             
-            // Also update visible portal regions so animated portals (including 0x64 rainbow)
-            // advance each preview tick instead of only when sprites change.
-            if (previewMode && portalsWb != null)
+            // Only rainbow portals animate. Static portals do not need repeated
+            // region clears, and rainbow frames change once per ten rendered frames.
+            if (previewMode && portalsWb != null && animationFrame % 10 == 0)
             {
                 GetVisibleTileBounds(out int pMinX, out int pMaxX, out int pMinY, out int pMaxY);
-                bool hasPortals = false;
-                for (int yy = pMinY; yy <= pMaxY && !hasPortals; yy++)
+                bool hasAnimatedPortals = false;
+                for (int yy = pMinY; yy <= pMaxY && !hasAnimatedPortals; yy++)
                 {
                     for (int xx = pMinX; xx <= pMaxX; xx++)
                     {
                         int sidx = sprites[yy * mapWidth + xx];
-                        if (IsPortalSprite(sidx)) { hasPortals = true; break; }
+                        if (sidx == 0x64 || sidx == 0x7E)
+                        {
+                            hasAnimatedPortals = true;
+                            break;
+                        }
                     }
                 }
 
-                if (hasPortals)
+                if (hasAnimatedPortals)
                 {
                     // Rebuild a slightly expanded region to cover multi-tile portals
                     QueueRebuildPortalsRegion(Math.Max(0, pMinX - 1), Math.Max(0, pMinY - 2), Math.Min(mapWidth - 1, pMaxX + 1), Math.Min(mapHeight - 1, pMaxY + 2));
@@ -5021,11 +5095,7 @@ namespace FamidashEditor
             }
             else
             {
-                // Debug: Why aren't we checking orbs?
-                    if (animationFrame % 120 == 0)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Not checking orbs: spritesWb={(spritesWb != null)}, yellow={(yellowOrbFrame1 != null)}, blue={(blueOrbFrame1 != null)}, pink={(pinkOrbFrame1 != null)}, green={(greenOrbFrame1 != null)}, red={(redOrbFrame1 != null)}, black={(blackOrbFrame1 != null)}, white={(whiteOrbFrame1 != null)}, coin={(coinFrame1 != null)}");
-                }
+                // No animated preview assets are loaded.
             }
         }
 
@@ -7482,10 +7552,6 @@ namespace FamidashEditor
                     if (doc.RootElement.TryGetProperty("mesenCaptureTimeoutSeconds", out var mct))
                     {
                         try { mesenCaptureTimeoutSeconds = Math.Max(10, mct.GetInt32()); } catch { }
-                        if (doc.RootElement.TryGetProperty("overlayAndFollow", out var oaf))
-                            try { _overlayAndFollow = oaf.GetBoolean(); } catch { }
-                        if (doc.RootElement.TryGetProperty("camFollow", out var cf2))
-                            try { _camFollow = cf2.GetBoolean(); } catch { }
                     }
                 }
             }
@@ -7537,9 +7603,7 @@ namespace FamidashEditor
                     noDeath = Option_NoDeath,
                     showTileHitboxes = Option_ShowTileHitboxes,
                     camMode = Option_CamMode,
-                    openSimulatorPaused = loadedOpenSimulatorPaused,
-                    overlayAndFollow = _overlayAndFollow,
-                    camFollow = _camFollow
+                    openSimulatorPaused = loadedOpenSimulatorPaused
                 };
                 var txt = System.Text.Json.JsonSerializer.Serialize(obj);
                 var dir = AppContext.BaseDirectory;
@@ -9597,6 +9661,11 @@ namespace FamidashEditor
                     
                     // Full redraw with all bitmaps
                     Redraw();
+                    // A first load can replace the map dimensions, causing DrawMap to
+                    // allocate a blank tile bitmap and queue an async fill. Finish one
+                    // authoritative fill while the loading window is still present;
+                    // this also invalidates any renderer left over from the prior tab.
+                    try { RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { }
 
                     // Position main map scroll roughly two-thirds down the content so the map
                     // is not pinned to top-left when opened. Compute the maximum allowed
@@ -12606,14 +12675,27 @@ namespace FamidashEditor
                 const int NES_H_TILES = 15;
                 const int TILE_PX = 16;
 
-                // Spawn Y marker: small filled rectangle at the player spawn position
+                // Resolve startup scroll exactly as the NES/PF/simulator do. The current
+                // compact level header stores only the low byte; the NES fixes the high
+                // byte to $02. NES scroll pages are 240 pixels, not 256 pixels.
+                (int effectiveScrollHi, int effectiveScrollLo) = SharedPhysics.ResolveNesInitialScroll(
+                    loadedScrollYPositionHi, loadedScrollYPositionLow);
+                int linearScroll = effectiveScrollHi * 240 + effectiveScrollLo;
+                int groundRowsToReserve = (groundBitmap != null && groundTileRows > 0)
+                    ? Math.Min(3, groundTileRows)
+                    : 0;
+                int nesYOffset = (57 - mapHeight + groundRowsToReserve) * TILE_PX;
+
+                // Spawn Y marker: small filled rectangle at the player spawn position.
+                // Match the runtime transform used by PF/sim:
+                //   TMX top = NES screen-space spawn + linear scroll - NES Y offset.
                 if (loadedSpawnYPositionHi.HasValue)
                 {
                     int hi = loadedSpawnYPositionHi.Value & 0xFF;
-                    int lo = (loadedSpawnYPositionLow.HasValue ? loadedSpawnYPositionLow.Value : 0) & 0xFF;
-                    int nesSpawnY = (hi << 8) | lo;
-                    int worldOffset = (mapHeight - NES_H_TILES) * TILE_PX;
-                    int spawnY_px = (nesSpawnY >> 8) + worldOffset;
+                    // The current NES header does not store spawn Y's fractional byte.
+                    int spawnY_px = hi + linearScroll - nesYOffset;
+                    int maxSpawnY = Math.Max(0, mapHeight * TILE_PX - TILE_PX);
+                    spawnY_px = Math.Max(0, Math.Min(maxSpawnY, spawnY_px));
 
                     double x = pad + 0 * scale; // X=0 (default spawn X)
                     double y = pad + (spawnY_px + (3 * TileSize)) * scale + gridRenderShiftY;
@@ -12629,7 +12711,9 @@ namespace FamidashEditor
                         StrokeThickness = Math.Max(1.0, 1.5 * scale),
                         IsHitTestVisible = true
                     };
-                    rect.ToolTip = $"Spawn Y: Hi=0x{hi:X2} Lo=0x{lo:X2}\nTMX pixel Y={spawnY_px}";
+                    rect.ToolTip = $"Spawn Y: Hi=0x{hi:X2} Lo=0x00\n" +
+                        $"Scroll Y: Hi=0x{effectiveScrollHi:X2} Lo=0x{effectiveScrollLo:X2}\n" +
+                        $"TMX pixel Y={spawnY_px}";
                     Canvas.SetLeft(rect, x);
                     Canvas.SetTop(rect, y);
                     Canvas.SetZIndex(rect, 2200);
@@ -12638,15 +12722,14 @@ namespace FamidashEditor
                 }
 
                 // Camera viewport marker: semi-transparent rectangle showing the configured camera view
-                if (loadedScrollYPositionHi.HasValue)
+                if (loadedScrollYPositionHi.HasValue || loadedScrollYPositionLow.HasValue)
                 {
-                    int hi = loadedScrollYPositionHi.Value & 0xFF;
-                    int lo = (loadedScrollYPositionLow.HasValue ? loadedScrollYPositionLow.Value : 0) & 0xFF;
-                    int linearScroll = hi * 240 + lo;
                     int linearMax = 2 * 240 + 239;
                     int pixelsFromBottom = linearMax - linearScroll;
-                    int maxCamY = (mapHeight - NES_H_TILES) * TILE_PX;
-                    int camY_px = Math.Max(0, maxCamY - pixelsFromBottom);
+                    int mapMaxCamY = Math.Max(0, (mapHeight - NES_H_TILES) * TILE_PX);
+                    int nesMaxCamY = Math.Max(0, linearMax - nesYOffset);
+                    int maxCamY = Math.Min(mapMaxCamY, nesMaxCamY);
+                    int camY_px = Math.Max(0, Math.Min(maxCamY, maxCamY - pixelsFromBottom));
 
                     double x = pad + 0 * scale;
                     double y = pad + (camY_px + (3 * TileSize)) * scale + gridRenderShiftY;
@@ -12663,7 +12746,8 @@ namespace FamidashEditor
                         StrokeDashArray = new DoubleCollection { 4, 2 },
                         IsHitTestVisible = true
                     };
-                    rect.ToolTip = $"Camera Scroll Y: Hi=0x{hi:X2} Lo=0x{lo:X2}\nTMX camera top={camY_px}px";
+                    rect.ToolTip = $"Camera Scroll Y: Hi=0x{effectiveScrollHi:X2} Lo=0x{effectiveScrollLo:X2}\n" +
+                        $"TMX camera top={camY_px}px";
                     Canvas.SetLeft(rect, x);
                     Canvas.SetTop(rect, y);
                     Canvas.SetZIndex(rect, 2190);
@@ -14095,6 +14179,10 @@ namespace FamidashEditor
         private void RebuildAllTilesBitmap(double scale, double pad)
         {
             if (tilesWb == null) return;
+            // A synchronous rebuild supersedes every queued async batch. Without
+            // this, a first-load render from the previous tab can resume later and
+            // repaint the new tab's bitmap with stale dimensions/content.
+            Interlocked.Increment(ref tileRenderGeneration);
             var dpi = VisualTreeHelper.GetDpi(this);
             int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
             int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
@@ -14142,6 +14230,13 @@ namespace FamidashEditor
         private async void RebuildAllTilesBitmapAsync(double scale, double pad)
         {
             if (tilesWb == null) return;
+            int generation = Interlocked.Increment(ref tileRenderGeneration);
+            WriteableBitmap targetBitmap = tilesWb;
+            int renderMapWidth = mapWidth;
+            int renderMapHeight = mapHeight;
+            int[] renderTiles = tiles;
+            int renderPixelWidth = cachedPixelWidth;
+            int renderPixelHeight = cachedPixelHeight;
             var dpi = VisualTreeHelper.GetDpi(this);
             int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
             int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
@@ -14150,14 +14245,20 @@ namespace FamidashEditor
             EnsureScaledTileCache(scale, dpi);
             
             // For very large maps, use bigger batches and skip pre-rendering
-            int totalTiles = mapWidth * mapHeight;
+            int totalTiles = renderMapWidth * renderMapHeight;
             bool isLargeMap = totalTiles > 50000;
-            int batchSize = isLargeMap ? Math.Max(2000, mapWidth * 2) : Math.Max(500, mapWidth);
+            int batchSize = isLargeMap ? Math.Max(2000, renderMapWidth * 2) : Math.Max(500, renderMapWidth);
             
             System.Diagnostics.Debug.WriteLine($"RebuildAllTilesBitmapAsync: {totalTiles} tiles, batchSize={batchSize}, isLargeMap={isLargeMap}");
             
             for (int batchStart = 0; batchStart < totalTiles; batchStart += batchSize)
             {
+                if (generation != Volatile.Read(ref tileRenderGeneration) ||
+                    !ReferenceEquals(tilesWb, targetBitmap) ||
+                    !ReferenceEquals(tiles, renderTiles) ||
+                    mapWidth != renderMapWidth || mapHeight != renderMapHeight)
+                    return;
+
                 int batchEnd = Math.Min(batchStart + batchSize, totalTiles);
                 
                 // For large maps, skip the background pre-render step and just render directly in UI
@@ -14168,15 +14269,14 @@ namespace FamidashEditor
                         // Process batch on background thread
                         for (int i = batchStart; i < batchEnd; i++)
                         {
-                            int x = i % mapWidth;
-                            int y = i / mapWidth;
-                            // Guard against concurrent map resize/replace which can modify mapWidth/mapHeight/tiles
-                            if (tiles == null) continue;
+                            if (generation != Volatile.Read(ref tileRenderGeneration)) return;
+                            int x = i % renderMapWidth;
+                            int y = i / renderMapWidth;
                             if (x < 0 || y < 0) continue;
-                            if (y >= mapHeight || x >= mapWidth) continue;
-                            int idxIndex = y * mapWidth + x;
-                            if (idxIndex < 0 || idxIndex >= tiles.Length) continue;
-                            int idx = tiles[idxIndex];
+                            if (y >= renderMapHeight || x >= renderMapWidth) continue;
+                            int idxIndex = y * renderMapWidth + x;
+                            if (idxIndex < 0 || idxIndex >= renderTiles.Length) continue;
+                            int idx = renderTiles[idxIndex];
                             if (idx >= 0)
                             {
                                 // Pre-render this tile into cache
@@ -14190,42 +14290,47 @@ namespace FamidashEditor
                 // Update UI on main thread
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    if (tilesWb == null) return;
-                    tilesWb.Lock();
+                    if (generation != Volatile.Read(ref tileRenderGeneration) ||
+                        !ReferenceEquals(tilesWb, targetBitmap) ||
+                        !ReferenceEquals(tiles, renderTiles) ||
+                        mapWidth != renderMapWidth || mapHeight != renderMapHeight)
+                        return;
+
+                    targetBitmap.Lock();
                     try
                     {
                         for (int i = batchStart; i < batchEnd; i++)
                         {
-                            int x = i % mapWidth;
-                            int y = i / mapWidth;
-                            if (tilesWb == null) continue;
-                            // Guard against concurrent map resize/replace
-                            if (tiles == null) continue;
+                            int x = i % renderMapWidth;
+                            int y = i / renderMapWidth;
                             if (x < 0 || y < 0) continue;
-                            if (y >= mapHeight || x >= mapWidth) continue;
-                            int idxIndexUi = y * mapWidth + x;
-                            if (idxIndexUi < 0 || idxIndexUi >= tiles.Length) continue;
+                            if (y >= renderMapHeight || x >= renderMapWidth) continue;
+                            int idxIndexUi = y * renderMapWidth + x;
+                            if (idxIndexUi < 0 || idxIndexUi >= renderTiles.Length) continue;
                             try { UpdateTileBitmapAtLocked(x, y, scale, pad, tilePixelW, tilePixelH, dpi); } catch { }
                         }
                         // Mark this batch area as dirty
-                        int minY = batchStart / mapWidth;
-                        int maxY = (batchEnd - 1) / mapWidth;
+                        int minY = batchStart / renderMapWidth;
+                        int maxY = (batchEnd - 1) / renderMapWidth;
                         int dirtyHeight = (maxY - minY + 1) * tilePixelH;
                         int dirtyY = (int)(minY * tilePixelH + pad * dpi.DpiScaleY);
-                        int dirtyW = Math.Max(0, Math.Min(cachedPixelWidth, tilesWb.PixelWidth));
-                        int dirtyH = Math.Max(0, Math.Min(dirtyHeight, Math.Min(cachedPixelHeight, tilesWb.PixelHeight - dirtyY)));
-                        if (dirtyY >= 0 && dirtyY < tilesWb.PixelHeight && dirtyW > 0 && dirtyH > 0)
+                        int dirtyW = Math.Max(0, Math.Min(renderPixelWidth, targetBitmap.PixelWidth));
+                        int dirtyH = Math.Max(0, Math.Min(dirtyHeight, Math.Min(renderPixelHeight, targetBitmap.PixelHeight - dirtyY)));
+                        if (dirtyY >= 0 && dirtyY < targetBitmap.PixelHeight && dirtyW > 0 && dirtyH > 0)
                         {
-                            tilesWb.AddDirtyRect(new Int32Rect(0, dirtyY, dirtyW, dirtyH));
+                            targetBitmap.AddDirtyRect(new Int32Rect(0, dirtyY, dirtyW, dirtyH));
                         }
                     }
                     finally
                     {
-                        tilesWb.Unlock();
+                        targetBitmap.Unlock();
                     }
                 }, System.Windows.Threading.DispatcherPriority.Background);
             }
             
+            if (generation != Volatile.Read(ref tileRenderGeneration) ||
+                !ReferenceEquals(tilesWb, targetBitmap))
+                return;
             System.Diagnostics.Debug.WriteLine($"RebuildAllTilesBitmapAsync: Complete");
             try { BuildSelectSameIndexMaps(); } catch { }
         }
@@ -14733,147 +14838,221 @@ namespace FamidashEditor
             }
         }
 
-        private async void RebuildAllSpritesBitmap(double scale, double pad)
+        private void RebuildAllSpritesBitmap(double scale, double pad)
+        {
+            // Most editor callers only need to request the latest frame. The task
+            // itself is generation-aware, so a newer request cancels stale batches.
+            _ = RebuildAllSpritesBitmapAsync(scale, pad);
+        }
+
+        private async Task RebuildAllSpritesBitmapAsync(double scale, double pad,
+            CancellationToken cancellationToken = default)
         {
             if (spritesWb == null || spriteImages == null) return;
-            
+
+            int generation = Interlocked.Increment(ref spriteRenderGeneration);
+            bool gateHeld = false;
+            bool activeCounted = false;
+            WriteableBitmap? targetBitmap = null;
+
             try
             {
-                // Ensure portals layer is built for entire map before drawing sprites (only if preview mode is enabled)
-                if (previewMode && portalsWb != null)
+                await spriteRenderGate.WaitAsync(cancellationToken);
+                gateHeld = true;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (generation != Volatile.Read(ref spriteRenderGeneration)) return;
+                if (spritesWb == null || spriteImages == null) return;
+
+                targetBitmap = spritesWb;
+                int renderMapWidth = mapWidth;
+                int renderMapHeight = mapHeight;
+                int[] renderSprites = sprites;
+                bool renderPreviewMode = previewMode;
+                int renderPixelWidth = targetBitmap.PixelWidth;
+                int renderPixelHeight = targetBitmap.PixelHeight;
+
+                bool IsSuperseded()
                 {
-                    RebuildPortalsRegion(0, 0, mapWidth - 1, mapHeight - 1, scale, pad);
+                    return cancellationToken.IsCancellationRequested ||
+                        generation != Volatile.Read(ref spriteRenderGeneration) ||
+                        !ReferenceEquals(spritesWb, targetBitmap) ||
+                        !ReferenceEquals(sprites, renderSprites) ||
+                        mapWidth != renderMapWidth || mapHeight != renderMapHeight ||
+                        previewMode != renderPreviewMode;
                 }
+
+                Interlocked.Increment(ref spriteRebuildActive);
+                activeCounted = true;
+
+                // Portal rendering used to run as one uninterruptible full-map UI
+                // operation. Stripe it so input/paint messages can run between chunks.
+                if (renderPreviewMode && portalsWb != null)
+                {
+                    const int PortalRowsPerBatch = 6;
+                    for (int minY = 0; minY < renderMapHeight;
+                        minY += PortalRowsPerBatch)
+                    {
+                        if (IsSuperseded()) return;
+                        int batchMinY = minY;
+                        int batchMaxY = Math.Min(renderMapHeight - 1,
+                            minY + PortalRowsPerBatch - 1);
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            if (IsSuperseded()) return;
+                            RebuildPortalsRegion(0, batchMinY,
+                                renderMapWidth - 1, batchMaxY, scale, pad);
+                        }, System.Windows.Threading.DispatcherPriority.Background);
+                    }
+                }
+
+                if (IsSuperseded()) return;
                 var dpi = VisualTreeHelper.GetDpi(this);
-                int spritePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
-                int spritePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
-                
-                // Clear the bitmap first
+                int spritePixelW = Math.Max(1,
+                    (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+                int spritePixelH = Math.Max(1,
+                    (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    if (spritesWb == null) return;
-                    spritesWb.Lock();
+                    if (IsSuperseded()) return;
+                    targetBitmap.Lock();
                     try
                     {
                         unsafe
                         {
-                            IntPtr pBackBuffer = spritesWb.BackBuffer;
-                            if (pBackBuffer == IntPtr.Zero) return;
-                            int backBufferStride = spritesWb.BackBufferStride;
-                            int bytesTotal = backBufferStride * cachedPixelHeight;
-                            byte* ptr = (byte*)pBackBuffer.ToPointer();
-                            for (int i = 0; i < bytesTotal; i++)
-                            {
-                                ptr[i] = 0;
-                            }
+                            IntPtr backBuffer = targetBitmap.BackBuffer;
+                            if (backBuffer == IntPtr.Zero) return;
+                            int bytesTotal = targetBitmap.BackBufferStride *
+                                targetBitmap.PixelHeight;
+                            byte* ptr = (byte*)backBuffer.ToPointer();
+                            for (int i = 0; i < bytesTotal; i++) ptr[i] = 0;
                         }
-                        spritesWb.AddDirtyRect(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight));
+                        targetBitmap.AddDirtyRect(new Int32Rect(
+                            0, 0, renderPixelWidth, renderPixelHeight));
                     }
                     finally
                     {
-                        spritesWb.Unlock();
+                        targetBitmap.Unlock();
                     }
                 });
-                
-                
-                // Render sprites in batches
-                int totalSprites = mapWidth * mapHeight;
+
+                int totalSprites = renderMapWidth * renderMapHeight;
                 bool isLargeMap = totalSprites > 50000;
-                int batchSize = isLargeMap ? Math.Max(2000, mapWidth * 2) : Math.Max(500, mapWidth);
-                
-                System.Diagnostics.Debug.WriteLine($"RebuildAllSpritesBitmap: {totalSprites} sprites, batchSize={batchSize}, isLargeMap={isLargeMap}");
-                
-                for (int batchStart = 0; batchStart < totalSprites; batchStart += batchSize)
+                int batchSize = isLargeMap
+                    ? Math.Max(2000, renderMapWidth * 2)
+                    : Math.Max(500, renderMapWidth);
+
+                System.Diagnostics.Debug.WriteLine(
+                    $"RebuildAllSpritesBitmap: {totalSprites} sprites, " +
+                    $"batchSize={batchSize}, isLargeMap={isLargeMap}");
+
+                for (int batchStart = 0; batchStart < totalSprites;
+                    batchStart += batchSize)
                 {
-                    int batchEnd = Math.Min(batchStart + batchSize, totalSprites);
-                    
-                    // Update UI on main thread for this batch
+                    if (IsSuperseded()) return;
+                    int renderBatchStart = batchStart;
+                    int renderBatchEnd = Math.Min(batchStart + batchSize,
+                        totalSprites);
+
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        if (spritesWb == null) return;
-                        spritesWb.Lock();
+                        if (IsSuperseded() || spriteImages == null) return;
+                        targetBitmap.Lock();
                         try
                         {
-                            for (int i = batchStart; i < batchEnd; i++)
+                            for (int i = renderBatchStart;
+                                i < renderBatchEnd; i++)
                             {
-                                int x = i % mapWidth;
-                                int y = i / mapWidth;
-                                int idx = sprites[y * mapWidth + x];
-                                if (idx >= 0 && idx < spriteImages.Length)
+                                int x = i % renderMapWidth;
+                                int y = i / renderMapWidth;
+                                int idx = renderSprites[i];
+                                if (idx < 0 || idx >= spriteImages.Length) continue;
+                                try
                                 {
-                                    try
-                                    {
-                                        if (idx == 0x17 || idx == 0x4B || idx == 0x58 || idx == 0x64 || idx == 0x08 || idx == 0x09)
-                                        {
-                                            // (debug logging removed)
-                                        }
-                                        UpdateSpriteBitmapAtLocked(x, y, idx, scale, pad, spritePixelW, spritePixelH, dpi);
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        System.Diagnostics.Debug.WriteLine($"    Error at sprite ({x},{y}): {ex.Message}");
-                                    }
+                                    UpdateSpriteBitmapAtLocked(x, y, idx, scale,
+                                        pad, spritePixelW, spritePixelH, dpi);
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine(
+                                        $"    Error at sprite ({x},{y}): {ex.Message}");
                                 }
                             }
-                            
-                            // Mark this batch area as dirty. Expand to account for:
-                            // 1) preview-mode vertical nudges (e.g. chains that hang upward by 1 tile)
-                            // 2) sprite pixel offsets that can shift sprites beyond their tile boundaries
-                            int minY = batchStart / mapWidth;
-                            int maxY = (batchEnd - 1) / mapWidth;
-                            
-                            // Calculate max sprite offset in this batch to expand dirty rect accordingly
-                            int maxOffsetUp = spritePixelH; // At least 1 tile for preview mode shifts
+
+                            int minY = renderBatchStart / renderMapWidth;
+                            int maxY = (renderBatchEnd - 1) / renderMapWidth;
+                            int maxOffsetUp = spritePixelH;
                             int maxOffsetDown = 0;
-                            for (int i = batchStart; i < batchEnd; i++)
+                            for (int i = renderBatchStart;
+                                i < renderBatchEnd; i++)
                             {
-                                if (spritePixelOffsets.TryGetValue(i, out var offset))
-                                {
-                                    int scaledOffsetY = (int)Math.Round(Math.Abs(offset.offsetY) * scale * dpi.DpiScaleY);
-                                    if (offset.offsetY < 0)
-                                        maxOffsetUp = Math.Max(maxOffsetUp, scaledOffsetY);
-                                    else
-                                        maxOffsetDown = Math.Max(maxOffsetDown, scaledOffsetY);
-                                }
+                                if (!spritePixelOffsets.TryGetValue(i,
+                                    out var offset)) continue;
+                                int scaledOffsetY = (int)Math.Round(
+                                    Math.Abs(offset.offsetY) * scale *
+                                    dpi.DpiScaleY);
+                                if (offset.offsetY < 0)
+                                    maxOffsetUp = Math.Max(maxOffsetUp,
+                                        scaledOffsetY);
+                                else
+                                    maxOffsetDown = Math.Max(maxOffsetDown,
+                                        scaledOffsetY);
                             }
-                            
-                            // Expand dirty rect to include offset sprites
-                            int dirtyTopTile = Math.Max(0, minY - (int)Math.Ceiling((double)maxOffsetUp / spritePixelH));
-                            int dirtyBottomTile = Math.Min(mapHeight - 1, maxY + (int)Math.Ceiling((double)maxOffsetDown / spritePixelH));
-                            int dirtyHeight = (dirtyBottomTile - dirtyTopTile + 1) * spritePixelH + maxOffsetUp + maxOffsetDown;
-                            int dirtyTopPx = Math.Max(0, (int)(dirtyTopTile * spritePixelH + pad * dpi.DpiScaleY - maxOffsetUp));
-                            // Clamp dirty rect to bitmap bounds to prevent crash
-                            int clampedDirtyHeight = Math.Min(dirtyHeight, cachedPixelHeight - dirtyTopPx);
-                            if (clampedDirtyHeight > 0 && dirtyTopPx < cachedPixelHeight)
+
+                            int dirtyTopTile = Math.Max(0, minY -
+                                (int)Math.Ceiling((double)maxOffsetUp /
+                                    spritePixelH));
+                            int dirtyBottomTile = Math.Min(renderMapHeight - 1,
+                                maxY + (int)Math.Ceiling(
+                                    (double)maxOffsetDown / spritePixelH));
+                            int dirtyHeight =
+                                (dirtyBottomTile - dirtyTopTile + 1) *
+                                spritePixelH + maxOffsetUp + maxOffsetDown;
+                            int dirtyTopPx = Math.Max(0,
+                                (int)(dirtyTopTile * spritePixelH +
+                                pad * dpi.DpiScaleY - maxOffsetUp));
+                            int clampedDirtyHeight = Math.Min(dirtyHeight,
+                                renderPixelHeight - dirtyTopPx);
+                            if (clampedDirtyHeight > 0 &&
+                                dirtyTopPx < renderPixelHeight)
                             {
-                                spritesWb.AddDirtyRect(new Int32Rect(0, dirtyTopPx, cachedPixelWidth, clampedDirtyHeight));
+                                targetBitmap.AddDirtyRect(new Int32Rect(0,
+                                    dirtyTopPx, renderPixelWidth,
+                                    clampedDirtyHeight));
                             }
                         }
                         finally
                         {
-                            spritesWb.Unlock();
+                            targetBitmap.Unlock();
                         }
                     }, System.Windows.Threading.DispatcherPriority.Background);
                 }
-                
-                System.Diagnostics.Debug.WriteLine($"RebuildAllSpritesBitmap: Complete");
-                // After rebuilding the full sprites layer, update the incompatibility overlay
-                try { Dispatcher.Invoke(() => UpdateIncompatibleOverlay()); } catch { }
+
+                if (IsSuperseded()) return;
+                System.Diagnostics.Debug.WriteLine(
+                    "RebuildAllSpritesBitmap: Complete");
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    if (!IsSuperseded()) UpdateIncompatibleOverlay();
+                }, System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch (OperationCanceledException)
+            {
+                // A newer render/preview state superseded this one.
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"EXCEPTION in RebuildAllSpritesBitmap: {ex.Message}");
-                // If rebuild fails, just clear the sprites
-                if (spritesWb != null)
-                {
-                    try
-                    {
-                        var empty = new byte[cachedPixelHeight * spritesWb.BackBufferStride];
-                        spritesWb.WritePixels(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight), empty, spritesWb.BackBufferStride, 0);
-                    }
-                    catch { }
-                }
-                throw;
+                // This method is often intentionally fire-and-forget. Do not rethrow
+                // an async exception onto the dispatcher and take down the editor.
+                System.Diagnostics.Debug.WriteLine(
+                    $"EXCEPTION in RebuildAllSpritesBitmap: {ex.Message}");
+            }
+            finally
+            {
+                if (activeCounted)
+                    Interlocked.Decrement(ref spriteRebuildActive);
+                if (gateHeld)
+                    spriteRenderGate.Release();
             }
         }
 
@@ -15194,65 +15373,85 @@ namespace FamidashEditor
         private Task PrecomputeTintedCachesAsync()
         {
             if (!playerTintEnabled) return Task.CompletedTask;
-            // Capture current tint to avoid races
-            var tint = playerTint;
-            return Task.Run(() =>
+            lock (tintedPrecomputeLock)
             {
-                try
+                if (tintedPrecomputeTask != null &&
+                    !tintedPrecomputeTask.IsCompleted)
                 {
-                    uint argb = (uint)((tint.A << 24) | (tint.R << 16) | (tint.G << 8) | (tint.B));
-                    foreach (var id in decorationSpriteIds)
+                    return tintedPrecomputeTask;
+                }
+
+                // Capture current tint once. Repeated preview toggles share this
+                // bounded warm-up instead of starting duplicate conversion jobs.
+                var tint = playerTint;
+                tintedPrecomputeTask = Task.Run(() =>
+                {
+                    try
                     {
-                        try
+                        uint argb = (uint)((tint.A << 24) | (tint.R << 16) |
+                            (tint.G << 8) | tint.B);
+                        foreach (var id in decorationSpriteIds)
                         {
-                            if (spriteImages == null) continue;
-                            if (id < 0 || id >= spriteImages.Length) continue;
-                            long key = (((long)id) << 32) | argb;
-                            lock (tintedCacheLock)
+                            try
                             {
-                                if (tintedSpriteCache.TryGetValue(key, out var existing) && existing != null) continue;
-                            }
-
-                            var src = spriteImages[id] as BitmapSource;
-                            if (src == null) continue;
-
-                            var conv = new FormatConvertedBitmap(src, PixelFormats.Bgra32, null, 0);
-                            int w = conv.PixelWidth, h = conv.PixelHeight, stride = w * 4;
-                            if (w <= 0 || h <= 0) continue;
-                            var pixels = new byte[h * stride];
-                            conv.CopyPixels(pixels, stride, 0);
-
-                            for (int i = 0; i < pixels.Length; i += 4)
-                            {
-                                byte b = pixels[i + 0];
-                                byte g = pixels[i + 1];
-                                byte r = pixels[i + 2];
-                                byte a = pixels[i + 3];
-                                if (a != 0 && !(r == 0 && g == 0 && b == 0))
+                                if (spriteImages == null) continue;
+                                if (id < 0 || id >= spriteImages.Length) continue;
+                                long key = (((long)id) << 32) | argb;
+                                lock (tintedCacheLock)
                                 {
-                                    pixels[i + 0] = tint.B;
-                                    pixels[i + 1] = tint.G;
-                                    pixels[i + 2] = tint.R;
+                                    if (tintedSpriteCache.TryGetValue(key,
+                                        out var existing) && existing != null)
+                                        continue;
+                                }
+
+                                var src = spriteImages[id] as BitmapSource;
+                                if (src == null) continue;
+
+                                var conv = new FormatConvertedBitmap(src,
+                                    PixelFormats.Bgra32, null, 0);
+                                int w = conv.PixelWidth;
+                                int h = conv.PixelHeight;
+                                int stride = w * 4;
+                                if (w <= 0 || h <= 0) continue;
+                                var pixels = new byte[h * stride];
+                                conv.CopyPixels(pixels, stride, 0);
+
+                                for (int i = 0; i < pixels.Length; i += 4)
+                                {
+                                    byte b = pixels[i + 0];
+                                    byte g = pixels[i + 1];
+                                    byte r = pixels[i + 2];
+                                    byte a = pixels[i + 3];
+                                    if (a != 0 && !(r == 0 && g == 0 && b == 0))
+                                    {
+                                        pixels[i + 0] = tint.B;
+                                        pixels[i + 1] = tint.G;
+                                        pixels[i + 2] = tint.R;
+                                    }
+                                }
+
+                                var wb = new WriteableBitmap(w, h, conv.DpiX,
+                                    conv.DpiY, PixelFormats.Bgra32, null);
+                                wb.WritePixels(new Int32Rect(0, 0, w, h),
+                                    pixels, stride, 0);
+                                wb.Freeze();
+
+                                lock (tintedCacheLock)
+                                {
+                                    tintedSpriteCache.Put(key, wb);
                                 }
                             }
-
-                            var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
-                            wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
-                            wb.Freeze();
-
-                            lock (tintedCacheLock)
-                            {
-                                tintedSpriteCache.Put(key, wb);
-                            }
+                            catch { }
                         }
-                        catch { }
                     }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"PrecomputeTintedCachesAsync error: {ex.Message}");
-                }
-            });
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine(
+                            $"PrecomputeTintedCachesAsync error: {ex.Message}");
+                    }
+                });
+                return tintedPrecomputeTask;
+            }
         }
 
         
@@ -15270,20 +15469,6 @@ namespace FamidashEditor
             
             // Set the position key for random frame offsets (unique per position on map)
             currentSpritePositionKey = y * mapWidth + x;
-            
-                        // Debug: Log when we're updating an orb or coin (periodic)
-                            if ((spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
-                  spriteIdx == 0x05 || // Blue
-                  spriteIdx == 0x06 || // Pink
-                  spriteIdx == 0x27 || // Green
-                  spriteIdx == 0x28 || // Red
-                  spriteIdx == 0x44 || // Black
-                  spriteIdx == 0x7A || // White
-                  spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || // Coins
-                                    spriteIdx == 0x36 || spriteIdx == 0x49 || spriteIdx == 0x4A) && animationFrame % 60 == 0)
-            {
-                System.Diagnostics.Debug.WriteLine($"UpdateSpriteBitmapAtLocked: Updating animated sprite 0x{spriteIdx:X2} at ({x},{y}), previewMode={previewMode}");
-            }
             
             try
             {
@@ -15387,14 +15572,6 @@ namespace FamidashEditor
                 int animatedIdx = GetAnimatedSpriteIndex(spriteIdx);
                 BitmapSource? sprite = null;
                 
-                // Debug output for sprite 0x00
-                if (spriteIdx == 0x00)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Sprite 0x00: animatedIdx={animatedIdx}, previewMode={previewMode}");
-                }
-
-                // (no logging)
-                
                 // Check if this is a custom animated sprite
                 if (animatedIdx >= 2000)
                 {
@@ -15412,30 +15589,6 @@ namespace FamidashEditor
                         sprite = GetCustomAnimationSprite(animatedIdx);
                     }
 
-                    // Lightweight diagnostic: sample first pixel of pad frames to detect per-frame changes
-                    if (sprite != null && (spriteIdx == 0x52 || spriteIdx == 0x53 || spriteIdx == 0x0A || spriteIdx == 0x0C || spriteIdx == 0x0D || spriteIdx == 0x0E || spriteIdx == 0x25 || spriteIdx == 0x26 || spriteIdx == 0x7A || spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || spriteIdx == 0x36 || spriteIdx == 0x49 || spriteIdx == 0x4A))
-                    {
-                        try
-                        {
-                            // Only log periodically to avoid spamming the debug output
-                            if (animationFrame % 30 == 0)
-                            {
-                                byte[] sample = new byte[4];
-                                sprite.CopyPixels(new Int32Rect(0, 0, Math.Max(1, Math.Min(1, sprite.PixelWidth)), Math.Max(1, Math.Min(1, sprite.PixelHeight))), sample, 4, 0);
-                                string sampleHex = BitConverter.ToString(sample);
-                                System.Diagnostics.Debug.WriteLine($"PAD_SAMPLE ({x},{y}) sprite=0x{spriteIdx:X2} animatedIdx={animatedIdx} sample={sampleHex}");
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"PAD_SAMPLE error at ({x},{y}) sprite=0x{spriteIdx:X2}: {ex.Message}");
-                        }
-                    }
-                    
-                    if (spriteIdx == 0x00)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Sprite 0x00: customSprite={(sprite != null ? $"{sprite.PixelWidth}x{sprite.PixelHeight}" : "null")}");
-                    }
                 }
                 
                 // Fall back to normal sprite if not animated or animation not loaded
@@ -15587,12 +15740,12 @@ namespace FamidashEditor
                     }
                 }
                 
-                // Ensure we operate on straight-alpha BGRA pixels (not premultiplied),
-                // then calculate the actual size we need to render.
-                BitmapSource srcConv = sprite;
-                try { if (sprite.Format != PixelFormats.Bgra32) srcConv = new FormatConvertedBitmap(sprite, PixelFormats.Bgra32, null, 0); } catch { srcConv = sprite; }
-                int srcWidth = srcConv.PixelWidth;
-                int srcHeight = srcConv.PixelHeight;
+                // Source frames are immutable assets. Cache their straight-alpha
+                // BGRA bytes instead of allocating/converting them for every sprite
+                // on every animation tick.
+                CachedBitmapPixels sourcePixels = GetPreviewBitmapPixels(sprite);
+                int srcWidth = sourcePixels.Width;
+                int srcHeight = sourcePixels.Height;
 
                 // If this is the left-medium pole, we can now compute desiredDestX using the actual source width
                 if (!isMultiTilePortal && (animatedIdx == 2132 || animatedIdx == 2133 || animatedIdx == 2134 || animatedIdx == 2135) && spriteIdx == 0x3E)
@@ -15612,10 +15765,8 @@ namespace FamidashEditor
                     return;
                 }
                 
-                // Copy source sprite pixels (from straight-alpha converter)
-                int srcStride = srcWidth * 4;
-                byte[] srcPixels = new byte[srcHeight * srcStride];
-                srcConv.CopyPixels(srcPixels, srcStride, 0);
+                int srcStride = sourcePixels.Stride;
+                byte[] srcPixels = sourcePixels.Pixels;
                 
                 IntPtr pBackBuffer = spritesWb.BackBuffer;
                 if (pBackBuffer == IntPtr.Zero) return;
@@ -15640,13 +15791,23 @@ namespace FamidashEditor
                         // so that animated sprites (orbs) can clear/re-render each frame correctly while preserving portals.
                         if (!isMultiTilePortal && previewMode && portalsWb != null)
                         {
+                            byte[]? portalBuf = null;
                             try
                             {
-                                int portalStride = portalsWb.BackBufferStride;
-                                if (portalStride <= 0) throw new Exception("invalid portal stride");
-                                byte[] portalBuf = new byte[clearHeight * portalStride];
+                                // CopyPixels expects the destination buffer's stride,
+                                // not the source bitmap's full-level stride. Using the
+                                // latter allocated width-of-the-entire-level buffers for
+                                // every animated sprite on every preview frame.
+                                int portalCopyStride = checked(clearWidth * 4);
+                                if (portalCopyStride <= 0)
+                                    throw new Exception("invalid portal copy stride");
+                                int portalBufferSize = checked(
+                                    clearHeight * portalCopyStride);
+                                portalBuf = ArrayPool<byte>.Shared.Rent(
+                                    portalBufferSize);
                                 Int32Rect srcRect = new Int32Rect(drawX, destY, clearWidth, clearHeight);
-                                portalsWb.CopyPixels(srcRect, portalBuf, portalStride, 0);
+                                portalsWb.CopyPixels(srcRect, portalBuf,
+                                    portalCopyStride, 0);
 
                                 // Copy portal pixels into spritesWb back buffer
                                 IntPtr spritesBackBuffer = spritesWb.BackBuffer;
@@ -15660,7 +15821,7 @@ namespace FamidashEditor
                                         {
                                             long destOffset = (destY + row) * spritesBackBufferStride + drawX * 4;
                                             byte* destPtr = (byte*)spritesBackBuffer.ToPointer() + destOffset;
-                                            int srcRowOffset = row * portalStride;
+                                            int srcRowOffset = row * portalCopyStride;
                                             int copyBytes = Math.Min(clearWidth * 4, portalBuf.Length - srcRowOffset);
                                             copyBytes = Math.Min(copyBytes, maxRowBytes);
                                             if (copyBytes <= 0) continue;
@@ -15673,6 +15834,11 @@ namespace FamidashEditor
                                 }
                             }
                             catch { /* swallow portal copy failures to avoid crashing the UI */ }
+                            finally
+                            {
+                                if (portalBuf != null)
+                                    ArrayPool<byte>.Shared.Return(portalBuf);
+                            }
                         }
                     
                     
@@ -16005,17 +16171,17 @@ namespace FamidashEditor
                 return;
             }
 
-            // Read source portal image dimensions and pixels early so we can choose proper render sizing
-            int srcWidth = portalSprite.PixelWidth;
-            int srcHeight = portalSprite.PixelHeight;
+            // Portal frames are immutable; reuse their decoded pixels across ticks.
+            CachedBitmapPixels sourcePixels = GetPreviewBitmapPixels(portalSprite);
+            int srcWidth = sourcePixels.Width;
+            int srcHeight = sourcePixels.Height;
             if (srcWidth <= 0 || srcHeight <= 0)
             {
                 System.Diagnostics.Debug.WriteLine($"WARNING: Portal sprite invalid size for idx=0x{spriteIdx:X2}: {srcWidth}x{srcHeight}");
                 return;
             }
-            int srcStride = srcWidth * 4;
-            byte[] srcPixels = new byte[srcHeight * srcStride];
-            portalSprite.CopyPixels(srcPixels, srcStride, 0);
+            int srcStride = sourcePixels.Stride;
+            byte[] srcPixels = sourcePixels.Pixels;
 
             // Calculate pixel position
             int padPxX = (int)Math.Round(pad * dpi.DpiScaleX);
@@ -18123,12 +18289,42 @@ namespace FamidashEditor
             if (StatusText != null) StatusText.Text = $"Magic wand {mode} {visited.Count} tiles of type {target} (total: {selectionSet.Count})";
         }
 
+        private bool DragSelectionContainsOnlySprites()
+        {
+            if (selSprites == null || selSprites.Length == 0) return false;
+            bool foundSprite = false;
+            for (int i = 0; i < selSprites.Length; i++)
+            {
+                if (selTiles != null && i < selTiles.Length && selTiles[i] >= 0)
+                    return false;
+                if (selSprites[i] >= 0)
+                    foundSprite = true;
+            }
+            return foundSprite;
+        }
+
         private void StartDragMove(Point pos)
         {
             if (selTiles == null || selW <= 0 || selH <= 0) return;
-            
-            // Clear sprite offsets tracking for this drag
+
+            // Snapshot each selected sprite's existing visual offset. Off-grid drag
+            // deltas are applied on top of these values, so a second adjustment starts
+            // where the sprite is actually drawn rather than jumping to its storage tile.
             selSpriteOffsets.Clear();
+            if (selSprites != null)
+            {
+                for (int yy = 0; yy < selH; yy++)
+                {
+                    for (int xx = 0; xx < selW; xx++)
+                    {
+                        int localIdx = yy * selW + xx;
+                        if (localIdx >= selSprites.Length || selSprites[localIdx] < 0) continue;
+                        int srcIdx = (selY + yy) * mapWidth + (selX + xx);
+                        if (spritePixelOffsets.TryGetValue(srcIdx, out var offset))
+                            selSpriteOffsets[localIdx] = offset;
+                    }
+                }
+            }
             
             // Set anchors for sprites in the selection
             // Preserve existing anchors - only set new anchors for sprites without one
@@ -18153,15 +18349,50 @@ namespace FamidashEditor
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
             var dpi = VisualTreeHelper.GetDpi(this);
             
-            // Use same calculation as tile rendering for exact alignment
-            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
-            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
             int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
             int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
 
-            // Build an image for the selection - simple approach: just draw what we have
-            int bitmapWidth = selW * TileSize;
-            int bitmapHeight = selH * TileSize;
+            // Compute the selection's visual bounds. Sprite storage cells may be
+            // adjacent while their offset artwork overlaps; the drag ghost must use
+            // those visual coordinates and must not infer any occupancy constraint.
+            int visualMinX = int.MaxValue, visualMinY = int.MaxValue;
+            int visualMaxX = int.MinValue, visualMaxY = int.MinValue;
+            for (int yy = 0; yy < selH; yy++)
+            {
+                for (int xx = 0; xx < selW; xx++)
+                {
+                    int localIdx = yy * selW + xx;
+                    if (localIdx < selTiles.Length && selTiles[localIdx] >= 0)
+                    {
+                        visualMinX = Math.Min(visualMinX, xx * TileSize);
+                        visualMinY = Math.Min(visualMinY, yy * TileSize);
+                        visualMaxX = Math.Max(visualMaxX, (xx + 1) * TileSize);
+                        visualMaxY = Math.Max(visualMaxY, (yy + 1) * TileSize);
+                    }
+                    if (selSprites != null && localIdx < selSprites.Length && selSprites[localIdx] >= 0)
+                    {
+                        var offset = selSpriteOffsets.TryGetValue(localIdx, out var existing)
+                            ? existing : (offsetX: 0, offsetY: 0);
+                        int spriteX = xx * TileSize + offset.offsetX;
+                        int spriteY = yy * TileSize + offset.offsetY;
+                        visualMinX = Math.Min(visualMinX, spriteX);
+                        visualMinY = Math.Min(visualMinY, spriteY);
+                        visualMaxX = Math.Max(visualMaxX, spriteX + TileSize);
+                        visualMaxY = Math.Max(visualMaxY, spriteY + TileSize);
+                    }
+                }
+            }
+            if (visualMinX == int.MaxValue)
+            {
+                visualMinX = visualMinY = 0;
+                visualMaxX = selW * TileSize;
+                visualMaxY = selH * TileSize;
+            }
+
+            dragGhostNativeOriginX = visualMinX;
+            dragGhostNativeOriginY = visualMinY;
+            int bitmapWidth = Math.Max(1, visualMaxX - visualMinX);
+            int bitmapHeight = Math.Max(1, visualMaxY - visualMinY);
             
             // Store logical dimensions for zoom updates
             ghostLogicalWidth = bitmapWidth;
@@ -18183,12 +18414,15 @@ namespace FamidashEditor
                             if (src == null) src = tileImages[val];
                             if (src != null)
                             {
-                                dc.DrawImage(src, new Rect(xx * TileSize, yy * TileSize, TileSize, TileSize));
+                                dc.DrawImage(src, new Rect(
+                                    xx * TileSize - visualMinX,
+                                    yy * TileSize - visualMinY,
+                                    TileSize, TileSize));
                             }
                         }
                     }
                 }
-                // Draw sprites on top at their grid positions (ignore pixel offsets for ghost)
+                // Draw sprites at their actual visual positions, including offsets.
                 if (selSprites != null)
                 {
                     for (int yy = 0; yy < selH; yy++)
@@ -18201,7 +18435,13 @@ namespace FamidashEditor
                                 var src = spriteImages[val];
                                 if (src != null)
                                 {
-                                    dc.DrawImage(src, new Rect(xx * TileSize, yy * TileSize, TileSize, TileSize));
+                                    int localIdx = yy * selW + xx;
+                                    var offset = selSpriteOffsets.TryGetValue(localIdx, out var existing)
+                                        ? existing : (offsetX: 0, offsetY: 0);
+                                    dc.DrawImage(src, new Rect(
+                                        xx * TileSize + offset.offsetX - visualMinX,
+                                        yy * TileSize + offset.offsetY - visualMinY,
+                                        TileSize, TileSize));
                                 }
                             }
                         }
@@ -18226,11 +18466,11 @@ namespace FamidashEditor
                 GhostImage.Width = (bitmapWidth * scale * dpi.DpiScaleX) / dpi.DpiScaleX;
                 GhostImage.Height = (bitmapHeight * scale * dpi.DpiScaleY) / dpi.DpiScaleY;
                 
-                // Position at tile boundary (no offset adjustment needed since we cleared offsets)
-                int selLeftPx = padPxX + selX * tilePixelW;
-                int selTopPx = padPxY + selY * tilePixelH;
-                double selLeft = selLeftPx / dpi.DpiScaleX;
-                double selTop = selTopPx / dpi.DpiScaleY;
+                // Position at the visual bounds, not merely the storage tile bounds.
+                double selLeft = padPxX / dpi.DpiScaleX +
+                    (selX * TileSize + visualMinX) * scale;
+                double selTop = padPxY / dpi.DpiScaleY +
+                    (selY * TileSize + visualMinY) * scale;
                 Canvas.SetLeft(GhostImage, selLeft);
                 Canvas.SetTop(GhostImage, selTop);
                 GhostImage.Visibility = Visibility.Visible;
@@ -18239,6 +18479,7 @@ namespace FamidashEditor
             // capture drag state
             isDraggingSelection = true;
             dragMovedOffMap = false;
+            dragUsesSpriteOffsets = false;
             dragStartMouse = pos;
             dragOrigX = selX; dragOrigY = selY;
             lastDragScale = scale; // Store current scale for zoom rescaling
@@ -18268,11 +18509,16 @@ namespace FamidashEditor
             // Check modifier keys and sprite-only mode
             bool isShiftHeld = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
             bool isCtrlHeld = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
-            bool isSpritesOnly = spritesLayerActive && !tilesLayerActive;
-            
-            // desired top-left in canvas units (before snapping)
-            double left = pos.X - dragOffset.X;
-            double top = pos.Y - dragOffset.Y;
+            bool isSpritesOnly = DragSelectionContainsOnlySprites();
+            if (isShiftHeld && isSpritesOnly)
+                dragUsesSpriteOffsets = true;
+
+            // Desired visual-bounds position, converted back to the selection's
+            // logical origin before snapping. This preserves existing sprite offsets.
+            double ghostLeft = pos.X - dragOffset.X;
+            double ghostTop = pos.Y - dragOffset.Y;
+            double left = ghostLeft - dragGhostNativeOriginX * scale;
+            double top = ghostTop - dragGhostNativeOriginY * scale;
             
             double snappedLeft, snappedTop;
             
@@ -18327,11 +18573,16 @@ namespace FamidashEditor
             
             
 
-            // clamp so selection stays within map extents
-            double minLeft = logicalPad;
-            double minTop = logicalPad;
-            double maxLeft = logicalPad + Math.Max(0, mapWidth * logicalTileW - selW * logicalTileW);
-            double maxTop = logicalPad + Math.Max(0, mapHeight * logicalTileH - selH * logicalTileH);
+            // Clamp the actual visual bounds. For an offset sprite this differs
+            // from its storage cell and prevents false barriers near adjacent cells.
+            double minLeft = logicalPad - dragGhostNativeOriginX * scale;
+            double minTop = logicalPad - dragGhostNativeOriginY * scale;
+            double maxLeft = logicalPad + Math.Max(0,
+                mapWidth * TileSize * scale -
+                (dragGhostNativeOriginX + ghostLogicalWidth) * scale);
+            double maxTop = logicalPad + Math.Max(0,
+                mapHeight * TileSize * scale -
+                (dragGhostNativeOriginY + ghostLogicalHeight) * scale);
             // If the computed snapped position is outside the allowed extents, mark
             // the drag as moved-off-map. We'll use this to cancel the operation on drop.
             if (snappedLeft < minLeft || snappedLeft > maxLeft || snappedTop < minTop || snappedTop > maxTop)
@@ -18348,9 +18599,11 @@ namespace FamidashEditor
                 dragMovedOffMap = false;
             }
             
-            // Position ghost at snapped location
-            Canvas.SetLeft(GhostImage, snappedLeft);
-            Canvas.SetTop(GhostImage, snappedTop);
+            // Position the visual-bounds ghost relative to the snapped selection origin.
+            double snappedGhostLeft = snappedLeft + dragGhostNativeOriginX * scale;
+            double snappedGhostTop = snappedTop + dragGhostNativeOriginY * scale;
+            Canvas.SetLeft(GhostImage, snappedGhostLeft);
+            Canvas.SetTop(GhostImage, snappedGhostTop);
             
             // Calculate and store final tile position and pixel offset for EndDragMove
             // The ghost position represents the final visual position where sprites should appear
@@ -18385,67 +18638,17 @@ namespace FamidashEditor
                 dragFinalOffsetY = 0;
             }
 
-            // Debug: when shift-dragging sprites, log final native coords and overlapping sprites
-            try
-            {
-                if (isShiftHeld && isSpritesOnly)
-                {
-                    var overlaps = new System.Collections.Generic.List<int>();
-                    // ghost bounds in native pixels
-                    double ghostLeftNative = finalNativeLeft;
-                    double ghostTopNative = finalNativeTop;
-                    double ghostRightNative = ghostLeftNative + selW * TileSize;
-                    double ghostBottomNative = ghostTopNative + selH * TileSize;
-                    for (int posKey = 0; posKey < sprites.Length; posKey++)
-                    {
-                        int sid = sprites[posKey]; if (sid == -1) continue;
-                        int tx = posKey % mapWidth; int ty = posKey / mapWidth;
-                        int storageLeft = tx * TileSize;
-                        int storageTop = ty * TileSize;
-                        // include pixel offset if present
-                        int offX = 0, offY = 0;
-                        if (spritePixelOffsets.TryGetValue(posKey, out var po)) { offX = po.offsetX; offY = po.offsetY; }
-                        double sprLeft = storageLeft + offX;
-                        double sprTop = storageTop + offY;
-                        double sprRight = sprLeft + TileSize;
-                        double sprBottom = sprTop + TileSize;
-                        if (!(sprRight <= ghostLeftNative || sprLeft >= ghostRightNative || sprBottom <= ghostTopNative || sprTop >= ghostBottomNative))
-                        {
-                            overlaps.Add(posKey);
-                        }
-                    }
-                    var msg = $"DragDebug: finalNative=({finalNativeLeft:0.##},{finalNativeTop:0.##}) tile=({dragFinalTileX},{dragFinalTileY}) off=({dragFinalOffsetX},{dragFinalOffsetY}) overlaps={string.Join(";", overlaps)}";
-                    System.Diagnostics.Debug.WriteLine(msg);
-                    try
-                    {
-                        var logPath = System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory ?? ".", "drag_debug.log");
-                        System.IO.File.AppendAllText(logPath, msg + System.Environment.NewLine);
-                    }
-                    catch { }
-                }
-            }
-            catch { }
-
-            // When shift-dragging in sprite-only mode, allow the ghost to move freely
-            // even if destination tiles are occupied by other sprites. Historically
-            // the ghost was being hidden/blocked when the destination overlapped
-            // existing sprite anchors; force visibility here and emit a debug
-            // trace so we can observe any overlapping situation during testing.
-            try
-            {
-                // For Shift+sprite-only dragging we allow the ghost to be positioned freely
-                // even if destination tiles contain other sprites. Do not block or constrain
-                // ghost placement based on existing sprite occupancy.
-                try { if (isShiftHeld && isSpritesOnly && GhostImage != null) GhostImage.Visibility = Visibility.Visible; } catch { }
-            }
-            catch { }
+            // Sprite overlap is intentionally unrestricted. Storage remains at the
+            // source slot and only the visual offset changes.
+            if (isShiftHeld && isSpritesOnly)
+                GhostImage.Visibility = Visibility.Visible;
             
             // Show yellow box at snapped position
             if (SelectionOverlay != null)
             {
                 SelectionOverlay.Children.Clear();
-                double boxWidth = selW * TileSize * scale;
-                double boxHeight = selH * TileSize * scale;
+                double boxWidth = ghostLogicalWidth * scale;
+                double boxHeight = ghostLogicalHeight * scale;
                 var rect = new Shapes.Rectangle 
                 { 
                     Width = boxWidth, 
@@ -18455,8 +18658,8 @@ namespace FamidashEditor
                     Fill = Brushes.Transparent, 
                     IsHitTestVisible = false 
                 };
-                Canvas.SetLeft(rect, snappedLeft);
-                Canvas.SetTop(rect, snappedTop);
+                Canvas.SetLeft(rect, snappedGhostLeft);
+                Canvas.SetTop(rect, snappedGhostTop);
                 SelectionOverlay.Children.Add(rect);
             }
         }
@@ -18489,8 +18692,8 @@ namespace FamidashEditor
             
             // Check modifier keys and sprite-only mode
             bool isShiftHeld = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
-            bool isCtrlHeld = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
-            bool isSpritesOnly = spritesLayerActive && !tilesLayerActive;
+            bool isSpritesOnly = DragSelectionContainsOnlySprites();
+            bool preserveOffsets = dragUsesSpriteOffsets || (isShiftHeld && isSpritesOnly);
             
             // Use the final position calculated during UpdateDragMoveTo
             // This ensures the placement matches exactly where the ghost was shown
@@ -18499,10 +18702,15 @@ namespace FamidashEditor
             int pixelOffsetX = dragFinalOffsetX;
             int pixelOffsetY = dragFinalOffsetY;
             
-            // clamp
-            if (destX < 0) destX = 0; if (destY < 0) destY = 0;
-            if (destX + selW > mapWidth) destX = mapWidth - selW;
-            if (destY + selH > mapHeight) destY = mapHeight - selH;
+            // Grid moves require valid destination storage cells. Off-grid sprite
+            // adjustments retain their original storage cells, so only their visual
+            // bounds (validated during drag) need to remain on-map.
+            if (!preserveOffsets)
+            {
+                if (destX < 0) destX = 0; if (destY < 0) destY = 0;
+                if (destX + selW > mapWidth) destX = mapWidth - selW;
+                if (destY + selH > mapHeight) destY = mapHeight - selH;
+            }
 
             // hide ghost and yellow box
             GhostImage.Visibility = Visibility.Collapsed;
@@ -18517,9 +18725,8 @@ namespace FamidashEditor
                 return;
             }
 
-            // commit move with optional pixel offset
-            // Preserve offsets only when shift is held (sub-tile positioning mode)
-            bool preserveOffsets = isShiftHeld && isSpritesOnly;
+            // Commit the visual offset. This does not reserve or consume a
+            // destination sprite storage slot, so exact overlap is valid.
             MoveSelectionTo(destX, destY, pixelOffsetX, pixelOffsetY, preserveOffsets);
         }
 
@@ -20040,10 +20247,14 @@ namespace FamidashEditor
         private void MoveSelectionTo(int destX, int destY, int pixelOffsetX = 0, int pixelOffsetY = 0, bool preserveOffsets = false)
         {
             if (selTiles == null || selW <= 0 || selH <= 0) return;
-            // clamp destination so selection fits
-            if (destX < 0) destX = 0; if (destY < 0) destY = 0;
-            if (destX + selW > mapWidth) destX = mapWidth - selW;
-            if (destY + selH > mapHeight) destY = mapHeight - selH;
+            // Only grid moves consume destination storage cells. Off-grid sprite
+            // movement is represented entirely by offsets on the source records.
+            if (!preserveOffsets)
+            {
+                if (destX < 0) destX = 0; if (destY < 0) destY = 0;
+                if (destX + selW > mapWidth) destX = mapWidth - selW;
+                if (destY + selH > mapHeight) destY = mapHeight - selH;
+            }
 
             // Build atomic final state for both tiles and sprites, then apply deletions for both layers,
             // then apply placements for both layers. This avoids inter-layer or overlapping-source/dest races
@@ -20060,9 +20271,7 @@ namespace FamidashEditor
             // First pass: collect mappings from source->dest for tiles and sprites (respecting sparse selection)
             var tileMappings = new System.Collections.Generic.List<(int src, int dst, int val)>();
             var spriteMappings = new System.Collections.Generic.List<(int src, int dst, int val)>();
-            // For collisions when preserveOffsets==true, plan offsets instead of moving into occupied dst
-            var collisionPlannedOffsets = new System.Collections.Generic.Dictionary<int, (int ox, int oy)>();
-            var collisionSources = new System.Collections.Generic.HashSet<int>();
+            var plannedSpriteOffsets = new System.Collections.Generic.Dictionary<int, (int ox, int oy)>();
             for (int yy = 0; yy < selH; yy++)
             {
                 for (int xx = 0; xx < selW; xx++)
@@ -20090,42 +20299,27 @@ namespace FamidashEditor
                         if (sval != -1)
                         {
                             int sDstIdx = (destY + yy) * mapWidth + (destX + xx);
-                            if (sDstIdx >= 0 && sDstIdx < finalSprites.Length)
+                            if (preserveOffsets || (sDstIdx >= 0 && sDstIdx < finalSprites.Length))
                             {
-                                // When preserving offsets (Shift-drag), always keep the sprite in its
-                                // original storage index and record a pixel offset so it visually
-                                // moves. This makes placement permissive (allow overlaps) because
-                                // we're not moving anchors/storage slots � only adding shift data.
+                                // Shift-drag never moves the sprite record. Apply the
+                                // selection-origin delta to its existing visual offset;
+                                // adjacent and exactly overlapping sprites remain independent.
                                 if (preserveOffsets)
                                 {
                                     int srcTileX = selX + xx; int srcTileY = selY + yy;
                                     int targetTileX = destX + xx; int targetTileY = destY + yy;
-
-                                    // Compute target pixel position
-                                    int targetPixelX;
-                                    int targetPixelY;
-                                    if (spriteAnchors.TryGetValue(srcIdx, out var anchor))
-                                    {
-                                        int tileDeltaX = targetTileX - anchor.anchorTileX;
-                                        int tileDeltaY = targetTileY - anchor.anchorTileY;
-                                        int totalMovementX = tileDeltaX * TileSize + pixelOffsetX;
-                                        int totalMovementY = tileDeltaY * TileSize + pixelOffsetY;
-                                        targetPixelX = anchor.anchorTileX * TileSize + totalMovementX;
-                                        targetPixelY = anchor.anchorTileY * TileSize + totalMovementY;
-                                    }
-                                    else
-                                    {
-                                        targetPixelX = targetTileX * TileSize + pixelOffsetX;
-                                        targetPixelY = targetTileY * TileSize + pixelOffsetY;
-                                    }
+                                    int localIdx = yy * selW + xx;
+                                    var existingOffset = selSpriteOffsets.TryGetValue(localIdx, out var existing)
+                                        ? existing : (offsetX: 0, offsetY: 0);
+                                    int targetPixelX = targetTileX * TileSize + pixelOffsetX + existingOffset.offsetX;
+                                    int targetPixelY = targetTileY * TileSize + pixelOffsetY + existingOffset.offsetY;
 
                                     int storedPixelX = srcTileX * TileSize;
                                     int storedPixelY = srcTileY * TileSize;
                                     int offsetX = targetPixelX - storedPixelX;
                                     int offsetY = targetPixelY - storedPixelY;
 
-                                    collisionPlannedOffsets[srcIdx] = (offsetX, offsetY);
-                                    collisionSources.Add(srcIdx);
+                                    plannedSpriteOffsets[srcIdx] = (offsetX, offsetY);
 
                                     // Keep sprite in source storage index; offsets will be applied later.
                                     spriteMappings.Add((srcIdx, srcIdx, sval));
@@ -20256,16 +20450,16 @@ namespace FamidashEditor
                         int sval = selSprites[yy * selW + xx];
                         if (sval == -1) continue; // No sprite in selection at this position
                         
-                        int dstIdx = (destY + yy) * mapWidth + (destX + xx);
-                        if (dstIdx < 0 || dstIdx >= sprites.Length) continue;
-
-                        // If this source had a planned collision offset, apply it to the source
-                        // storage index instead of moving the sprite into the destination slot.
-                        if (collisionPlannedOffsets.TryGetValue(srcIdx, out var planned))
+                        // Apply the visual offset to the original storage record. No
+                        // destination occupancy check is relevant in this mode.
+                        if (plannedSpriteOffsets.TryGetValue(srcIdx, out var planned))
                         {
                             spritePixelOffsets[srcIdx] = (planned.ox, planned.oy);
                             continue;
                         }
+
+                        int dstIdx = (destY + yy) * mapWidth + (destX + xx);
+                        if (dstIdx < 0 || dstIdx >= sprites.Length) continue;
 
                         // Get anchor for this sprite and compute offset relative to destination storage
                         if (spriteAnchors.TryGetValue(srcIdx, out var anchor))
@@ -20342,21 +20536,27 @@ namespace FamidashEditor
             
             
             
-            // Update selection to new destination: preserve sparse selection membership only for cells that were selected
-            var newSelection = new System.Collections.Generic.HashSet<int>();
-            for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+            if (!preserveOffsets)
             {
-                int oldIdx = (selY + yy) * mapWidth + (selX + xx);
-                int newIdx = (destY + yy) * mapWidth + (destX + xx);
-                // if the source cell was part of selectionSet (i.e., non-empty before move), include its destination
-                if (selectionSet != null && selectionSet.Contains(oldIdx)) newSelection.Add(newIdx);
+                // Grid moves relocate storage, so relocate selection membership too.
+                var newSelection = new System.Collections.Generic.HashSet<int>();
+                for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+                {
+                    int oldIdx = (selY + yy) * mapWidth + (selX + xx);
+                    int newIdx = (destY + yy) * mapWidth + (destX + xx);
+                    if (selectionSet != null && selectionSet.Contains(oldIdx)) newSelection.Add(newIdx);
+                }
+                selectionSet = newSelection;
+                selX = destX; selY = destY;
+                UpdateSelectionVisuals(selX, selY, selW, selH);
+                if (StatusText != null) StatusText.Text = $"Moved selection to {destX},{destY}";
             }
-            selectionSet = newSelection;
-            // update selX/selY to the new top-left
-            selX = destX; selY = destY;
-            // Update selection visuals to show the moved selection
-            UpdateSelectionVisuals(selX, selY, selW, selH);
-            if (StatusText != null) StatusText.Text = $"Moved selection to {destX},{destY}";
+            else
+            {
+                // Storage and selection identity stay put; only visual coordinates changed.
+                UpdateSelectionVisuals(selX, selY, selW, selH);
+                if (StatusText != null) StatusText.Text = "Adjusted sprite position (overlap allowed)";
+            }
         }
 
         private void EraseSelection()
@@ -22876,6 +23076,28 @@ namespace FamidashEditor
                 }
                 // If No, continue with close without saving
             }
+
+            if (e.Cancel) return;
+
+            // Dispatcher timers and in-flight async rebuilds otherwise retain the
+            // window and can continue touching bitmaps after it has begun closing.
+            try { previewModeTransitionCts?.Cancel(); } catch { }
+            Interlocked.Increment(ref previewModeTransitionVersion);
+            Interlocked.Increment(ref spriteRenderGeneration);
+            previewMode = false;
+            StopPreviewTimer();
+            if (previewTimer != null)
+            {
+                previewTimer.Tick -= PreviewTimer_Tick;
+                previewTimer = null;
+            }
+            try { portalDirtyTimer?.Stop(); } catch { }
+            portalDirtyTimer = null;
+            portalDirtyScheduled = false;
+            try { incompatibleDirtyTimer?.Stop(); } catch { }
+            incompatibleDirtyTimer = null;
+            incompatibleDirtyScheduled = false;
+            ClearTintedCaches();
         }
 
         

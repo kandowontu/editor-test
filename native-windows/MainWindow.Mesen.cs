@@ -119,7 +119,7 @@ namespace FamidashEditor
                 };
                 var proc = Process.Start(psi);
                 if (proc != null)
-                    StartMesenOverlay(proc);
+                    StartMesenRunMonitor(proc);
 
                 if (StatusText != null) StatusText.Text = "Launched Famidash in Mesen.";
             }

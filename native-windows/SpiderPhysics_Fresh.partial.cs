@@ -488,11 +488,10 @@ if (currplayer_mini != 0)
             // Convert world Y to tile Y (accounting for ground offset)
             int tileY = (checkY_px / TILE) + groundRowsToReserve;
             
-            // Check if beyond map bottom (ground layer = solid)
+            // The NES collision map exposes the reserved bottom boundary as
+            // terrain to both ordinary eject probes and spider_down_wait.
             if (tileY >= mapHeight)
             {
-				if (!useEjectProbes)
-					return (false, 0);
                 int groundTop_world = (mapHeight - groundRowsToReserve) * TILE;
                 int eject = checkY_px - groundTop_world;
                 return (true, eject);
@@ -560,11 +559,9 @@ if (currplayer_mini != 0)
             // Convert world Y to tile Y (accounting for ground offset)
             int tileY = (checkY_px / TILE) + groundRowsToReserve;
             
-            // Check if above map top (solid ceiling)
+            // Mirror the reserved top boundary used by the NES collision map.
             if (tileY < 0)
             {
-				if (!useEjectProbes)
-					return (false, 0);
                 int eject = 0 - checkY_px;
                 return (true, eject);
             }

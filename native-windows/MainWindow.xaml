@@ -166,9 +166,6 @@
                             <MenuItem x:Name="MenuCaptureRamMesen" Header="Capture NES RAM (Headless)" />
                             <Separator />
                             <MenuItem x:Name="MenuBuildAndTest" Header="Build and Test" />
-                            <Separator />
-                            <MenuItem x:Name="MenuOverlayAndFollow" Header="Overlay and Follow" IsCheckable="True" IsChecked="True" />
-                            <MenuItem x:Name="MenuCamFollow" Header="Cam Follow" IsCheckable="True" IsChecked="True" />
                     </MenuItem>
                 </MenuItem>
                 <MenuItem Header="_Options">

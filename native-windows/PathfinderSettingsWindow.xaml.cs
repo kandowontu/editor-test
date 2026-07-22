@@ -6,7 +6,8 @@ namespace FamidashEditor
     public partial class PathfinderSettingsWindow : Window
     {
         /// <summary>
-        /// Jump timing bias: 0.0 = earliest viable jump, 0.25 = early, 0.5 = middle, 0.75 = late, 1.0 = latest.
+		/// Input timing bias: 0.0 = earliest viable action, 0.25 = early,
+		/// 0.5 = neutral, 0.75 = late, 1.0 = latest viable action.
         /// </summary>
         public double JumpTimingBias { get; private set; } = 0.5;
 
@@ -18,7 +19,7 @@ namespace FamidashEditor
         /// <summary>
         /// True if the user wants the pathfinder to prefer collecting coins.
         /// </summary>
-        public bool PreferCoins { get; private set; } = false;
+        public bool PreferCoins { get; private set; } = true;
 
         /// <summary>
         /// True if the path line should be drawn on the map when calculation completes.
@@ -48,18 +49,20 @@ namespace FamidashEditor
             UpdateLabel();
         }
 
-        private void UpdateLabel()
-        {
-            if (OptEarliest.IsChecked == true)
-                BiasLabel.Text = "Jump at the earliest frame that still survives";
-            else if (OptEarly.IsChecked == true)
-                BiasLabel.Text = "Jump early — 25% of the way from earliest to latest";
-            else if (OptMiddle.IsChecked == true)
-                BiasLabel.Text = "Jump at the midpoint between earliest and latest viable timing";
-            else if (OptLate.IsChecked == true)
-                BiasLabel.Text = "Jump late — 75% of the way from earliest to latest";
-            else if (OptLatest.IsChecked == true)
-                BiasLabel.Text = "Jump at the last possible frame that still survives";
+		private void UpdateLabel()
+		{
+			const string fallback = " Applies to every game mode; unsafe timing " +
+				"uses the closest surviving timing only for the necessary segment.";
+			if (OptEarliest.IsChecked == true)
+				BiasLabel.Text = "Prefer the earliest viable input action." + fallback;
+			else if (OptEarly.IsChecked == true)
+				BiasLabel.Text = "Prefer early input actions." + fallback;
+			else if (OptMiddle.IsChecked == true)
+				BiasLabel.Text = "Use neutral timing across every game mode.";
+			else if (OptLate.IsChecked == true)
+				BiasLabel.Text = "Prefer late input actions." + fallback;
+			else if (OptLatest.IsChecked == true)
+				BiasLabel.Text = "Prefer the latest viable input action." + fallback;
         }
 
         private void OkButton_Click(object sender, RoutedEventArgs e)
