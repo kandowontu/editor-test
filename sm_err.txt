@@ -1,2 +1,0 @@
-[STAB_SET] prevMode=0 mode=1 stab=0
-[STAB_SET] prevMode=0 mode=1 stab=0

@@ -94,6 +94,10 @@ namespace FamidashEditor
 
         // Starting speed UI index (0=0.5x,1=1x,2=2x,3=3x,4=4x)
         private int startingSpeedUiIndex = 1;
+		private readonly bool forcePlatformer;
+		private readonly SharedPhysics.CollisionMap platformerCollisionMap;
+		private int currXScrollStop_fixed = 0x5000;
+		private int targetXScrollStop_fixed = 0x5000;
 
         // Called by the editor to set the starting speed UI index so simulators match the editor.
         public void SetStartingSpeedUiIndex(int idx)
@@ -1004,7 +1008,7 @@ namespace FamidashEditor
 
                 if (useRawNesRecord)
                 {
-                    int scrollX_px = Math.Max(0, (playerX_fixed >> 8) - 0x50);
+                    int scrollX_px = SimulatorScrollX_px();
                     int playerLeft_screen_px = playerLeft_px - scrollX_px;
                     int playerTop_screen_px = playerTop_px - (cameraY_fixed >> 8);
                     int playerWidth = playerRight_px - playerLeft_px + 1;
@@ -1141,7 +1145,7 @@ namespace FamidashEditor
                 // exact edge contacts when scroll_y has a fractional component.
                 if (useRawNesRecord && hh < 0xFC)
                 {
-                    int scrollX_px = Math.Max(0, (playerX_fixed >> 8) - 0x50);
+                    int scrollX_px = SimulatorScrollX_px();
                     int playerLeft_screen_px = playerLeft_px - scrollX_px;
                     int playerTop_screen_px = playerTop_px - (cameraY_fixed >> 8);
                     int playerWidth = playerRight_px - playerLeft_px + 1;
@@ -2071,6 +2075,14 @@ namespace FamidashEditor
             int tileStartY = sampleTileY * TILE;
             int localY = Math.Max(0, Math.Min(TILE - 1, centerY - tileStartY));
 
+            // Forced platformer bg_coll_death deliberately omits
+            // bg_coll_top_bottom_slabs(). These remain floor/ceiling collision,
+            // but their empty half is not an automatic center-point death.
+            if (forcePlatformer && !(currentGameMode == 6 && dblocked) &&
+                (collision == MetatileCollision.COL_TOP ||
+                 collision == MetatileCollision.COL_BOTTOM))
+                return false;
+
             // Check if this pixel causes death (bg_coll_spikes equivalent)
             if (MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY))
             {
@@ -2186,7 +2198,7 @@ namespace FamidashEditor
                     if (!isNormalGravityPortal && !isReversedGravityPortal) continue;
                     
                     // Check if already activated
-                    if (processedGravityPortals.Contains(idx)) continue;
+                    if (!forcePlatformer && processedGravityPortals.Contains(idx)) continue;
                     
                     // Use SpriteIntersectsPlayer to check sprite hitbox overlap
                     // NES sprite_collide/check_collision counts the edge-touch
@@ -2282,7 +2294,7 @@ namespace FamidashEditor
                         bool cameraRampPortal = sid == 0x00 || sid == 0x04;
                         // Cube/robot handlers reset exitPortalTimer on every
                         // overlap, including frames after activation.
-                        if (processedGameModePortals.Contains(idx) && !cameraRampPortal) continue;
+                        if (!forcePlatformer && processedGameModePortals.Contains(idx) && !cameraRampPortal) continue;
 
                         if (!SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                             continue;
@@ -2397,7 +2409,7 @@ namespace FamidashEditor
 
                     if (sid == 0x64 || sid == 0x7E)
                     {
-                        if (processedRandomPortals.Contains(idx)) continue;
+                        if (!forcePlatformer && processedRandomPortals.Contains(idx)) continue;
                         if (!SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                             continue;
 
@@ -2489,7 +2501,7 @@ namespace FamidashEditor
                     if (sid < 0x5F || sid > 0x63) continue;
                     
                     // Check if already activated
-                    if (processedGravityModPortals.Contains(idx)) continue;
+                    if (!forcePlatformer && processedGravityModPortals.Contains(idx)) continue;
                     
                     // Check sprite collision
                     if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
@@ -2674,7 +2686,7 @@ namespace FamidashEditor
                     if (!isMiniPortal && !isGrowthPortal) continue;
                     
                     // Check if already activated
-                    if (processedMiniPortals.Contains(idx)) continue;
+                    if (!forcePlatformer && processedMiniPortals.Contains(idx)) continue;
                     
                     // Use SpriteIntersectsPlayer to check sprite hitbox overlap
                     if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
@@ -2813,7 +2825,7 @@ namespace FamidashEditor
                     bool isWrapOff = (sid == 0x9E);
                     if (!isWrapOn && !isWrapOff) continue;
 
-                    if (processedWrapPortals.Contains(idx)) continue;
+                    if (!forcePlatformer && processedWrapPortals.Contains(idx)) continue;
 
                     if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px, true))
                     {
@@ -2914,7 +2926,7 @@ namespace FamidashEditor
                     if (sid != 0x22) continue; // Only dual portal
                     
                     // Check if already activated
-                    if (processedMiniPortals.Contains(idx)) continue;
+                    if (!forcePlatformer && processedMiniPortals.Contains(idx)) continue;
                     
                     // Check for collision
                     if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
@@ -3009,7 +3021,7 @@ namespace FamidashEditor
                     if (sid != 0x23) continue; // Only single portal
                     
                     // Check if already activated
-                    if (processedMiniPortals.Contains(idx)) continue;
+                    if (!forcePlatformer && processedMiniPortals.Contains(idx)) continue;
                     
                     // Check for collision
                     if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
@@ -3250,7 +3262,7 @@ namespace FamidashEditor
                     bool yOv;
                     if (useRawNesRecord)
                     {
-                        int scrollX_px = Math.Max(0, (playerX_fixed >> 8) - 0x50);
+                        int scrollX_px = SimulatorScrollX_px();
                         int playerLeft_screen_px = playerLeft_px - scrollX_px;
                         int playerTop_screen_px = playerTop_px - (cameraY_fixed >> 8);
                         xOv = SimulatorNesAxisOverlaps(
@@ -3537,7 +3549,7 @@ namespace FamidashEditor
                     // Check if already activated (ONLY for orbs, not pads - pads can trigger multiple times)
                     // Per-player tracking: each player can independently activate the same orb
                     bool isOrb = (isSpiderOrbUp || isSpiderOrbDown);
-                    if (isOrb && playerProcessedOrbs[currplayer].Contains(idx))
+                    if (isOrb && !forcePlatformer && playerProcessedOrbs[currplayer].Contains(idx))
                         continue;
                     
                     // Use CheckOrbCollision for more reliable detection (same as regular orbs)
@@ -4258,7 +4270,7 @@ namespace FamidashEditor
 
         private void UpdateSimulatorNesSlots()
         {
-            int scrollX_px = Math.Max(0, (playerX_fixed >> 8) - 0x50);
+            int scrollX_px = SimulatorScrollX_px();
             int scrollY_px = cameraY_fixed >> 8;
             for (int slot = 15; slot >= 0; slot--)
             {
@@ -4297,8 +4309,11 @@ namespace FamidashEditor
 
         private void ApplySimulatorNesCameraScroll()
         {
-            if (!physicsEnabled || !jumpedOnce || paused)
+            if (!physicsEnabled || paused || (!forcePlatformer && !jumpedOnce))
                 return;
+
+            if (forcePlatformer)
+                ApplySimulatorPlatformerXScroll();
 
             // NES process_y_scroll runs once per gameplay frame, after P1's
             // movement/collisions and before check_spr_objects/P2.
@@ -4362,6 +4377,128 @@ namespace FamidashEditor
                 _sim_scrollYSubpx = 0;
                 cameraY_fixed = maxShipCameraY_fixed;
             }
+        }
+
+        private int SimulatorScrollX_px()
+        {
+            return forcePlatformer
+                ? cameraX_fixed >> 8
+                : Math.Max(0, (playerX_fixed >> 8) - 0x50);
+        }
+
+        private void ApplySimulatorPlatformerXScroll()
+        {
+            if (currXScrollStop_fixed < targetXScrollStop_fixed)
+                currXScrollStop_fixed += 0x200;
+            else if (currXScrollStop_fixed > targetXScrollStop_fixed)
+                currXScrollStop_fixed -= 0x200;
+
+            int playerScreenX_fixed = playerX_fixed - cameraX_fixed;
+            if (playerScreenX_fixed > currXScrollStop_fixed)
+            {
+                int delta = (playerScreenX_fixed - currXScrollStop_fixed) >> 8;
+                cameraX_fixed += delta << 8;
+            }
+            else if (playerScreenX_fixed < 0x0200)
+            {
+                // Mirrors the NES unsigned-byte subtraction in process_x_scroll.
+                int delta = (playerScreenX_fixed + 0x0200) >> 8;
+                cameraX_fixed -= delta << 8;
+            }
+
+            int maxCamera_fixed = Math.Max(0, (mapWidth - NES_W) * TILE) << 8;
+            if (cameraX_fixed < 0) cameraX_fixed = 0;
+            if (cameraX_fixed > maxCamera_fixed) cameraX_fixed = maxCamera_fixed;
+        }
+
+        private int ResolveSimulatorPlatformerHorizontal(int oldX_fixed,
+            int movementSpeed_fixed, sbyte direction, out bool lethal)
+        {
+            lethal = false;
+            direction = direction < 0 ? (sbyte)-1 : direction > 0 ? (sbyte)1 : (sbyte)0;
+
+            int hitboxW = (currentGameMode == 6 || currentGameMode == 10)
+                ? 8 : (currplayer_mini != 0 ? 8 : 15);
+            int hitboxH = (currentGameMode == 6 || currentGameMode == 10)
+                ? 8 : (currplayer_mini != 0 ? 7 : 15);
+            int playerX_px = oldX_fixed >> 8;
+            int playerY_px = NesPlayerBgCollisionY_px(playerY_fixed);
+            bool slopeActive = (currplayer_was_on_slope_counter | currplayer_slope_frames) != 0;
+
+            // x_movement_coll probes right first; x_movement then probes both
+            // directions even when no directional button is held.
+            if (invincibleCounter == 0)
+            {
+                var pre = SharedPhysics.CheckPlatformerSideCollision(
+                    in platformerCollisionMap, playerX_px, playerY_px,
+                    hitboxW, hitboxH, currentGameMode, currplayer_mini != 0,
+                    currplayer_gravity != 0, movingRight: true, slopeActive,
+                    dblocked, currplayer_slope_type);
+                lethal |= pre.lethal;
+                if (pre.nudge != 0) playerY_fixed += pre.nudge << 8;
+                if (pre.slopeType != 0) currplayer_slope_type = pre.slopeType;
+            }
+
+            playerY_px = NesPlayerBgCollisionY_px(playerY_fixed);
+            var right = SharedPhysics.CheckPlatformerSideCollision(
+                in platformerCollisionMap, playerX_px, playerY_px,
+                hitboxW, hitboxH, currentGameMode, currplayer_mini != 0,
+                currplayer_gravity != 0, movingRight: true, slopeActive,
+                dblocked, currplayer_slope_type);
+            lethal |= right.lethal;
+            if (right.nudge != 0) playerY_fixed += right.nudge << 8;
+            if (right.slopeType != 0) currplayer_slope_type = right.slopeType;
+
+            playerY_px = NesPlayerBgCollisionY_px(playerY_fixed);
+            var left = SharedPhysics.CheckPlatformerSideCollision(
+                in platformerCollisionMap, playerX_px, playerY_px,
+                hitboxW, hitboxH, currentGameMode, currplayer_mini != 0,
+                currplayer_gravity != 0, movingRight: false, slopeActive,
+                dblocked, currplayer_slope_type);
+            lethal |= left.lethal;
+            if (left.nudge != 0) playerY_fixed += left.nudge << 8;
+            if (left.slopeType != 0) currplayer_slope_type = left.slopeType;
+
+            int oldScreenX_fixed = oldX_fixed - cameraX_fixed;
+            int result = oldX_fixed;
+            bool moved = false;
+            if (direction > 0 && !right.blocked)
+            {
+                result += movementSpeed_fixed;
+                moved = true;
+            }
+            else if (direction < 0 && !left.blocked && oldScreenX_fixed > 0x1200)
+            {
+                result -= movementSpeed_fixed;
+                moved = true;
+            }
+
+            if (direction > 0 && right.blocked)
+            {
+                int screenHigh = (oldX_fixed - cameraX_fixed) >> 8;
+                int worldLow = (screenHigh + ((cameraX_fixed >> 8) & 0xFF)) & 0xFF;
+                int correction = ((worldLow + 4) & 7) - 4 +
+                    (currplayer_mini != 0 ? 1 : 0);
+                result -= correction << 8;
+            }
+            else if (direction < 0 && left.blocked)
+            {
+                int screenHigh = (oldX_fixed - cameraX_fixed) >> 8;
+                int worldLow = (screenHigh + ((cameraX_fixed >> 8) & 0xFF)) & 0xFF;
+                int correction = ((worldLow + 4) & 7) - 4;
+                result -= correction << 8;
+            }
+
+            int resultScreenX_fixed = result - cameraX_fixed;
+            if (resultScreenX_fixed > 0xF000)
+            {
+                resultScreenX_fixed = oldScreenX_fixed >= 0xF000 ? 0xF000 : 0;
+                result = cameraX_fixed + resultScreenX_fixed;
+                moved = false;
+            }
+
+            playerVelX_fixed = moved ? currentSpeed_fixed : 0;
+            return result;
         }
 
         private void ApplySimulatorNesCubeRobotYScroll()
@@ -4552,8 +4689,10 @@ namespace FamidashEditor
                 case 0xF3: forcedTrails = 0; break;
                 case 0xF4: slowMode = true; break;
                 case 0xF5: slowMode = false; break;
-                case 0x7D:
                 case 0xDE:
+                    targetXScrollStop_fixed = (simulatorNesSlotRealY[slot] & 0xF0) << 8;
+                    break;
+                case 0x7D:
                 case 0xDF:
                 case 0xEE:
                 case 0xEF:
@@ -5150,6 +5289,22 @@ namespace FamidashEditor
             return (GetAsyncKeyState(0x58) & 0x8000) != 0 || 
                    (GetAsyncKeyState(0x26) & 0x8000) != 0 || 
                    (GetAsyncKeyState(0x20) & 0x8000) != 0; 
+        }
+
+        private bool IsPlatformerDirectionDownAsync(bool right)
+        {
+            if (pfSimulating || pathfinderEnabled) return false;
+            try
+            {
+                IntPtr fg = GetForegroundWindow();
+                if (fg == IntPtr.Zero) return false;
+                GetWindowThreadProcessId(fg, out uint fgPid);
+                if (fgPid != currentProcessId) return false;
+            }
+            catch { return false; }
+
+            // VK_RIGHT / VK_LEFT. NES gives right priority when both are held.
+            return (GetAsyncKeyState(right ? 0x27 : 0x25) & 0x8000) != 0;
         }
 
         // Mapping from speed-portal sprite id -> speed value
@@ -5796,7 +5951,8 @@ namespace FamidashEditor
             int? maxFallSpeed = null,
             int startingGameMode = 0,
             int[]? nesSpriteLayer = null,
-            NesSpriteRecord[]? nesSpriteRecords = null
+			NesSpriteRecord[]? nesSpriteRecords = null,
+			bool forcePlatformer = false
             )
         {
             InitializeComponent();
@@ -5827,6 +5983,10 @@ namespace FamidashEditor
             this.mapHeight = mapHeight;
             this.hasGroundLayer = hasGroundLayer;
             this.groundTileRows = groundTileRows;
+			this.forcePlatformer = forcePlatformer;
+			platformerCollisionMap = new SharedPhysics.CollisionMap(this.tiles,
+				mapWidth, mapHeight,
+				(hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0);
             {
                 int gRTR = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                 _sim_nesCoordOffset = (57 - mapHeight + gRTR) * 16;
@@ -6353,8 +6513,8 @@ namespace FamidashEditor
                     playerVisualHeight = (int)Math.Ceiling(playerRect.Height);
                 }
 
-                // Place the player so it starts on the leftmost visible tile (x=0)
-                playerX_fixed = 0;
+                // reset_level.h starts forced-platformer levels at $1110.
+                playerX_fixed = forcePlatformer ? 0x1110 : 0;
                 interactionScreenOffset_px = -1;
                 invincibleCounter = 8; // NES: invincible_counter = 8 in reset_level
                 
@@ -7460,7 +7620,7 @@ namespace FamidashEditor
                 lock (simLock) { }
 
                 // Check for START POS marker
-                int startX_px = 0;
+                int startX_px = forcePlatformer ? 0x11 : 0;
                 int startY_px = 0;
                 bool hasStartPos = false;
 
@@ -7485,7 +7645,10 @@ namespace FamidashEditor
                 catch { }
 
                 // Reset player position to start or START POS marker
-                playerX_fixed = startX_px << 8;
+                playerX_fixed = (startX_px << 8) |
+                    (forcePlatformer && !hasStartPos ? 0x10 : 0);
+                currXScrollStop_fixed = 0x5000;
+                targetXScrollStop_fixed = 0x5000;
                 eject_U = 0;
                 eject_D = 0;
 
@@ -12157,11 +12320,26 @@ namespace FamidashEditor
                 int movementSpeed_fixed = useNesUfoResetSpeed
                     ? CUBE_SPEED_X1
                     : currentSpeed_fixed;
+                sbyte platformerHorizontalDirection = 0;
+                if (forcePlatformer)
+                {
+                    if (pathfinderEnabled)
+                        platformerHorizontalDirection = pfHorizontalDirectionThisFrame;
+                    else if (IsPlatformerDirectionDownAsync(right: true))
+                        platformerHorizontalDirection = 1;
+                    else if (IsPlatformerDirectionDownAsync(right: false))
+                        platformerHorizontalDirection = -1;
+                }
+                int platformerMovementStep_fixed;
                 // Use exact integer math when at 100% speed to ensure determinism
                 if (isFullSpeed)
-                    attemptedPlayerX_fixed = playerX_fixed + (movementSpeed_fixed * speedMultiplierLocal);
+                    platformerMovementStep_fixed = movementSpeed_fixed * speedMultiplierLocal;
                 else
-                    attemptedPlayerX_fixed = playerX_fixed + (int)Math.Round((movementSpeed_fixed * speedMultiplierLocal) * simTimeScale);
+                    platformerMovementStep_fixed = (int)Math.Round(
+                        (movementSpeed_fixed * speedMultiplierLocal) * simTimeScale);
+                attemptedPlayerX_fixed = forcePlatformer
+                    ? playerX_fixed
+                    : playerX_fixed + platformerMovementStep_fixed;
                 attemptedPlayerCenter_fixed = attemptedPlayerX_fixed + centerOffset_fixed;
 
                 // -- Dash end check (before sprite_collide, matching NES state_game.h line 372-374) --
@@ -12254,7 +12432,7 @@ namespace FamidashEditor
                             // Use EXCLUSIVE player bounds (matching PF ProcessSprites exactly)
                             // PF: nesX = currentX_px + 1; playerRight = nesX + hbW (exclusive)
                             // PF overlap: !(playerRight < sp.HitLeft || sp.HitRight < nesX)
-                            int scrollX_sp1 = Math.Max(0, (playerX_fixed >> 8) - 0x50);
+                            int scrollX_sp1 = SimulatorScrollX_px();
                             int nesX_sp1 = (playerX_fixed >> 8) + 1 - scrollX_sp1;
                             // Use entry mini state for Y offset (PF computes hbOffY at ProcessSprites entry)
                             int miniOffY_sp1 = entryMiniMode_sp ? ((0x10 - 7) >> 1) : 0;
@@ -12309,9 +12487,13 @@ namespace FamidashEditor
                                         ? CUBE_SPEED_X1
                                         : currentSpeed_fixed;
                                     if (isFullSpeed)
-                                        attemptedPlayerX_fixed = playerX_fixed + (portalMovementSpeed_fixed * speedMultiplierLocal);
+                                        platformerMovementStep_fixed = portalMovementSpeed_fixed * speedMultiplierLocal;
                                     else
-                                        attemptedPlayerX_fixed = playerX_fixed + (int)Math.Round((portalMovementSpeed_fixed * speedMultiplierLocal) * simTimeScale);
+                                        platformerMovementStep_fixed = (int)Math.Round(
+                                            (portalMovementSpeed_fixed * speedMultiplierLocal) * simTimeScale);
+                                    attemptedPlayerX_fixed = forcePlatformer
+                                        ? playerX_fixed
+                                        : playerX_fixed + platformerMovementStep_fixed;
                                     attemptedPlayerCenter_fixed = attemptedPlayerX_fixed + centerOffset_fixed;
                                 }
                             }
@@ -12488,31 +12670,36 @@ namespace FamidashEditor
 
                 // Interaction crossing detection
                 bool crossedInteraction = prevPlayerCenter_fixed < INTERACTION_LINE_FIXED && attemptedPlayerCenter_fixed >= INTERACTION_LINE_FIXED;
-                if (crossedInteraction)
+                if (!forcePlatformer && crossedInteraction)
                 {
                     interactionScreenOffset_px = (INTERACTION_LINE_FIXED >> 8) - (cameraX_fixed >> 8);
                 }
 
-                int playerCenter_fixed_now = playerX_fixed + centerOffset_fixed;
-                if (playerCenter_fixed_now >= INTERACTION_LINE_FIXED)
+                if (!forcePlatformer)
                 {
-                    if (interactionScreenOffset_px >= 0)
+                    int playerCenter_fixed_now = playerX_fixed + centerOffset_fixed;
+                    if (playerCenter_fixed_now >= INTERACTION_LINE_FIXED)
                     {
-                        cameraX_fixed = playerX_fixed - (interactionScreenOffset_px << 8);
+                        if (interactionScreenOffset_px >= 0)
+                        {
+                            cameraX_fixed = playerX_fixed - (interactionScreenOffset_px << 8);
+                        }
+                        else
+                        {
+                            cameraX_fixed += attemptedPlayerCenter_fixed - INTERACTION_LINE_FIXED;
+                        }
+
+                        int maxCamera_fixed = Math.Max(0, (mapWidth - NES_W) * TILE) << 8;
+                        if (cameraX_fixed < 0) cameraX_fixed = 0;
+                        if (cameraX_fixed > maxCamera_fixed) cameraX_fixed = maxCamera_fixed;
                     }
                     else
                     {
-                        cameraX_fixed += attemptedPlayerCenter_fixed - INTERACTION_LINE_FIXED;
+                        interactionScreenOffset_px = -1;
                     }
-
-                    int maxCamera_fixed = Math.Max(0, (mapWidth - NES_W) * TILE) << 8;
-                    if (cameraX_fixed < 0) cameraX_fixed = 0;
-                    if (cameraX_fixed > maxCamera_fixed) cameraX_fixed = maxCamera_fixed;
                 }
                 else
-                {
                     interactionScreenOffset_px = -1;
-                }
 
                 // Advance animation frame (handled by fixed-step simulation loop)
 
@@ -12655,6 +12842,7 @@ namespace FamidashEditor
                 // Save NEW X, temporarily revert to OLD X for physics dispatch + forward collision.
                 // NES order: sprite_collide → movement (at OLD X) → x_movement_coll (at OLD X) → x_movement → bg_coll_death
                 playerX_fixed = preAdvancePlayerX_fixed;
+                bool platformerSideDeath = false;
 
                 // Call game mode physics when enabled (disabled in cam mode for complete passthrough)
                 if (physicsEnabled && !camModeActive)
@@ -12730,7 +12918,23 @@ namespace FamidashEditor
 
                         // NES x_movement reloads currplayer_vel_x only after the
                         // gamemode's Y movement has used the old saved velocity.
-                        playerVelX_fixed = currentSpeed_fixed;
+                        if (forcePlatformer)
+                        {
+                            attemptedPlayerX_fixed = ResolveSimulatorPlatformerHorizontal(
+                                preAdvancePlayerX_fixed, platformerMovementStep_fixed,
+                                platformerHorizontalDirection, out platformerSideDeath);
+                            attemptedPlayerCenter_fixed = attemptedPlayerX_fixed + centerOffset_fixed;
+                        }
+                        else
+                        {
+                            playerVelX_fixed = currentSpeed_fixed;
+                        }
+
+                        if (platformerSideDeath && (attemptedPlayerX_fixed >> 8) > 0x20)
+                        {
+                            TriggerSimulatorDeferredDeath("Platformer side spike",
+                                attemptedPlayerX_fixed >> 8, playerY_fixed >> 8);
+                        }
                         
                         // Sync state back (gravity might have flipped)
                         gravityFlipped = (currplayer_gravity != 0);
@@ -12782,7 +12986,8 @@ namespace FamidashEditor
                         // (collision.h line 405-407). This prevents false wall-deaths when
                         // the player recently left a slope.
                         // NES: x_movement_coll is gated by invincible_counter
-                        if (!MainWindow.Option_NoDeath && !deathTriggered && !ShouldSkipSideCollisionForSlope() && invincibleCounter == 0)
+                        if (!forcePlatformer && !MainWindow.Option_NoDeath && !deathTriggered &&
+                            !ShouldSkipSideCollisionForSlope() && invincibleCounter == 0)
                         {
                             bool needsForwardCheck = currentGameMode == 0 || // Cube
                                                     currentGameMode == 1 || // Ship
@@ -12915,7 +13120,8 @@ namespace FamidashEditor
                         // NES bg_side_coll_common slope Y nudge: when forward probe hits a
                         // slope (and not already on slope), adjust Y by ±2 pixels.
                         // Wave/snake handle slopes separately (as death), so skip them.
-                        if (invincibleCounter == 0 && !deathTriggered && !ShouldSkipSideCollisionForSlope() &&
+                        if (!forcePlatformer && invincibleCounter == 0 && !deathTriggered &&
+                            !ShouldSkipSideCollisionForSlope() &&
                             currentGameMode != 6 && currentGameMode != 10)
                         {
                             int playerX_px_nudge = preAdvancePlayerX_fixed >> 8;
@@ -13013,7 +13219,7 @@ namespace FamidashEditor
                             //    Then wave/snake branch: if (!dblocked) cube_data |= 1 (death).
                             //    With dblocked, the slope counters still get set → next frame's
                             //    wave_movement zeros vY → wave gets stuck → bg_coll_death kills.
-                            if (!deathTriggered && !ShouldSkipSideCollisionForSlope())
+                            if (!forcePlatformer && !deathTriggered && !ShouldSkipSideCollisionForSlope())
                             {
                                 int rX = wPx + WAVE_W;
                                 int rY = wPy + miniCenter + (WAVE_H >> 1);
@@ -13103,7 +13309,8 @@ namespace FamidashEditor
 
                         // Empirical PF/ROM parity fallback: run center-point death probe at NEW X
                         // after movement has advanced X. Keep OLD-X check as primary NES-order path.
-                        if (!deathTriggered && !camModeActive && attemptedPlayerX_fixed != preAdvancePlayerX_fixed &&
+                        if (!forcePlatformer && !deathTriggered && !camModeActive &&
+                            attemptedPlayerX_fixed != preAdvancePlayerX_fixed &&
                             CheckDeathCollision(out int deathX_new_px, out int deathY_new_px, attemptedPlayerX_fixed))
                         {
                             AppendSimDebug($"[DEATH] Death tile collision at ({deathX_new_px},{deathY_new_px}) (NEW X fallback)");
@@ -13359,7 +13566,7 @@ namespace FamidashEditor
                                         {
                                     int hitboxW_sp2 = entryMiniMode_sp2 ? 8 : 15;
                                     int hitboxH_sp2 = entryMiniMode_sp2 ? 7 : 15;
-                                    int scrollX_sp2 = Math.Max(0, (playerX_fixed >> 8) - 0x50);
+                                    int scrollX_sp2 = SimulatorScrollX_px();
                                     int nesX_sp2 = (playerX_fixed >> 8) + 1 - scrollX_sp2;
                                     int miniOffY_sp2 = entryMiniMode_sp2 ? ((0x10 - 7) >> 1) : 0;
                                     int playerTop_sp2 = (entryPlayerY_fixed_sp2 >> 8) +

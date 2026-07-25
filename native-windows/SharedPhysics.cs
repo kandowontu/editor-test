@@ -2351,7 +2351,7 @@ internal static class SharedPhysics
 		return false;
 	}
 
-	internal static bool CheckDeathCollision(in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, int hbOffY, int gameMode = -1, bool dblocked = false)
+	internal static bool CheckDeathCollision(in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, int hbOffY, int gameMode = -1, bool dblocked = false, bool forcePlatformer = false)
 	{
 		FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=CheckDeathCollision.in X={playerX_px} Y={playerY_px} hbW={hbW} hbH={hbH} mode={gameMode} dblk={(dblocked ? 1 : 0)}");
 		int num = playerX_px + (hbW >> 1) - 1;
@@ -2383,6 +2383,10 @@ internal static class SharedPhysics
 			return true;
 		}
 		bool flag = gameMode == 6 && dblocked;
+		// collision.h:bg_coll_death omits bg_coll_top_bottom_slabs() in the
+		// forced-platformer branch. The D-blocked wave branch is separate and
+		// still calls it, so those slabs remain lethal there.
+		bool omitTopBottomSlabs = forcePlatformer && !flag;
 		switch (collision)
 		{
 		case MetatileCollision.COL_ALL:
@@ -2394,8 +2398,13 @@ internal static class SharedPhysics
 			}
 			break;
 		case MetatileCollision.COL_TOP:
-		case MetatileCollision.COL_TOP_CENTER_SPIKE:
 		case MetatileCollision.COL_BOTTOM:
+			if (!omitTopBottomSlabs && TileOccupiesPixel(collision, localX, localY))
+			{
+				return true;
+			}
+			break;
+		case MetatileCollision.COL_TOP_CENTER_SPIKE:
 		case MetatileCollision.COL_BOTTOM_LEFT_SPIKE:
 		case MetatileCollision.COL_BOTTOM_RIGHT_SPIKE:
 		case MetatileCollision.COL_BOTTOM_CENTER_SPIKE:
@@ -2594,6 +2603,74 @@ internal static class SharedPhysics
 			return true;
 		}
 		return false;
+	}
+
+	/// <summary>
+	/// Exact directional probe used by NES bg_coll_R/bg_coll_L in platformer
+	/// mode. Unlike CheckForwardCollision, a solid side blocks movement without
+	/// killing the player, while a spike probe can kill without being a wall.
+	/// </summary>
+	internal static (bool blocked, bool lethal, int nudge, int slopeType)
+		CheckPlatformerSideCollision(in CollisionMap map, int playerX_px,
+			int playerY_px, int hbW, int hbH, int gameMode, bool mini,
+			bool gravFlipped, bool movingRight, bool slopeActive, bool dblocked,
+			int currentSlopeType)
+	{
+		if (slopeActive)
+			return (false, false, 0, 0);
+
+		int probeX = playerX_px + (movingRight ? hbW + 3 : -3);
+		int probeY = playerY_px + (mini
+			? ((16 - hbH >> 1) + (hbH >> 1))
+			: (hbH >> 1));
+		if (mini && (gameMode == 0 || gameMode == 4 || gameMode == 8))
+			probeY += gravFlipped ? 3 : -2;
+
+		int tileX = FloorDiv16(probeX);
+		int worldTileY = FloorDiv16(probeY);
+		int tileY = worldTileY + map.GroundRowsToReserve;
+		if (tileX < 0 || tileX >= map.MapWidth)
+			return (false, false, 0, 0);
+		if (tileY < 0 || tileY >= map.MapHeight)
+			return (true, false, 0, 0);
+
+		int index = tileY * map.MapWidth + tileX;
+		if ((uint)index >= (uint)map.Tiles.Length)
+			return (false, false, 0, 0);
+
+		MetatileCollision collision = MetatileCollisionTable.GetCollision(
+			(byte)MapTileForCollision(map.Tiles[index]));
+		int localX = ((probeX % 16) + 16) % 16;
+		int localY = ((probeY % 16) + 16) % 16;
+
+		if (IsSlopeTile(collision))
+		{
+			(bool hit, _, int slopeType) = SlopeCalc(probeX, probeY, collision);
+			if (!hit)
+				return (false, false, 0, 0);
+			if (gameMode == 6 || gameMode == 10)
+			{
+				bool excluded = (!mini && collision == MetatileCollision.COL_SLOPE_LU45) ||
+					(mini && (collision == MetatileCollision.COL_SLOPE_LU66_TOP ||
+						collision == MetatileCollision.COL_SLOPE_LU66_BOT));
+				return (false, !excluded && !dblocked, 0, slopeType);
+			}
+
+			int nudgeType = slopeType != 0 ? slopeType : currentSlopeType;
+			return (false, false, (nudgeType & SLOPE_UD) != 0 ? 2 : -2,
+				slopeType);
+		}
+
+		// bg_coll_spikes runs before the solid-side routines and returns zero
+		// from bg_side_coll_common when it fires.
+		bool lethal = MetatileCollisionTable.TileKillsAtPixel(
+			collision, localX, localY);
+		if (lethal)
+			return (false, true, 0, 0);
+
+		bool blocked = collision == MetatileCollision.COL_ALL ||
+			MetatileCollisionTable.TileBlocksAtSideProbe(collision, localX, localY);
+		return (blocked, false, 0, 0);
 	}
 
 	internal static (int nudge, int slopeType) GetForwardSlopeNudge(in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, int hbOffY, int gameMode, bool mini, bool gravFlipped, int currentSlopeType)

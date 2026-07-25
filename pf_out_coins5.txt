@@ -1,11 +1,0 @@
-Loading C:\Editor Test\famidash\LEVELS\LEVEL DATA\lvlset_A\clubstep.tmx...
-Map: 906x40  tiles=36240  sprites=36240
-Config: C:\Users\kando\Documents\Famidash Editor\clubstep.tmx.cfg (46 offsets, 0 anchors)
-Start: (0, 577)  speed=1  maxFall=0x7  bias=0.00
-Coin collection mode ENABLED
-  Progress: 0%     Progress: 1%     Progress: 2%     Progress: 3%     Progress: 4%     Progress: 5%     Progress: 6%     Progress: 7%     Progress: 8%     Progress: 9%     Progress: 10%     Progress: 11%     Progress: 12%     Progress: 13%     Progress: 14%     Progress: 15%     Progress: 16%     Progress: 17%     Progress: 18%     Progress: 19%     Progress: 20%     Progress: 21%     Progress: 22%     Progress: 23%     Progress: 24%     Progress: 25%     Progress: 26%     Progress: 27%     Progress: 28%     Progress: 29%     Progress: 30%     Progress: 31%     Progress: 32%     Progress: 33%     Progress: 34%     Progress: 35%     Progress: 36%     Progress: 37%     Progress: 38%     Progress: 39%     Progress: 40%     Progress: 41%     Progress: 42%     Progress: 43%     Progress: 44%     Progress: 45%     Progress: 46%     Progress: 47%     Progress: 48%     Progress: 49%   
-Result: FAILED
-Message: BFS failed - best path to X=7176px (49%) [95.4s]
-Time: 95.4s
-Path points: 2592
-Trace: 

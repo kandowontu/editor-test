@@ -1,6 +1,0 @@
-﻿C:\Editor Test\native-windows\PathfinderEngine.cs(869,34): warning CS8601: Possible null reference assignment. [C:\Editor Test\pf-test\PfTest.csproj]
-C:\Editor Test\native-windows\PathfinderEngine.cs(870,38): warning CS8601: Possible null reference assignment. [C:\Editor Test\pf-test\PfTest.csproj]
-C:\Editor Test\native-windows\PathfinderEngine.cs(889,56): warning CS8604: Possible null reference argument for parameter 'collection' in 'List<bool>.List(IEnumerable<bool> collection)'. [C:\Editor Test\pf-test\PfTest.csproj]
-C:\Editor Test\native-windows\PathfinderEngine.cs(890,64): warning CS8604: Possible null reference argument for parameter 'collection' in 'List<(int x, int y)>.List(IEnumerable<(int x, int y)> collection)'. [C:\Editor Test\pf-test\PfTest.csproj]
-C:\Editor Test\native-windows\PathfinderEngine.cs(1960,33): warning CS8602: Dereference of a possibly null reference. [C:\Editor Test\pf-test\PfTest.csproj]
-C:\Editor Test\native-windows\PathfinderEngine.cs(2006,33): warning CS8602: Dereference of a possibly null reference. [C:\Editor Test\pf-test\PfTest.csproj]

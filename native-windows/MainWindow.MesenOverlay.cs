@@ -287,6 +287,7 @@ namespace FamidashEditor
             string embeddedReplayLiteral = "{}";
             string embeddedReplay2Literal = "{}";
             int    embeddedYOffset       = 0;
+            bool   embeddedPlatformer    = false;
             if (includeReplay)
             {
                 try
@@ -309,6 +310,13 @@ namespace FamidashEditor
                                     embeddedYOffset = yo;
                                 continue;
                             }
+							if (raw.StartsWith("platformer", System.StringComparison.Ordinal))
+							{
+								int comma = raw.IndexOf(',');
+								if (comma > 0 && int.TryParse(raw.AsSpan(comma + 1), out int platformer))
+									embeddedPlatformer = platformer != 0;
+								continue;
+							}
                             if (raw.StartsWith("frame", System.StringComparison.Ordinal)) continue;
                             if (raw.StartsWith("p2_path", System.StringComparison.Ordinal)) continue;
                             if (raw.StartsWith("p2,", System.StringComparison.Ordinal))
@@ -324,17 +332,23 @@ namespace FamidashEditor
                                    .Append('}');
                                 continue;
                             }
-                            // Expected: frame,x,y,a
+							// Expected: frame,x,y,a[,left,right]
                             var parts = raw.Split(',');
                             if (parts.Length < 4) continue;
                             if (!int.TryParse(parts[1], out int x)) continue;
                             if (!int.TryParse(parts[2], out int y)) continue;
                             if (!int.TryParse(parts[3], out int a)) continue;
+							int left = parts.Length > 4 && int.TryParse(parts[4], out int parsedLeft)
+								? parsedLeft : 0;
+							int right = parts.Length > 5 && int.TryParse(parts[5], out int parsedRight)
+								? parsedRight : 0;
                             if (!first) sb.Append(',');
                             first = false;
                             sb.Append("{x=").Append(x)
                               .Append(",y=").Append(y)
                               .Append(",a=").Append(a)
+							  .Append(",l=").Append(left)
+							  .Append(",r=").Append(right)
                               .Append('}');
                         }
                         sb.Append('}');
@@ -379,6 +393,7 @@ local physDbgFile= _tempPath(""{physDbgFileName}"")
 local replay     = {embeddedReplayLiteral}
 local replay2    = {embeddedReplay2Literal}
 local nesYOffset = {embeddedYOffset}
+local IS_PLATFORMER = {(embeddedPlatformer ? "true" : "false")}
 local SHOW_PATHLINES = {(drawPathlines ? "true" : "false")}
 local ENABLE_LOGGING = {(enableLogging ? "true" : "false")}
 local STATE_GAME = 0x02
@@ -390,6 +405,9 @@ local cursor = 1
 local armed = false
 local prevPx = -1
 local lastA = false
+local lastLeft = false
+local lastRight = false
+local platformerPhysicsStepped = false
 local frameIdx = 0
 local replayClockStarted = false
 local replayClockPrevPx = nil
@@ -415,6 +433,9 @@ local nesTrailCount = 0
 local function clearPathOverlay()
     armed = false
     lastA = false
+    lastLeft = false
+    lastRight = false
+    platformerPhysicsStepped = false
     prevPx = -1
     replayClockStarted = false
     replayClockPrevPx = nil
@@ -423,6 +444,13 @@ local function clearPathOverlay()
     nesTrailCount = 0
     physEventCount = 0
 end
+
+-- A platformer physics tick may intentionally leave both X and Y unchanged.
+-- x_movement nevertheless writes currplayer_vel_x every real gameplay tick,
+-- so this callback is the replay clock that slow/render-only frames cannot fake.
+emu.addMemoryCallback(function()
+    if IS_PLATFORMER and armed then platformerPhysicsStepped = true end
+end, emu.callbackType.write, 0x006C)
 -- Linear-Y offset between NES world coords and pathfinder world coords:
 --   PF_y = NES_y - nesYOffset    (set per-level by ExportReplayCsv)
 -- Already baked in above from the C# generator.
@@ -764,6 +792,7 @@ emu.addEventCallback(function()
         frameIdx = 0
         replayClockStarted = false
         replayClockPrevPx = clockPx
+		platformerPhysicsStepped = false
         -- Reset the actual-NES trail on respawn so old trails don't linger.
         nesTrail = {{}}
         nesTrailHead = 1
@@ -849,7 +878,13 @@ emu.addEventCallback(function()
 
     if armed then
 		local plausiblePx = clockPx >= 0 and clockPx < 524288
-		local movedThisFrame = plausiblePx and replayClockPrevPx ~= nil and clockPx ~= replayClockPrevPx
+		local movedThisFrame
+		if IS_PLATFORMER then
+			movedThisFrame = platformerPhysicsStepped
+		else
+			movedThisFrame = plausiblePx and replayClockPrevPx ~= nil and clockPx ~= replayClockPrevPx
+		end
+		platformerPhysicsStepped = false
 
         -- Pathfinder applies the NES intro-freeze pre-step before recording
         -- PathPoints[0].  Latch when NES first reaches that same initial X,
@@ -883,6 +918,8 @@ emu.addEventCallback(function()
         end
         local curA = curEntry and (curEntry.a == 1) or false
         lastA = nextEntry and (nextEntry.a == 1) or false
+		lastLeft = nextEntry and (nextEntry.l == 1) or false
+		lastRight = nextEntry and (nextEntry.r == 1) or false
 
         -- Append per-frame trace row.
         if traceFp then
@@ -1055,6 +1092,9 @@ emu.addEventCallback(function()
         frameIdx = frameIdx + 1
     else
         lastA = false
+		lastLeft = false
+		lastRight = false
+		platformerPhysicsStepped = false
     end
 
     if SHOW_PATHLINES then
@@ -1207,7 +1247,7 @@ emu.addEventCallback(function()
     emu.setInput({{
         a = lastA, b = false,
         select = false, start = false,
-        up = false, down = false, left = false, right = false
+        up = false, down = false, left = lastLeft, right = lastRight
     }}, 0)
 end, emu.eventType.inputPolled)
 

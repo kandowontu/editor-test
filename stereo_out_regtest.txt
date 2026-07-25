@@ -1,10 +1,0 @@
-Loading stereomadness.tmx...
-Map: 895x27  tiles=24165  sprites=24165
-Config: C:\Users\kando\Documents\Famidash Editor\stereomadness.tmx.cfg (24 offsets, 0 anchors)
-Start: (0, 369)  speed=1  maxFall=0x7  bias=0.50
-  Progress: 0%     Progress: 2%     Progress: 5%     Progress: 8%     Progress: 11%     Progress: 13%     Progress: 16%     Progress: 19%     Progress: 22%     Progress: 25%     Progress: 27%     Progress: 30%     Progress: 33%     Progress: 36%     Progress: 38%     Progress: 41%     Progress: 44%     Progress: 47%     Progress: 50%     Progress: 52%     Progress: 55%     Progress: 58%     Progress: 61%     Progress: 63%     Progress: 66%     Progress: 69%     Progress: 72%     Progress: 75%     Progress: 77%     Progress: 80%     Progress: 83%     Progress: 86%     Progress: 88%     Progress: 91%     Progress: 94%     Progress: 97%   
-Result: SUCCESS
-Message: Completed in 5103 frames (5104 path points) [38.0s]
-Time: 38.0s
-Path points: 5104
-Trace: 

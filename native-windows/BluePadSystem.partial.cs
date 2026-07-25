@@ -75,7 +75,8 @@ namespace FamidashEditor
                     // and it fires a spurious second flip.
 
                     // Already activated check (non-dual mode only)
-                    if (!dual && orbActivated.TryGetValue(idx, out var alreadyActivated) && alreadyActivated)
+                    if (!dual && !forcePlatformer &&
+                        orbActivated.TryGetValue(idx, out var alreadyActivated) && alreadyActivated)
                         continue;
 
                     // Inline AABB matching PF's ProcessSprites:

@@ -2490,6 +2490,8 @@ namespace FamidashEditor
     // Precomputed pathfinder data (calculated in editor, played back in simulator)
     private System.Collections.Generic.List<bool>? precomputedPathfinderInputs = null;
     public System.Collections.Generic.List<bool>? PrecomputedPathfinderInputs => precomputedPathfinderInputs;
+    private System.Collections.Generic.List<sbyte>? precomputedPathfinderDirections = null;
+    public System.Collections.Generic.List<sbyte>? PrecomputedPathfinderDirections => precomputedPathfinderDirections;
     private System.Collections.Generic.HashSet<int>? precomputedCollectedCoins = null;
     public System.Collections.Generic.HashSet<int>? PrecomputedCollectedCoins => precomputedCollectedCoins;
     private System.Collections.Generic.HashSet<int>? precomputedSkippedPads = null;
@@ -8453,7 +8455,8 @@ namespace FamidashEditor
                     ,
                     (loadedStartingGameMode.HasValue ? loadedStartingGameMode.Value : 0),
                     nesSpriteLayerForRuntime,
-                    nesSpriteRecordsForRuntime
+					nesSpriteRecordsForRuntime,
+					loadedForcePlatformer == true
                     );
                     // Reset music playback rate to 100% (don't carry over from previous session)
                     try { if (famiIntegration != null) famiIntegration.SetPlaybackRate(1.0); } catch { }
@@ -21971,8 +21974,18 @@ namespace FamidashEditor
                 bool showPathfinderLive = settingsWin.ShowPathfinderLive;
                 bool showProspectivePaths = settingsWin.ShowProspectivePaths;
                 bool enablePathfinderLogging = settingsWin.EnablePathfinderLogging;
+				bool forcePlatformer = loadedForcePlatformer == true;
                 _pathfinderLoggingEnabled = enablePathfinderLogging;
                 _mesenLuaLoggingEnabled = settingsWin.EnableMesenLogging;
+
+                // Once a new calculation is accepted, the previous replay is no longer
+                // valid for the current result. Clear both input axes together so a
+                // cancelled/failed platformer run cannot leave stale directions paired
+                // with a later vertical-only path (or vice versa).
+                precomputedPathfinderInputs = null;
+                precomputedPathfinderDirections = null;
+                precomputedCollectedCoins = null;
+                RefreshReplayButtonVisibility();
 
                 // Determine starting position
                 int startX_px = 0;
@@ -21989,6 +22002,8 @@ namespace FamidashEditor
                 }
                 else
                 {
+					if (forcePlatformer)
+						startX_px = 0x11;
                     // Match NES exactly. NES initializes currplayer_y = spawn_y_pos (screen-relative
                     // 8.8 fixed) and scroll_y from spawn_scroll_y_pos. In PF coords:
                     //   PF_startY_top = NES_screen_Y_top + NES_scroll_y_linear - nesYOffset
@@ -22039,7 +22054,8 @@ namespace FamidashEditor
                         engine.EnableLogging = enablePathfinderLogging;
                         engine.JumpTimingBias = jumpTimingBias;
                         engine.PreferCoins = preferCoins;
-                        engine.UseBFS = preferCoins; // BFS always runs first; UseBFS=true prevents heuristic fallback
+                        engine.ForcePlatformer = forcePlatformer;
+                        engine.UseBFS = preferCoins || forcePlatformer; // platformer requires directional BFS
                         engine.Progress = progress;
                         engine.ConfigScrollYHi = effectiveScrollYHi;
                         engine.ConfigScrollYLo = effectiveScrollYLo;
@@ -22279,6 +22295,7 @@ namespace FamidashEditor
                                 if (engine.Success)
                                 {
                                     precomputedPathfinderInputs = engine.Inputs;
+									precomputedPathfinderDirections = engine.HorizontalInputs;
                                     precomputedCollectedCoins = engine.FinalCollectedCoinIndices;
                                     // Persist replay CSV + Lua for the "Replay in Mesen" button.
                                     try { TryWritePathfinderReplayCsv(engine); } catch { }
@@ -22300,6 +22317,7 @@ namespace FamidashEditor
                                 {
                                     // Partial path — still write replay so it can be used in Mesen.
                                     precomputedPathfinderInputs = engine.Inputs;
+									precomputedPathfinderDirections = engine.HorizontalInputs;
                                     precomputedCollectedCoins = engine.FinalCollectedCoinIndices;
                                     try { TryWritePathfinderReplayCsv(engine); } catch { }
                                     // Auto-save .pfdat alongside the replay artifacts (even for
@@ -23748,8 +23766,9 @@ namespace FamidashEditor
     /// <summary>Serialization DTO for pathfinder data files (.pfdat)</summary>
     private class PathfinderSaveData
     {
-        public int Version { get; set; } = 1;
+        public int Version { get; set; } = 2;
         public List<bool> Inputs { get; set; } = new();
+        public List<sbyte>? Directions { get; set; }
         public List<int>? CollectedCoins { get; set; }
         public PathfinderValidation Validation { get; set; } = new();
     }
@@ -23761,6 +23780,7 @@ namespace FamidashEditor
         public int StartGameMode { get; set; }
         public int StartSpeedUiIndex { get; set; }
         public int MaxFallSpeed { get; set; }
+        public bool ForcePlatformer { get; set; }
         public long TileChecksum { get; set; }
         public long SpriteChecksum { get; set; }
     }
@@ -23790,8 +23810,11 @@ namespace FamidashEditor
             return null;
         return new PathfinderSaveData
         {
-            Version = 1,
+            Version = 2,
             Inputs = new List<bool>(precomputedPathfinderInputs),
+            Directions = precomputedPathfinderDirections != null
+                ? new List<sbyte>(precomputedPathfinderDirections)
+                : null,
             CollectedCoins = precomputedCollectedCoins != null
                 ? new List<int>(precomputedCollectedCoins)
                 : null,
@@ -23802,6 +23825,7 @@ namespace FamidashEditor
                 StartGameMode = loadedStartingGameMode ?? 0,
                 StartSpeedUiIndex = loadedStartingSpeedUiIndex,
                 MaxFallSpeed = loadedMaxFallSpeed,
+                ForcePlatformer = loadedForcePlatformer == true,
                 TileChecksum = ComputeArrayChecksum(tiles),
                 SpriteChecksum = ComputeArrayChecksum(sprites),
             }
@@ -23901,6 +23925,7 @@ namespace FamidashEditor
                 if (v.StartGameMode != (loadedStartingGameMode ?? 0)) mismatches.Add($"Start game mode: file={v.StartGameMode}, current={loadedStartingGameMode ?? 0}");
                 if (v.StartSpeedUiIndex != loadedStartingSpeedUiIndex) mismatches.Add($"Start speed: file={v.StartSpeedUiIndex}, current={loadedStartingSpeedUiIndex}");
                 if (v.MaxFallSpeed != loadedMaxFallSpeed) mismatches.Add($"Max fall speed: file={v.MaxFallSpeed}, current={loadedMaxFallSpeed}");
+                if (saveData.Version >= 2 && v.ForcePlatformer != (loadedForcePlatformer == true)) mismatches.Add("Platformer setting has changed");
                 if (v.TileChecksum != ComputeArrayChecksum(tiles)) mismatches.Add("Tile data has changed");
                 if (v.SpriteChecksum != ComputeArrayChecksum(sprites)) mismatches.Add("Sprite data has changed");
             }
@@ -23920,6 +23945,10 @@ namespace FamidashEditor
             }
 
             precomputedPathfinderInputs = saveData.Inputs;
+            precomputedPathfinderDirections = saveData.Directions != null &&
+                saveData.Directions.Count == saveData.Inputs.Count
+                ? new List<sbyte>(saveData.Directions)
+                : Enumerable.Repeat((sbyte)0, saveData.Inputs.Count).ToList();
             precomputedCollectedCoins = saveData.CollectedCoins != null
                 ? new HashSet<int>(saveData.CollectedCoins)
                 : null;

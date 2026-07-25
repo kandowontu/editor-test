@@ -86,6 +86,18 @@ public class PathfinderEngine
 	{
 		public int X_fixed;
 
+		// PF keeps X in world coordinates. Platformer mode cannot derive the
+		// horizontal camera from world X because the player can stop and walk
+		// left, so preserve the NES scroll state explicitly.
+		public int ScrollX_px;
+
+		public int CurrXScrollStop_fixed;
+
+		public int TargetXScrollStop_fixed;
+
+		// Search provenance only; deliberately excluded from state hashing.
+		public sbyte SearchDirectionUsed;
+
 		public int Y_fixed;
 
 		public int VelY_fixed;
@@ -425,6 +437,9 @@ public class PathfinderEngine
 	private readonly record struct BfsDedupKey(
 		long Physics,
 		int XFixed,
+		int ScrollXPx,
+		int CurrXScrollStopFixed,
+		int TargetXScrollStopFixed,
 		int CameraYFixed,
 		int TargetCameraYFixed,
 		int ScrollYSubpx,
@@ -455,6 +470,7 @@ public class PathfinderEngine
 		public List<SimState> States = new();
 		public int[] Parents = Array.Empty<int>();
 		public bool[] Inputs = Array.Empty<bool>();
+		public sbyte[] Directions = Array.Empty<sbyte>();
 
 		public void ReturnResources()
 		{
@@ -1047,6 +1063,13 @@ public class PathfinderEngine
 
 	public bool UseBFS { get; set; }
 
+	/// <summary>
+	/// Mirrors the NES force_platformer level flag. Platformer is not a new
+	/// game mode: it replaces automatic X movement with left/neutral/right
+	/// input while retaining the active cube/ship/etc. vertical mechanics.
+	/// </summary>
+	public bool ForcePlatformer { get; set; }
+
 	// Standalone-runner diagnostic checkpoint. The normal editor never sets this.
 	public IReadOnlyList<bool>? DebugBfsPrefixInputs { get; set; }
 
@@ -1090,6 +1113,145 @@ public class PathfinderEngine
 
 	private int SpawnYSubpx => ConfigSpawnYLo.GetValueOrDefault() & 0xFF;
 
+	private int InitialXFixed(int startX_px)
+	{
+		// reset_level.h uses $1110 for a real platformer start. START POS is an
+		// editor diagnostic override and remains integer-aligned.
+		return (startX_px << 8) |
+			(ForcePlatformer && UseNesSpawnScrollDefaults ? 0x10 : 0);
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private int GetScrollX_px(in SimState s)
+	{
+		return ForcePlatformer
+			? s.ScrollX_px
+			: Math.Max(0, (s.X_fixed >> 8) - NES_PLAYER_SCREEN_X_PX);
+	}
+
+	private void InitializeHorizontalState(ref SimState s)
+	{
+		s.ScrollX_px = 0;
+		s.CurrXScrollStop_fixed = 0x5000;
+		s.TargetXScrollStop_fixed = 0x5000;
+		s.SearchDirectionUsed = 0;
+	}
+
+	private void ProcessPlatformerXScroll(ref SimState s)
+	{
+		if (!ForcePlatformer || _dualP2Guard)
+			return;
+
+		if (s.CurrXScrollStop_fixed < s.TargetXScrollStop_fixed)
+			s.CurrXScrollStop_fixed += 0x200;
+		else if (s.CurrXScrollStop_fixed > s.TargetXScrollStop_fixed)
+			s.CurrXScrollStop_fixed -= 0x200;
+
+		int screenXFixed = s.X_fixed - (s.ScrollX_px << 8);
+		if (screenXFixed > s.CurrXScrollStop_fixed)
+		{
+			int delta = (screenXFixed - s.CurrXScrollStop_fixed) >> 8;
+			s.ScrollX_px += delta;
+		}
+		else if (screenXFixed < 0x0200)
+		{
+			int delta = (screenXFixed + 0x0200) >> 8;
+			s.ScrollX_px -= delta;
+		}
+	}
+
+	private int ResolvePlatformerHorizontal(ref SimState s, sbyte direction,
+		int movementSpeedFixed, out bool lethal)
+	{
+		lethal = false;
+		direction = direction < 0 ? (sbyte)-1 : direction > 0 ? (sbyte)1 : (sbyte)0;
+		s.SearchDirectionUsed = direction;
+
+		int hitboxW = (s.GameMode == 6 || s.GameMode == 10)
+			? 8 : GetHitboxW(s.Mini);
+		int hitboxH = (s.GameMode == 6 || s.GameMode == 10)
+			? 8 : GetHitboxH(s.Mini);
+		int playerX = s.X_fixed >> 8;
+		int playerY = NesPlayerBgCollisionY_px(s.Y_fixed, s.CameraY_fixed);
+		bool slopeActive = (s.SlopeWasOnCounter | s.SlopeFrames) != 0;
+
+		// x_movement_coll performs one right probe before x_movement performs
+		// both probes. Its ordinary wall result only zeroes the old velocity;
+		// x_movement immediately reloads the global speed.
+		if (s.InvincibleCounter == 0)
+		{
+			var pre = SharedPhysics.CheckPlatformerSideCollision(in _collisionMap,
+				playerX, playerY, hitboxW, hitboxH, s.GameMode, s.Mini,
+				s.GravFlipped, movingRight: true, slopeActive, s.Dblocked,
+				s.SlopeType);
+			lethal |= pre.lethal;
+			if (pre.nudge != 0) s.Y_fixed += pre.nudge << 8;
+			if (pre.slopeType != 0) s.SlopeType = pre.slopeType;
+		}
+
+		playerY = NesPlayerBgCollisionY_px(s.Y_fixed, s.CameraY_fixed);
+		var right = SharedPhysics.CheckPlatformerSideCollision(in _collisionMap,
+			playerX, playerY, hitboxW, hitboxH, s.GameMode, s.Mini,
+			s.GravFlipped, movingRight: true, slopeActive, s.Dblocked,
+			s.SlopeType);
+		lethal |= right.lethal;
+		if (right.nudge != 0) s.Y_fixed += right.nudge << 8;
+		if (right.slopeType != 0) s.SlopeType = right.slopeType;
+
+		playerY = NesPlayerBgCollisionY_px(s.Y_fixed, s.CameraY_fixed);
+		var left = SharedPhysics.CheckPlatformerSideCollision(in _collisionMap,
+			playerX, playerY, hitboxW, hitboxH, s.GameMode, s.Mini,
+			s.GravFlipped, movingRight: false, slopeActive, s.Dblocked,
+			s.SlopeType);
+		lethal |= left.lethal;
+		if (left.nudge != 0) s.Y_fixed += left.nudge << 8;
+		if (left.slopeType != 0) s.SlopeType = left.slopeType;
+
+		int cameraXFixed = s.ScrollX_px << 8;
+		int oldScreenXFixed = s.X_fixed - cameraXFixed;
+		int result = s.X_fixed;
+		bool moved = false;
+		if (direction > 0 && !right.blocked)
+		{
+			result += movementSpeedFixed;
+			moved = true;
+		}
+		else if (direction < 0 && !left.blocked && oldScreenXFixed > 0x1200)
+		{
+			result -= movementSpeedFixed;
+			moved = true;
+		}
+
+		if (direction > 0 && right.blocked)
+		{
+			int screenHigh = (s.X_fixed - (s.ScrollX_px << 8)) >> 8;
+			int worldLow = (screenHigh + (s.ScrollX_px & 0xFF)) & 0xFF;
+			int correction = ((worldLow + 4) & 7) - 4 + (s.Mini ? 1 : 0);
+			result -= correction << 8;
+		}
+		else if (direction < 0 && left.blocked)
+		{
+			int screenHigh = (s.X_fixed - (s.ScrollX_px << 8)) >> 8;
+			int worldLow = (screenHigh + (s.ScrollX_px & 0xFF)) & 0xFF;
+			int correction = ((worldLow + 4) & 7) - 4;
+			result -= correction << 8;
+		}
+
+		// currplayer_x is screen-relative on the NES. PF stores world X, so the
+		// anti-wrap guard and its replacement value must be evaluated in screen
+		// space and then translated back. Applying $F000 directly to world X made
+		// every platformer wrap at the first 240 pixels.
+		int resultScreenXFixed = result - cameraXFixed;
+		if (resultScreenXFixed > 0xF000)
+		{
+			resultScreenXFixed = oldScreenXFixed >= 0xF000 ? 0xF000 : 0;
+			result = cameraXFixed + resultScreenXFixed;
+			moved = false;
+		}
+		s.VelX_fixed = moved ? movementSpeedFixed : 0;
+		return result;
+	}
+
 	public string FrameTracePath
 	{
 		get
@@ -1119,6 +1281,9 @@ public class PathfinderEngine
 	public List<(int x, int y)> Path2Points { get; private set; }
 
 	public List<bool> Inputs { get; private set; }
+
+	/// <summary>-1 = left, 0 = neutral, +1 = right. Parallel to Inputs.</summary>
+	public List<sbyte> HorizontalInputs { get; private set; }
 
 	public bool Success { get; private set; }
 
@@ -1570,7 +1735,7 @@ public class PathfinderEngine
 		int hitboxH = wave ? 8 : GetHitboxH(probe.Mini);
 		int plTop = playerY + (wave ? 4 : GetHitboxOffsetY(probe.GameMode, probe.Mini, probe.GravFlipped));
 		int currentX = probe.X_fixed >> 8;
-		int scrollX = Math.Max(0, currentX - NES_PLAYER_SCREEN_X_PX);
+		int scrollX = GetScrollX_px(in probe);
 		int plLeft = currentX - scrollX + 1;
 
 		// sprite_collide visits the live slots in ascending slot order. Every
@@ -1618,7 +1783,8 @@ public class PathfinderEngine
 			}
 			s.VelY_fixed += num;
 			s.Y_fixed += s.VelY_fixed;
-			s.X_fixed += s.VelX_fixed;
+			if (!ForcePlatformer)
+				s.X_fixed += s.VelX_fixed;
 			ApplyNesCubeRobotYScroll(ref s);
 			// The verified cube/robot intro-freeze pre-step is a complete
 			// everything_else tick, including the NES counter decrement.
@@ -1633,10 +1799,11 @@ public class PathfinderEngine
 			// tick.  Starting sprite processing immediately makes the pad affect Y
 			// one frame early and corrupts every later camera subpixel carry.
 			SpiderGravityStep(ref s);
-			s.X_fixed += s.VelX_fixed;
+			if (!ForcePlatformer)
+				s.X_fixed += s.VelX_fixed;
 			s.InvincibleCounter--;
 		}
-		else if (s.GameMode == 3)
+		else if (s.GameMode == 3 && !ForcePlatformer)
 		{
 			// The NES first recorded UFO tick advances X at the reset/default
 			// speed (0x02C4), then uses the level's configured speed thereafter.
@@ -1659,8 +1826,15 @@ public class PathfinderEngine
 			s.VelX_fixed = 0;
 			WaveEject(ref s, input: false, out _);
 			int movementVelX = s.GlobalSpeed_fixed;
-			s.X_fixed += movementVelX;
-			s.VelX_fixed = movementVelX;
+			if (!ForcePlatformer)
+			{
+				s.X_fixed += movementVelX;
+				s.VelX_fixed = movementVelX;
+			}
+			else
+			{
+				s.VelX_fixed = 0;
+			}
 			s.InvincibleCounter--;
 		}
 	}
@@ -2198,15 +2372,21 @@ public class PathfinderEngine
 		}
 		StringBuilder stringBuilder = new StringBuilder(num * 16);
 		stringBuilder.Append("nes_y_offset,").Append(_nesCoordOffset).Append('\n');
-		stringBuilder.Append("frame,x,y,a\n");
+		stringBuilder.Append("platformer,").Append(ForcePlatformer ? 1 : 0).Append('\n');
+		stringBuilder.Append("frame,x,y,a,left,right\n");
 		for (int i = 0; i < num; i++)
 		{
 			(int, int) tuple = PathPoints[i];
+			sbyte direction = i < HorizontalInputs.Count ? HorizontalInputs[i] : (sbyte)0;
 			stringBuilder.Append(i).Append(',').Append(tuple.Item1)
 				.Append(',')
 				.Append(tuple.Item2)
 				.Append(',')
 				.Append(Inputs[i] ? 1 : 0)
+				.Append(',')
+				.Append(direction < 0 ? 1 : 0)
+				.Append(',')
+				.Append(direction > 0 ? 1 : 0)
 				.Append('\n');
 		}
 		if (Path2Points != null && Path2Points.Count > 0)
@@ -2457,6 +2637,7 @@ public class PathfinderEngine
 		PathPoints = new List<(int, int)>();
 		Path2Points = new List<(int, int)>();
 		Inputs = new List<bool>();
+		HorizontalInputs = new List<sbyte>();
 		int num34 = 0;
 		for (int n = 0; n < this.tiles.Length; n++)
 		{
@@ -2546,7 +2727,7 @@ public class PathfinderEngine
 		// In normal autoscroll play the NES holds currplayer_x at $50 once
 		// scrolling begins. check_spr_objects compares sprite world X against
 		// that scroll value, so derive the same scroll from PF's world X.
-		int scrollX_px = Math.Max(0, (s.X_fixed >> 8) - NES_PLAYER_SCREEN_X_PX);
+		int scrollX_px = GetScrollX_px(in s);
 		int scrollY_px = s.CameraY_fixed >> 8;
 		for (int slot = 15; slot >= 0; slot--)
 		{
@@ -2612,7 +2793,7 @@ public class PathfinderEngine
 		TraceFrameOpen();
 		int num = ComputeInitCameraY(startY_px);
 		SimState simState = default(SimState);
-		simState.X_fixed = startX_px << 8;
+		simState.X_fixed = InitialXFixed(startX_px);
 		simState.Y_fixed = (startY_px << 8) | SpawnYSubpx;
 		simState.VelX_fixed = SpeedUiIndexToFixed(startSpeedUiIndex);
 		simState.GlobalSpeed_fixed = simState.VelX_fixed;
@@ -2634,6 +2815,7 @@ public class PathfinderEngine
 		simState.NinjaJumps = ((startGameMode == 8) ? 3 : 0);
 		simState.CameraY_fixed = num;
 		simState.TargetCameraY_fixed = num;
+		InitializeHorizontalState(ref simState);
 		SimState s = simState;
 		ApplyPortalsUpTo(ref s, startX_px);
 		InitNesSlots(ref s);
@@ -3040,7 +3222,7 @@ public class PathfinderEngine
 		pathPoints = new List<(int, int)>();
 		int num = ComputeInitCameraY(startY_px);
 		SimState simState = default(SimState);
-		simState.X_fixed = startX_px << 8;
+		simState.X_fixed = InitialXFixed(startX_px);
 		simState.Y_fixed = (startY_px << 8) | SpawnYSubpx;
 		simState.VelX_fixed = SpeedUiIndexToFixed(startSpeedUiIndex);
 		simState.GlobalSpeed_fixed = simState.VelX_fixed;
@@ -3062,6 +3244,7 @@ public class PathfinderEngine
 		simState.NinjaJumps = ((startGameMode == 8) ? 3 : 0);
 		simState.CameraY_fixed = num;
 		simState.TargetCameraY_fixed = num;
+		InitializeHorizontalState(ref simState);
 		SimState s = simState;
 		ApplyPortalsUpTo(ref s, startX_px);
 		InitNesSlots(ref s);
@@ -3236,7 +3419,7 @@ public class PathfinderEngine
 	{
 		int num = ComputeInitCameraY(startY_px);
 		SimState simState = default(SimState);
-		simState.X_fixed = startX_px << 8;
+		simState.X_fixed = InitialXFixed(startX_px);
 		simState.Y_fixed = (startY_px << 8) | SpawnYSubpx;
 		simState.VelX_fixed = SpeedUiIndexToFixed(startSpeedUiIndex);
 		simState.GlobalSpeed_fixed = simState.VelX_fixed;
@@ -3258,6 +3441,7 @@ public class PathfinderEngine
 		simState.NinjaJumps = ((startGameMode == 8) ? 3 : 0);
 		simState.CameraY_fixed = num;
 		simState.TargetCameraY_fixed = num;
+		InitializeHorizontalState(ref simState);
 		SimState s = simState;
 		ApplyPortalsUpTo(ref s, startX_px);
 		InitNesSlots(ref s);
@@ -4076,6 +4260,9 @@ public class PathfinderEngine
 				SimState shadow = s.RainbowShadows[i];
 				BfsHashMix(ref hash, BfsQuantizeKey(ref shadow));
 				BfsHashMix(ref hash, shadow.X_fixed);
+				BfsHashMix(ref hash, shadow.ScrollX_px);
+				BfsHashMix(ref hash, shadow.CurrXScrollStop_fixed);
+				BfsHashMix(ref hash, shadow.TargetXScrollStop_fixed);
 				BfsHashMix(ref hash, shadow.CameraY_fixed);
 				BfsHashMix(ref hash, shadow.TargetCameraY_fixed);
 				BfsHashMix(ref hash, shadow.ScrollYSubpx);
@@ -4091,6 +4278,9 @@ public class PathfinderEngine
 		return new BfsDedupKey(
 			BfsQuantizeKey(ref s),
 			s.X_fixed,
+			s.ScrollX_px,
+			s.CurrXScrollStop_fixed,
+			s.TargetXScrollStop_fixed,
 			s.CameraY_fixed,
 			s.TargetCameraY_fixed,
 			s.ScrollYSubpx,
@@ -5027,7 +5217,7 @@ public class PathfinderEngine
 	}
 
 	private bool StepBfsRainbowBranch(ref SimState stepped, in SimState original,
-		bool input, List<SimState> output, out byte deathType,
+		bool input, sbyte horizontalDirection, List<SimState> output, out byte deathType,
 		out int failureModePlusOne, out int failureX_px, out int failureY_px)
 	{
 		deathType = 0;
@@ -5041,7 +5231,7 @@ public class PathfinderEngine
 		}
 
 		AdvanceBfsTimingPreference(ref stepped, in original, input);
-		bool alive = StepFrame(ref stepped, input, out bool ended);
+		bool alive = StepFrame(ref stepped, input, horizontalDirection, out bool ended);
 		int portalModeCount = stepped.RainbowPortalModeCount;
 		stepped.RainbowPortalModeCount = 0;
 		stepped.RainbowForcedModePlusOne = 0;
@@ -5064,7 +5254,8 @@ public class PathfinderEngine
 			SimState alternate = original.CloneBranch();
 			alternate.RainbowForcedModePlusOne = mode + 1;
 			AdvanceBfsTimingPreference(ref alternate, in original, input);
-			bool alternateAlive = StepFrame(ref alternate, input, out bool alternateEnded);
+			bool alternateAlive = StepFrame(ref alternate, input, horizontalDirection,
+				out bool alternateEnded);
 			int alternatePortalModeCount = alternate.RainbowPortalModeCount;
 			alternate.RainbowPortalModeCount = 0;
 			alternate.RainbowForcedModePlusOne = 0;
@@ -5083,14 +5274,15 @@ public class PathfinderEngine
 	}
 
 	private bool StepBfsRainbowEnsemble(ref SimState candidate, in SimState parent,
-		bool input, out bool endLevel)
+		bool input, sbyte horizontalDirection, out bool endLevel)
 	{
 		SimState[] candidateShadows = candidate.RainbowShadows ?? Array.Empty<SimState>();
 		SimState[] parentShadows = parent.RainbowShadows ?? Array.Empty<SimState>();
 		SimState main = candidate;
 		main.RainbowShadows = null;
 		List<SimState> branches = new(1 + candidateShadows.Length + 11);
-		bool alive = StepBfsRainbowBranch(ref main, in parent, input, branches,
+		bool alive = StepBfsRainbowBranch(ref main, in parent, input,
+			horizontalDirection, branches,
 			out byte universalDeathType, out int failureModePlusOne,
 			out int failureX_px, out int failureY_px);
 
@@ -5099,7 +5291,8 @@ public class PathfinderEngine
 		{
 			SimState shadow = candidateShadows[shadowIndex];
 			SimState original = parentShadows[shadowIndex];
-			alive = StepBfsRainbowBranch(ref shadow, in original, input, branches,
+			alive = StepBfsRainbowBranch(ref shadow, in original, input,
+				horizontalDirection, branches,
 				out universalDeathType, out failureModePlusOne,
 				out failureX_px, out failureY_px);
 		}
@@ -5367,9 +5560,27 @@ public class PathfinderEngine
 
 	private int BfsScoreBranch(ref SimState s, int coinsCollected)
 	{
-		// Coins remain lexicographically primary. Timing is a soft preference among
-		// otherwise viable same-coin states; no world-Y proxy is used.
-		return -coinsCollected * 1000000 + BfsTimingPreferenceScore(ref s);
+		// Coins remain lexicographically primary. A platformer has no automatic
+		// forward motion, so give forward progress a soft score while the separate
+		// X/Y diversity reserve keeps local backtracking routes alive. Timing bias
+		// is deliberately local in platformer mode: its ordinary +/-250000 range
+		// can otherwise outweigh nearly an entire screen of forward progress and
+		// strand the beam at the first wall long after the useful timing window.
+		int progressScore = ForcePlatformer ? -((s.X_fixed >> 8) * 64) : 0;
+		int timingScore = BfsTimingPreferenceScore(ref s);
+		if (ForcePlatformer)
+			timingScore = Math.Clamp(timingScore, -1024, 1024);
+		return -coinsCollected * 1000000 + progressScore +
+			timingScore;
+	}
+
+	private int BfsDiversityBucket(ref SimState s, int yBucketSize)
+	{
+		int yBucket = (s.Y_fixed >> 8) / yBucketSize;
+		if (!ForcePlatformer)
+			return yBucket;
+		int xBucket = (s.X_fixed >> 8) / 32;
+		return (xBucket << 16) ^ (yBucket & 0xFFFF);
 	}
 
 	private static (int Mode, int ScreenY, int VelY, int Motion,
@@ -5480,6 +5691,12 @@ public class PathfinderEngine
 			Environment.GetEnvironmentVariable("FAMIDASH_BFS_CAP"), out int diagnosticCap)
 			? Math.Max(BaseCoinFrontierCap, diagnosticCap)
 			: BaseCoinFrontierCap;
+		const int BasePlatformerFrontierCap = 8192;
+		int platformerFrontierCap = int.TryParse(
+			Environment.GetEnvironmentVariable("FAMIDASH_PLATFORMER_BFS_CAP"),
+			out int platformerDiagnosticCap)
+			? Math.Max(BasePlatformerFrontierCap, platformerDiagnosticCap)
+			: BasePlatformerFrontierCap;
 		bool routeDiagnostics = Environment.GetEnvironmentVariable(
 			"FAMIDASH_ROUTE_DIAG") == "1";
 		int rainbowEndRejectLogged = 0;
@@ -5493,7 +5710,10 @@ public class PathfinderEngine
 		bool routeBacktrackAttempted = false;
 		if (Verbose)
 		{
-			_log.WriteLine($"[BFS] Starting exhaustive BFS exploration (frontier cap={BaseCoinFrontierCap})");
+			int reportedFrontierCap = ForcePlatformer
+				? platformerFrontierCap
+				: (PreferCoins ? coinFrontierCap : int.MaxValue);
+			_log.WriteLine($"[BFS] Starting exhaustive BFS exploration (frontier cap={reportedFrontierCap})");
 		}
 		if (Verbose)
 		{
@@ -5505,7 +5725,7 @@ public class PathfinderEngine
 		{
 			int num = ComputeInitCameraY(startY_px);
 			SimState simState = default(SimState);
-			simState.X_fixed = startX_px << 8;
+			simState.X_fixed = InitialXFixed(startX_px);
 			simState.Y_fixed = (startY_px << 8) | SpawnYSubpx;
 			simState.VelX_fixed = SpeedUiIndexToFixed(startSpeedUiIndex);
 			simState.GlobalSpeed_fixed = simState.VelX_fixed;
@@ -5527,6 +5747,7 @@ public class PathfinderEngine
 			simState.NinjaJumps = ((startGameMode == 8) ? 3 : 0);
 			simState.CameraY_fixed = num;
 			simState.TargetCameraY_fixed = num;
+			InitializeHorizontalState(ref simState);
 			SimState s = simState;
 			ApplyPortalsUpTo(ref s, startX_px);
 			InitNesSlots(ref s);
@@ -5542,6 +5763,7 @@ public class PathfinderEngine
 			List<SimState> frontier = new List<SimState> { s };
 			List<int[]> list = new List<int[]>();
 			List<bool[]> list2 = new List<bool[]>();
+			List<sbyte[]> directionHistory = new List<sbyte[]>();
 			int num5 = -1;
 			int num6 = -1;
 			int num7 = -1;
@@ -5552,6 +5774,7 @@ public class PathfinderEngine
 			int num9 = -1;
 			int num10 = startX_px;
 			List<bool>? primaryFailedInputs = null;
+			List<sbyte>? primaryFailedDirections = null;
 			int primaryFailedX = startX_px;
 			int num11 = 240000;
 			SimState[] rState = new SimState[num11];
@@ -5583,6 +5806,7 @@ public class PathfinderEngine
 					}
 					list.Add(new[] { 0 });
 					list2.Add(new[] { prefixInputs[prefixFrame] });
+					directionHistory.Add(new[] { (sbyte)1 });
 				}
 				frontier[0] = s;
 				bfsStartFrame = prefixInputs.Count;
@@ -5612,7 +5836,8 @@ public class PathfinderEngine
 					Progress.Report(num13);
 					num4 = num13;
 				}
-				int expandCount = frontier.Count * 2;
+				int actionCount = ForcePlatformer ? 6 : 2;
+				int expandCount = frontier.Count * actionCount;
 				if (expandCount > rState.Length)
 				{
 					int num14 = expandCount;
@@ -5622,8 +5847,12 @@ public class PathfinderEngine
 				}
 				Parallel.For(0, expandCount, delegate(int k)
 				{
-					int index6 = k >> 1;
-					bool input2 = (k & 1) == 1;
+					int action = k % actionCount;
+					int index6 = k / actionCount;
+					bool input2 = (action & 1) == 1;
+					sbyte horizontalDirection = ForcePlatformer
+						? (sbyte)((action >> 1) - 1)
+						: (sbyte)0;
 					SimState parentState = frontier[index6];
 					SimState s8 = parentState.Clone();
 					bool endLevel3;
@@ -5631,12 +5860,13 @@ public class PathfinderEngine
 					if (parentState.RainbowShadows != null)
 					{
 						flag14 = StepBfsRainbowEnsemble(ref s8, in parentState,
-							input2, out endLevel3);
+							input2, horizontalDirection, out endLevel3);
 					}
 					else
 					{
 						AdvanceBfsTimingPreference(ref s8, in parentState, input2);
-						flag14 = StepFrame(ref s8, input2, out endLevel3);
+						flag14 = StepFrame(ref s8, input2, horizontalDirection,
+							out endLevel3);
 						int rainbowModeCount = s8.RainbowPortalModeCount;
 						s8.RainbowPortalModeCount = 0;
 						s8.RainbowForcedModePlusOne = 0;
@@ -5652,6 +5882,7 @@ public class PathfinderEngine
 								AdvanceBfsTimingPreference(ref alternate,
 									in parentState, input2);
 								bool alternateAlive = StepFrame(ref alternate, input2,
+									horizontalDirection,
 									out bool alternateEnded);
 								int alternateModeCount = alternate.RainbowPortalModeCount;
 								alternate.RainbowPortalModeCount = 0;
@@ -5754,8 +5985,9 @@ public class PathfinderEngine
 					SimState simState12 = default(SimState);
 					for (int num160 = num152; num160 < num153; num160++)
 					{
-						int num161 = num160 >> 1;
-						bool flag13 = (num160 & 1) == 1;
+						int workerAction = num160 % actionCount;
+						int num161 = num160 / actionCount;
+						bool flag13 = (workerAction & 1) == 1;
 						if (rEnd[num160])
 						{
 							SimState s6 = rState[num160];
@@ -6079,14 +6311,18 @@ public class PathfinderEngine
 					if (num9 >= 0 && list.Count > 0)
 					{
 						List<bool> savedInputs = new();
+						List<sbyte> savedDirections = new();
 						int savedIndex = num9;
 						for (int savedFrame = num8; savedFrame >= 0; savedFrame--)
 						{
 							savedInputs.Add(list2[savedFrame][savedIndex]);
+							savedDirections.Add(directionHistory[savedFrame][savedIndex]);
 							savedIndex = list[savedFrame][savedIndex];
 						}
 						savedInputs.Reverse();
+						savedDirections.Reverse();
 						primaryFailedInputs = savedInputs;
+						primaryFailedDirections = savedDirections;
 						primaryFailedX = num10;
 					}
 					routeBacktrackAttempted = true;
@@ -6097,8 +6333,12 @@ public class PathfinderEngine
 						list.RemoveRange(routeArchive.Frame, list.Count - routeArchive.Frame);
 					if (list2.Count > routeArchive.Frame)
 						list2.RemoveRange(routeArchive.Frame, list2.Count - routeArchive.Frame);
+					if (directionHistory.Count > routeArchive.Frame)
+						directionHistory.RemoveRange(routeArchive.Frame,
+							directionHistory.Count - routeArchive.Frame);
 					list.Add(routeArchive.Parents);
 					list2.Add(routeArchive.Inputs);
+					directionHistory.Add(routeArchive.Directions);
 					frontier = routeArchive.States;
 					int restoredFrame = routeArchive.Frame;
 					int restoredSplitY = routeArchive.SplitY;
@@ -6199,14 +6439,15 @@ public class PathfinderEngine
 						if (!rAlive[num46] && !rEnd[num46])
 						{
 							SimState simState5 = rState[num46];
-							int index = num46 >> 1;
+							int index = num46 / actionCount;
+							bool diagnosticInput = ((num46 % actionCount) & 1) == 1;
 							SimState simState6 = frontier[index];
-							_log.WriteLine($"[BFS_DEAD] parent X=0x{simState6.X_fixed:X} Y=0x{simState6.Y_fixed:X} VelY=0x{simState6.VelY_fixed:X} grav={simState6.GravFlipped} mini={simState6.Mini} dual={simState6.DualActive} P2_Y=0x{simState6.P2_Y_fixed:X} P2_grav={simState6.P2_GravFlipped} | child X=0x{simState5.X_fixed:X} Y=0x{simState5.Y_fixed:X} VelY=0x{simState5.VelY_fixed:X} grav={simState5.GravFlipped} mini={simState5.Mini} dt={simState5.DeathType} inp={(num46 & 1) == 1}");
+							_log.WriteLine($"[BFS_DEAD] parent X=0x{simState6.X_fixed:X} Y=0x{simState6.Y_fixed:X} VelY=0x{simState6.VelY_fixed:X} grav={simState6.GravFlipped} mini={simState6.Mini} dual={simState6.DualActive} P2_Y=0x{simState6.P2_Y_fixed:X} P2_grav={simState6.P2_GravFlipped} | child X=0x{simState5.X_fixed:X} Y=0x{simState5.Y_fixed:X} VelY=0x{simState5.VelY_fixed:X} grav={simState5.GravFlipped} mini={simState5.Mini} dt={simState5.DeathType} inp={diagnosticInput}");
 							string rainbowFailure = simState5.RainbowFailureModePlusOne > 0
 								? $" rainbowMode={simState5.RainbowFailureModePlusOne - 1}" +
 								  $" rainbowXY=({simState5.RainbowFailureX_px},{simState5.RainbowFailureY_px})"
 								: "";
-							Console.Error.WriteLine($"[BFS_DEAD] parent Y={simState6.Y_fixed >> 8} VelY=0x{simState6.VelY_fixed:X} grav={simState6.GravFlipped} | child Y={simState5.Y_fixed >> 8} VelY=0x{simState5.VelY_fixed:X} dt={array5[simState5.DeathType]} inp={(num46 & 1) == 1}{rainbowFailure}");
+							Console.Error.WriteLine($"[BFS_DEAD] parent Y={simState6.Y_fixed >> 8} VelY=0x{simState6.VelY_fixed:X} grav={simState6.GravFlipped} | child Y={simState5.Y_fixed >> 8} VelY=0x{simState5.VelY_fixed:X} dt={array5[simState5.DeathType]} inp={diagnosticInput}{rainbowFailure}");
 							num45++;
 						}
 					}
@@ -6373,13 +6614,13 @@ public class PathfinderEngine
 					{
 						if (!rAlive[num64] && !rEnd[num64])
 						{
-							int index2 = num64 >> 1;
+							int index2 = num64 / actionCount;
 							SimState simState7 = frontier[index2];
 							int num65 = simState7.X_fixed >> 8;
 							if (num65 >= 12300 && num65 <= 12700)
 							{
 								SimState simState8 = rState[num64];
-								Console.Error.WriteLine($"[TDEAD] f={frame} pX={num65} pY={simState7.Y_fixed >> 8} pVelY=0x{simState7.VelY_fixed:X} dt={simState8.DeathType} inp={(num64 & 1) == 1}");
+								Console.Error.WriteLine($"[TDEAD] f={frame} pX={num65} pY={simState7.Y_fixed >> 8} pVelY=0x{simState7.VelY_fixed:X} dt={simState8.DeathType} inp={((num64 % actionCount) & 1) == 1}");
 							}
 						}
 					}
@@ -6504,7 +6745,8 @@ public class PathfinderEngine
 				// route dramatically slower without exposing an additional input branch.
 				int num75 = rainbowSelectiveSearch
 					? rainbowFrontierCap
-					: (PreferCoins ? coinFrontierCap : int.MaxValue);
+					: (ForcePlatformer ? platformerFrontierCap
+						: (PreferCoins ? coinFrontierCap : int.MaxValue));
 				int selectedCapacity = Math.Min(dictionary.Count, num75);
 				List<SimState> list16 = new List<SimState>(selectedCapacity);
 				List<int> list17 = new List<int>(selectedCapacity);
@@ -6520,9 +6762,9 @@ public class PathfinderEngine
 				// actual truncation is unavoidable.
 				int scorePrefixCount = rainbowSelectiveSearch
 					? Math.Min(num75, list15.Count)
-					: (!PreferCoins || list15.Count <= num75
+					: ((!PreferCoins && !ForcePlatformer) || list15.Count <= num75
 						? list15.Count
-						: num75 * 3 / 4);
+						: (ForcePlatformer ? num75 / 2 : num75 * 3 / 4));
 				int num76 = Math.Min(scorePrefixCount, list15.Count);
 				for (int num77 = 0; num77 < num76; num77++)
 				{
@@ -6536,7 +6778,7 @@ public class PathfinderEngine
 					list18.Add(list5[index3]);
 					recoverySelectedIndexes?.Add(index3);
 				}
-				if (!PreferCoins && list15.Count > num76)
+				if (!PreferCoins && !ForcePlatformer && list15.Count > num76)
 				{
 					for (int num78 = num76; num78 < list15.Count; num78++)
 					{
@@ -6557,7 +6799,8 @@ public class PathfinderEngine
 					Dictionary<int, int> dictionary2 = new Dictionary<int, int>();
 					foreach (SimState item8 in list16)
 					{
-						int key2 = (item8.Y_fixed >> 8) / num79;
+						SimState bucketState = item8;
+						int key2 = BfsDiversityBucket(ref bucketState, num79);
 						dictionary2.TryGetValue(key2, out var value5);
 						dictionary2[key2] = value5 + 1;
 					}
@@ -6660,7 +6903,7 @@ public class PathfinderEngine
 							list17.Add(list4[seedIndex]);
 							list18.Add(list5[seedIndex]);
 							recoverySelectedIndexes?.Add(seedIndex);
-							int seedYBucket = (seedState.Y_fixed >> 8) / num79;
+							int seedYBucket = BfsDiversityBucket(ref seedState, num79);
 							dictionary2.TryGetValue(seedYBucket, out int seedYCount);
 							dictionary2[seedYBucket] = seedYCount + 1;
 							int seedClass = (seedState.GameMode << 1) | (seedState.Mini ? 1 : 0);
@@ -6694,7 +6937,7 @@ public class PathfinderEngine
 						recoverySelectedIndexes?.Add(seedIndex);
 						seededSizeModeCandidates.Add(seedIndex);
 						dictionary3[seedClass] = 1;
-						int seedYBucket = (seedState.Y_fixed >> 8) / num79;
+						int seedYBucket = BfsDiversityBucket(ref seedState, num79);
 						dictionary2.TryGetValue(seedYBucket, out int seedYCount);
 						dictionary2[seedYBucket] = seedYCount + 1;
 						if (seedState.GravFlipped)
@@ -6705,6 +6948,74 @@ public class PathfinderEngine
 						{
 							num81++;
 						}
+					}
+					// Autoscroll levels can safely rank nearly every retained state by
+					// forward score because X cannot retreat. Platformer rooms are different:
+					// a wall can require moving back several columns and climbing a route whose
+					// local score is temporarily worse. Fill the platformer diversity half in
+					// rounds across every occupied 32x16-pixel segment. This keeps neutral/left
+					// descendants alive in old segments instead of spending all diversity slots
+					// on thousands of phases immediately adjacent to the furthest wall.
+					if (ForcePlatformer)
+					{
+						HashSet<int> alreadySelected = new();
+						for (int selectedPos = 0; selectedPos < num76; selectedPos++)
+							alreadySelected.Add(list15[selectedPos]);
+						alreadySelected.UnionWith(seededTransitionCandidates);
+						alreadySelected.UnionWith(seededSizeModeCandidates);
+
+						SortedDictionary<int, List<int>> segmentCandidates = new();
+						for (int candidatePos = num76; candidatePos < list15.Count; candidatePos++)
+						{
+							int candidateIndex = list15[candidatePos];
+							if (alreadySelected.Contains(candidateIndex))
+								continue;
+							SimState segmentState = list3[candidateIndex];
+							int segmentKey = BfsDiversityBucket(ref segmentState, num79);
+							if (!segmentCandidates.TryGetValue(segmentKey, out List<int>? bucket))
+							{
+								bucket = new List<int>();
+								segmentCandidates.Add(segmentKey, bucket);
+							}
+							bucket.Add(candidateIndex);
+						}
+
+						int platformerDiversityLimit = Math.Min(list3.Count,
+							num75 + seededTransitionCandidates.Count +
+							seededSizeModeCandidates.Count);
+						int segmentRound = 0;
+						bool addedInRound;
+						do
+						{
+							addedInRound = false;
+							foreach (List<int> bucket in segmentCandidates.Values)
+							{
+								if (list16.Count >= platformerDiversityLimit)
+									break;
+								if (segmentRound >= bucket.Count)
+									continue;
+
+								int candidateIndex = bucket[segmentRound];
+								SimState segmentState = list3[candidateIndex];
+								list16.Add(segmentState);
+								list17.Add(list4[candidateIndex]);
+								list18.Add(list5[candidateIndex]);
+								recoverySelectedIndexes?.Add(candidateIndex);
+								alreadySelected.Add(candidateIndex);
+
+								int segmentKey = BfsDiversityBucket(ref segmentState, num79);
+								dictionary2.TryGetValue(segmentKey, out int segmentCount);
+								dictionary2[segmentKey] = segmentCount + 1;
+								int segmentClass = (segmentState.GameMode << 1) |
+									(segmentState.Mini ? 1 : 0);
+								dictionary3.TryGetValue(segmentClass, out int segmentClassCount);
+								dictionary3[segmentClass] = segmentClassCount + 1;
+								if (segmentState.GravFlipped) num82++; else num81++;
+								addedInRound = true;
+							}
+							segmentRound++;
+						}
+						while (addedInRound && list16.Count < platformerDiversityLimit);
 					}
 					flag6 = Math.Min(num81, num82) < list16.Count / 20;
 					int diversityLimit = Math.Min(list3.Count,
@@ -6738,7 +7049,8 @@ public class PathfinderEngine
 						{
 							continue;
 						}
-						int key3 = (list3[index5].Y_fixed >> 8) / num79;
+						SimState diversityState = list3[index5];
+						int key3 = BfsDiversityBucket(ref diversityState, num79);
 						dictionary2.TryGetValue(key3, out var value7);
 						bool num86 = value7 < num80 + 1;
 						bool flag8 = flag6 && ((list3[index5].GravFlipped && num82 < num81) || (!list3[index5].GravFlipped && num81 < num82));
@@ -7049,6 +7361,7 @@ public class PathfinderEngine
 							int archiveCount = archiveIndexes.Count;
 							int[] archiveParents = new int[archiveCount];
 							bool[] archiveInputs = new bool[archiveCount];
+							sbyte[] archiveDirections = new sbyte[archiveCount];
 							for (int archivePos = 0; archivePos < archiveCount; archivePos++)
 							{
 								int candidateIndex = archiveIndexes[archivePos];
@@ -7056,9 +7369,12 @@ public class PathfinderEngine
 								replacement.States.Add(archivedState);
 								archiveParents[archivePos] = list4[candidateIndex];
 								archiveInputs[archivePos] = list5[candidateIndex];
+								archiveDirections[archivePos] =
+									list3[candidateIndex].SearchDirectionUsed;
 							}
 							replacement.Parents = archiveParents;
 							replacement.Inputs = archiveInputs;
+							replacement.Directions = archiveDirections;
 							routeArchive?.ReturnResources();
 							routeArchive = replacement;
 							if (routeDiagnostics)
@@ -7123,6 +7439,8 @@ public class PathfinderEngine
 				}
 				list.Add(list17.ToArray());
 				list2.Add(list18.ToArray());
+				directionHistory.Add(list16.Select(state =>
+					state.SearchDirectionUsed).ToArray());
 				for (int num90 = 0; num90 < list16.Count; num90++)
 				{
 					int num91 = list16[num90].X_fixed >> 8;
@@ -7144,11 +7462,16 @@ public class PathfinderEngine
 				{
 					int num92 = int.MaxValue;
 					int num93 = int.MinValue;
+					int frontierMinX = int.MaxValue;
+					int frontierMaxX = int.MinValue;
 					int num94 = 0;
 					int num95 = 0;
 					foreach (SimState item15 in frontier)
 					{
 						int num96 = item15.Y_fixed >> 8;
+						int frontierX = item15.X_fixed >> 8;
+						frontierMinX = Math.Min(frontierMinX, frontierX);
+						frontierMaxX = Math.Max(frontierMaxX, frontierX);
 						if (num96 < num92)
 						{
 							num92 = num96;
@@ -7218,7 +7541,7 @@ public class PathfinderEngine
 					}
 					if (Verbose)
 					{
-						_log.WriteLine($"[BFS] f={frame} front={frontier.Count} dedup={dictionary.Count} deaths={num15} Y=[{num92}..{num93}] mode={frontier[0].GameMode} gravN={num94} gravF={num95} X~{num3}px pct={num13}% ms/f={value9:F1}{value10} modes:{text2}");
+						_log.WriteLine($"[BFS] f={frame} front={frontier.Count} dedup={dictionary.Count} deaths={num15} Y=[{num92}..{num93}] mode={frontier[0].GameMode} gravN={num94} gravF={num95} X=[{frontierMinX}..{frontierMaxX}] best={num3}px pct={num13}% ms/f={value9:F1}{value10} modes:{text2}");
 					}
 					if (Verbose && frame >= 3550 && frame <= 3850 && frame % 10 == 0)
 					{
@@ -7491,18 +7814,23 @@ public class PathfinderEngine
 			if (num5 >= 0)
 			{
 				List<bool> list23 = new List<bool>();
+				List<sbyte> winningDirections = new List<sbyte>();
 				int num147 = num6;
 				for (int num148 = num5 - 1; num148 >= 0; num148--)
 				{
 					list23.Add(list2[num148][num147]);
+					winningDirections.Add(directionHistory[num148][num147]);
 					num147 = list[num148][num147];
 				}
 				list23.Reverse();
+				winningDirections.Reverse();
 				list23.Add(item);
+				winningDirections.Add(simState2.SearchDirectionUsed);
 				_log.WriteLine($"[BFS] Replaying winning path ({list23.Count} frames)...");
-				ReplayBfsPath(list23, startX_px, startY_px, startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
+				ReplayBfsPath(list23, winningDirections, startX_px, startY_px,
+					startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
 				int count2 = allCoins.Count;
-				if (PreferCoins && count2 > 0 && FinalCollectedCoinIndices != null && FinalCollectedCoinIndices.Count < count2)
+				if (!ForcePlatformer && PreferCoins && count2 > 0 && FinalCollectedCoinIndices != null && FinalCollectedCoinIndices.Count < count2)
 				{
 					List<bool>? list24 = TryCoinBeamSplice(list23, startX_px, startY_px, startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
 					if (list24 != null)
@@ -7525,21 +7853,28 @@ public class PathfinderEngine
 			{
 				_speculativeDepth = 0;
 				List<bool>? bestFailedInputs = null;
+				List<sbyte>? bestFailedDirections = null;
 				if (num9 >= 0 && list.Count > 0)
 				{
 					bestFailedInputs = new List<bool>();
+					bestFailedDirections = new List<sbyte>();
 					int num149 = num9;
 					for (int num150 = num8; num150 >= 0; num150--)
 					{
 						bestFailedInputs.Add(list2[num150][num149]);
+						bestFailedDirections.Add(directionHistory[num150][num149]);
 						num149 = list[num150][num149];
 					}
 					bestFailedInputs.Reverse();
+					bestFailedDirections.Reverse();
 				}
 				if (primaryFailedInputs != null && primaryFailedX > num10)
+				{
 					bestFailedInputs = primaryFailedInputs;
+					bestFailedDirections = primaryFailedDirections;
+				}
 				if (bestFailedInputs != null)
-					ReplayBfsPath(bestFailedInputs, startX_px, startY_px,
+					ReplayBfsPath(bestFailedInputs, bestFailedDirections, startX_px, startY_px,
 						startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
 				int num151 = ((PathPoints.Count > 0) ? PathPoints[PathPoints.Count - 1].x : 0);
 				int value13 = ((num2 > 0) ? (num151 * 100 / num2) : 0);
@@ -7598,11 +7933,20 @@ public class PathfinderEngine
 		return num;
 	}
 
-	private void ReplayBfsPath(List<bool> inputSequence, int startX_px, int startY_px, int startSpeedUiIndex, int startGameMode, bool startGravFlipped, bool startMini)
+	private void ReplayBfsPath(List<bool> inputSequence, int startX_px, int startY_px,
+		int startSpeedUiIndex, int startGameMode, bool startGravFlipped, bool startMini)
+	{
+		ReplayBfsPath(inputSequence, null, startX_px, startY_px,
+			startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
+	}
+
+	private void ReplayBfsPath(List<bool> inputSequence,
+		IReadOnlyList<sbyte>? horizontalSequence, int startX_px, int startY_px,
+		int startSpeedUiIndex, int startGameMode, bool startGravFlipped, bool startMini)
 	{
 		int num = ComputeInitCameraY(startY_px);
 		SimState simState = default(SimState);
-		simState.X_fixed = startX_px << 8;
+		simState.X_fixed = InitialXFixed(startX_px);
 		simState.Y_fixed = (startY_px << 8) | SpawnYSubpx;
 		simState.VelX_fixed = SpeedUiIndexToFixed(startSpeedUiIndex);
 		simState.GlobalSpeed_fixed = simState.VelX_fixed;
@@ -7624,6 +7968,7 @@ public class PathfinderEngine
 		simState.NinjaJumps = ((startGameMode == 8) ? 3 : 0);
 		simState.CameraY_fixed = num;
 		simState.TargetCameraY_fixed = num;
+		InitializeHorizontalState(ref simState);
 		SimState s = simState;
 		ApplyPortalsUpTo(ref s, startX_px);
 		InitNesSlots(ref s);
@@ -7632,6 +7977,7 @@ public class PathfinderEngine
 		PathPoints.Clear();
 		Path2Points.Clear();
 		Inputs.Clear();
+		HorizontalInputs.Clear();
 		_prevDualActiveForPath = false;
 		_speculativeDepth = 0;
 		_frameCounter = 0;
@@ -7640,11 +7986,15 @@ public class PathfinderEngine
 		{
 			_frameCounter = i;
 			bool flag = inputSequence[i];
+			sbyte direction = horizontalSequence != null && i < horizontalSequence.Count
+				? horizontalSequence[i]
+				: (ForcePlatformer ? (sbyte)1 : (sbyte)0);
 			Inputs.Add(flag);
+			HorizontalInputs.Add(direction);
 			int gameMode = s.GameMode;
 			_cubeJumpedThisStep = false;
 			bool endLevel;
-			bool flag2 = StepFrame(ref s, flag, out endLevel);
+			bool flag2 = StepFrame(ref s, flag, direction, out endLevel);
 			TraceFrame(i, ref s, Inputs[i], flag2);
 			_ = s.Mini;
 			int num2 = (s.CameraY_fixed >> 8) + (s.Y_fixed - s.CameraY_fixed >> 8);
@@ -7704,7 +8054,7 @@ public class PathfinderEngine
 		}
 		_log.WriteLine($"[COIN_SPLICE] Attempting beam splice for {list.Count} missed coin(s)");
 		SimState simState = default(SimState);
-		simState.X_fixed = startX_px << 8;
+		simState.X_fixed = InitialXFixed(startX_px);
 		simState.Y_fixed = (startY_px << 8) | SpawnYSubpx;
 		simState.VelX_fixed = SpeedUiIndexToFixed(startSpeedUiIndex);
 		simState.GlobalSpeed_fixed = simState.VelX_fixed;
@@ -7726,6 +8076,7 @@ public class PathfinderEngine
 		simState.NinjaJumps = ((startGameMode == 8) ? 3 : 0);
 		simState.CameraY_fixed = ComputeInitCameraY(startY_px);
 		simState.TargetCameraY_fixed = ComputeInitCameraY(startY_px);
+		InitializeHorizontalState(ref simState);
 		SimState s = simState;
 		ApplyPortalsUpTo(ref s, startX_px);
 		InitNesSlots(ref s);
@@ -11410,6 +11761,13 @@ public class PathfinderEngine
 
 	private bool StepFrame(ref SimState s, bool input, out bool endLevel)
 	{
+		return StepFrame(ref s, input, ForcePlatformer ? (sbyte)1 : (sbyte)0,
+			out endLevel);
+	}
+
+	private bool StepFrame(ref SimState s, bool input, sbyte horizontalDirection,
+		out bool endLevel)
+	{
 		_stepFrameInputHeld = input;
 		endLevel = false;
 		s.RainbowPortalModeCount = 0;
@@ -11418,7 +11776,7 @@ public class PathfinderEngine
 		// replay clock deliberately holds the same input and cursor across them.
 		// Therefore those waits must not consume a PF input or publish a PF row.
 		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=frame.in X={s.X_fixed >> 8}.{(s.X_fixed & 0xFF):X2} Y={s.Y_fixed >> 8}.{(s.Y_fixed & 0xFF):X2} Ypx={NesPlayerY_px(s.Y_fixed, s.CameraY_fixed)} Vx={s.VelX_fixed} Vy={s.VelY_fixed} sFr={s.SlopeFrames} swOn={s.SlopeWasOnCounter} sT={s.SlopeType} lst={s.LastSlopeType} inp={(input ? 1 : 0)} grav={(s.GravFlipped ? 1 : 0)} mini={(s.Mini ? 1 : 0)} gm={s.GameMode} onG={(s.OnGround ? 1 : 0)} dash={s.Dashing} inv={s.InvincibleCounter} camY={s.CameraY_fixed >> 8}.{(s.CameraY_fixed & 0xFF):X2}");
-		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=StepFrame.in input={(input ? 1 : 0)} prevHeld={(s.PrevInputHeld ? 1 : 0)} dash={s.Dashing} orbed={(s.Orbed ? 1 : 0)} dual={(s.DualActive ? 1 : 0)}");
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=StepFrame.in input={(input ? 1 : 0)} horizontal={horizontalDirection} prevHeld={(s.PrevInputHeld ? 1 : 0)} dash={s.Dashing} orbed={(s.Orbed ? 1 : 0)} dual={(s.DualActive ? 1 : 0)}");
 		s.Step2Ejected = false;
 		s.ShipDbgCeilSlopeHit = false;
 		s.ShipDbgCeilTileHit = false;
@@ -12065,9 +12423,18 @@ public class PathfinderEngine
 				return false;
 			}
 		}
-		// x_movement has now run: publish the global speed as this player's
-		// saved velocity before x_movement_coll/runthecolls.
-		s.VelX_fixed = movementVelX_fixed;
+		// x_movement has now run. Autoscroll always advances right; platformer
+		// performs its second R/L probe and chooses left/neutral/right here.
+		bool platformerSideDeath = false;
+		if (ForcePlatformer && !_dualP2Guard)
+		{
+			x_fixed2 = ResolvePlatformerHorizontal(ref s, horizontalDirection,
+				movementVelX_fixed, out platformerSideDeath);
+		}
+		else
+		{
+			s.VelX_fixed = movementVelX_fixed;
+		}
 		if (_dualP2Guard)
 		{
 			s.X_fixed = x_fixed2;
@@ -12109,6 +12476,21 @@ public class PathfinderEngine
 			}
 			s.DeathType = 0;
 		}
+		if (platformerSideDeath)
+		{
+			s.X_fixed = x_fixed2;
+			if ((x_fixed2 >> 8) > 0x20)
+			{
+				if (_speculativeDepth == 0)
+				{
+					_lastDeathReason = "PLATFORMER_SIDE_DEATH";
+					_lastDeathX = s.X_fixed >> 8;
+					_lastDeathY = s.Y_fixed >> 8;
+				}
+				s.DeathType = 8;
+				return false;
+			}
+		}
 		if (s.InvincibleCounter == 0 && CheckFloorSpikes(ref s))
 		{
 			// NES x_movement_coll only sets cube_data here. runthecolls still
@@ -12123,7 +12505,7 @@ public class PathfinderEngine
 			s.DeathType = 7;
 			return false;
 		}
-		if (s.InvincibleCounter == 0 && (s.GameMode == 0 || s.GameMode == 1 || s.GameMode == 2 || s.GameMode == 3 || s.GameMode == 4 || s.GameMode == 5 || s.GameMode == 6 || s.GameMode == 7 || s.GameMode == 8 || s.GameMode == 9 || s.GameMode == 10))
+		if (!ForcePlatformer && s.InvincibleCounter == 0 && (s.GameMode == 0 || s.GameMode == 1 || s.GameMode == 2 || s.GameMode == 3 || s.GameMode == 4 || s.GameMode == 5 || s.GameMode == 6 || s.GameMode == 7 || s.GameMode == 8 || s.GameMode == 9 || s.GameMode == 10))
 		{
 			bool flag8 = CheckForwardCollision(ref s);
 			if (flag8)
@@ -12387,7 +12769,7 @@ public class PathfinderEngine
 		}
 		int x_fixed3 = s.X_fixed;
 		s.X_fixed = x_fixed2;
-		if (s.X_fixed != x_fixed3)
+		if (!ForcePlatformer && s.X_fixed != x_fixed3)
 		{
 			if (CheckDeathCollision(ref s, polluteSlopeState: false))
 			{
@@ -12451,11 +12833,12 @@ public class PathfinderEngine
 		// switching to P2. P2 reuses that exact 16-slot ordering/active state.
 		if (!_dualP2Guard)
 		{
+			ProcessPlatformerXScroll(ref s);
 			CheckSprObjects(ref s);
 			// Capture the post-P1-movement scroll. NES decremented player1_x by this
 			// frame's scroll delta before P2's sprite_collide, so the P2 collision box
 			// must be positioned against this same scroll (not P2's own pre-move X).
-			_dualP2ScrollX_px = Math.Max(0, (s.X_fixed >> 8) - NES_PLAYER_SCREEN_X_PX);
+			_dualP2ScrollX_px = GetScrollX_px(in s);
 		}
 		if (s.DualActive && !_dualP2Guard)
 		{
@@ -14416,7 +14799,7 @@ public class PathfinderEngine
 		int num = (s.Mini ? 7 : 15);
 		int num2 = (s.Mini ? (16 - num >> 1) : 0);
 		int playerX_px = s.X_fixed >> 8;
-		int currplayerScreenX_px = playerX_px - Math.Max(0, playerX_px - NES_PLAYER_SCREEN_X_PX);
+		int currplayerScreenX_px = playerX_px - GetScrollX_px(in s);
 		int num3 = offsetY + num2;
 		if (!s.GravFlipped)
 		{
@@ -14512,7 +14895,7 @@ public class PathfinderEngine
 		int hitboxOffsetY = (s.Mini ? (16 - height >> 1) : 0);
 		int currplayerWorldX_px = s.X_fixed >> 8;
 		int playerX_px = currplayerWorldX_px + playerXBias;
-		int currplayerScreenX_px = playerX_px - Math.Max(0, playerX_px - NES_PLAYER_SCREEN_X_PX);
+		int currplayerScreenX_px = playerX_px - GetScrollX_px(in s);
 		int screenY_fixed = s.Y_fixed - s.CameraY_fixed;
 		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=SpiderScanUp.in X={playerX_px} Ywld={s.Y_fixed >> 8} Yscr={screenY_fixed >> 8} w={width} h={height} offY={hitboxOffsetY} camY={s.CameraY_fixed >> 8}");
 		for (int i = 0; i < 200; i++)
@@ -14554,7 +14937,7 @@ public class PathfinderEngine
 		int num2 = (s.Mini ? (16 - num >> 1) : 0);
 		int currplayerWorldX_px = s.X_fixed >> 8;
 		int playerX_px = currplayerWorldX_px + playerXBias;
-		int currplayerScreenX_px = playerX_px - Math.Max(0, playerX_px - NES_PLAYER_SCREEN_X_PX);
+		int currplayerScreenX_px = playerX_px - GetScrollX_px(in s);
 		int screenY_fixed = s.Y_fixed - s.CameraY_fixed;
 		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=SpiderScanDown.in X={playerX_px} Ywld={s.Y_fixed >> 8} Yscr={screenY_fixed >> 8} w={width} h={num} offY={num2} camY={s.CameraY_fixed >> 8}");
 		for (int i = 0; i < 200; i++)
@@ -15223,7 +15606,7 @@ public class PathfinderEngine
 		// boundary-straddling sprites (e.g. the single portal) one frame early.
 		int scrollX_px = (_dualP2Guard && _dualP2ScrollXValid)
 			? _dualP2ScrollX_px
-			: Math.Max(0, (s.X_fixed >> 8) - NES_PLAYER_SCREEN_X_PX);
+			: GetScrollX_px(in s);
 		int plLeft = currentX_px - scrollX_px + 1;
 		int plRight = plLeft + hitboxW;
 		bool dualActive = s.DualActive;
@@ -15315,10 +15698,13 @@ public class PathfinderEngine
 						case 0x9E: s.WrapMode = false; break;
 						case 0xDD: s.NoCamLockForced = true; break;
 						case 0xED: s.NoCamLockForced = false; break;
+						case 0xDE:
+							s.TargetXScrollStop_fixed =
+								(s.NesSlotRealY[slot] & 0xF0) << 8;
+							break;
 						case 0x6F:
 						case 0x7F:
 						case 0x7D:
-						case 0xDE:
 						case 0xDF:
 						case 0xEE:
 						case 0xEF:
@@ -15406,14 +15792,17 @@ public class PathfinderEngine
 
 			bool processedSprite = s.ProcessedSprites.Contains(processKey);
 			// Most activated handlers remain eligible for the other player during
-			// dual. The normal green pad (0x65) is globally single-use, however;
-			// only GREEN_ORB_MULTI (0x7C) is intentionally reusable.
+			// dual and in forced-platformer play. The normal green pad (0x65) is
+			// globally single-use, however; only GREEN_ORB_MULTI (0x7C) is
+			// intentionally reusable.
 			bool nesDualAllowsActivatedReplay = s.DualActive && !IsGreenPad(sid);
+			bool nesPlatformerAllowsActivatedReplay = ForcePlatformer && !IsGreenPad(sid);
 			// spcl_cube/spcl_robot never set activesprites_activated. Their handlers
 			// therefore remain live on every overlap and continuously refresh the
 			// exit-portal camera timer.
 			bool persistentCubeRobotPortal = sid == 0 || sid == 4;
-			if (processedSprite && !nesDualAllowsActivatedReplay && !persistentCubeRobotPortal) continue;
+			if (processedSprite && !nesDualAllowsActivatedReplay &&
+				!nesPlatformerAllowsActivatedReplay && !persistentCubeRobotPortal) continue;
 
 			// Dual/single portals
 			if (sid == 34 || sid == 35)
@@ -17513,7 +17902,9 @@ public class PathfinderEngine
 				s.SlopeType = polluteSlope;
 			}
 		}
-		return SharedPhysics.CheckDeathCollision(in _collisionMap, playerX_px, playerY_px, hbW, hbH, hbOffY, s.GameMode, s.Dblocked);
+		return SharedPhysics.CheckDeathCollision(in _collisionMap, playerX_px,
+			playerY_px, hbW, hbH, hbOffY, s.GameMode, s.Dblocked,
+			ForcePlatformer);
 	}
 
 	private bool CheckSlopePenetrationDeath(ref SimState s)

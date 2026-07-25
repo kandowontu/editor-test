@@ -1,3 +1,0 @@
-script started
-[sf2_softlock_trace] armed.  Play through the intro until softlock.
-frame 600  S2=10475 S=4642 T=2672  blank=0  stall=4

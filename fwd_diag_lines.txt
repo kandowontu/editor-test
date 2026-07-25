@@ -1,6 +1,0 @@
-﻿[PF f=5073] [FWD_DIAG] X=16380 Y=322 rightEdge=16388 centerY=329 tile=(1024,20) tid=0x00 result=False slopeSkip=0|0
-[PF f=5074] [FWD_DIAG] X=16383 Y=322 rightEdge=16391 centerY=329 tile=(1024,20) tid=0x00 result=False slopeSkip=0|0
-[PF f=5075] [FWD_DIAG] X=16387 Y=323 rightEdge=16395 centerY=330 tile=(1024,20) tid=0x00 result=False slopeSkip=0|0
-[PF f=5076] [FWD_DIAG] X=16390 Y=323 rightEdge=16398 centerY=330 tile=(1024,20) tid=0x00 result=False slopeSkip=0|0
-[PF f=5077] [FWD_DIAG] X=16394 Y=322 rightEdge=16402 centerY=329 tile=(1025,20) tid=0x00 result=False slopeSkip=0|0
-[PF f=5078] [FWD_DIAG] X=16397 Y=322 rightEdge=16405 centerY=329 tile=(1025,20) tid=0x00 result=False slopeSkip=0|0

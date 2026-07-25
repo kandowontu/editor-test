@@ -247,7 +247,8 @@ namespace FamidashEditor
                 // Per-player tracking: each player can independently activate the same orb
                 // but cannot re-activate an orb they already triggered
                 bool isMultiOrb = (spriteType == BLUE_ORB_MULTI || spriteType == GREEN_ORB_MULTI);
-                if (!dual && !isMultiOrb && playerProcessedOrbs[currplayer].Contains(idx))
+                if (!dual && !forcePlatformer && !isMultiOrb &&
+                    playerProcessedOrbs[currplayer].Contains(idx))
                     continue;
 
                 if (SetsNesUfoOrbed(spriteType))
@@ -749,7 +750,7 @@ namespace FamidashEditor
 
                 // Check if already activated (prevent reactivation)
                 // In dual mode, each player can independently activate the same orb
-                if (!dual && orbActivated.ContainsKey(idx) && orbActivated[idx])
+                if (!dual && !forcePlatformer && orbActivated.ContainsKey(idx) && orbActivated[idx])
                     continue;
 
                 if (SetsNesUfoOrbed(spriteType))

@@ -14,6 +14,8 @@ namespace FamidashEditor
 
         // Precomputed input sequence from editor's PathfinderEngine
         private List<bool>? pfInputSequence = null;
+		private List<sbyte>? pfDirectionSequence = null;
+		private sbyte pfHorizontalDirectionThisFrame = 0;
         private int pfFrameIndex = 0;
         private int pfHoldCounter = 0; // Extra frames to keep X held after a jump press
         private bool pfBallHoldContinuation = false; // True when ball hold is continuing (not fresh press)
@@ -69,6 +71,12 @@ namespace FamidashEditor
                 return prevReadIndex >= 0 && prevReadIndex < pfInputSequence.Count && pfInputSequence[prevReadIndex];
             }
             pfLastAdvancedTick = pfTickGeneration;
+
+			int directionIndex = pfFrameIndex - PF_FRAME_DELAY;
+			pfHorizontalDirectionThisFrame = pfDirectionSequence != null &&
+				directionIndex >= 0 && directionIndex < pfDirectionSequence.Count
+				? pfDirectionSequence[directionIndex]
+				: (sbyte)0;
 
             // If we're in the middle of holding from a previous jump press, keep holding
             if (pfHoldCounter > 0)
@@ -266,12 +274,16 @@ namespace FamidashEditor
             pfPrevInjectedPress = false;
             pfPressEdgeThisFrame = false;
             pfInputSequence = null;
+			pfDirectionSequence = null;
+			pfHorizontalDirectionThisFrame = 0;
 
             try
             {
                 if (this.Owner is MainWindow mw && mw.PrecomputedPathfinderInputs != null)
                 {
                     pfInputSequence = new List<bool>(mw.PrecomputedPathfinderInputs);
+					if (mw.PrecomputedPathfinderDirections != null)
+						pfDirectionSequence = new List<sbyte>(mw.PrecomputedPathfinderDirections);
 
                     // NOTE: Previously pre-seeded coins here (set sprites[idx]=-1)
                     // so they'd vanish before playback. Removed so coins are visible

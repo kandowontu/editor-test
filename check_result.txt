@@ -1,6 +1,0 @@
-TEMP=C:\Users\kando\AppData\Local\Temp
-Path=C:\Users\kando\AppData\Local\Temp\bfs_spider.txt
-Exists=True
-Size=489089104
-Header bytes: fffe64006f0074006e006500740020003a002000
-Enc utf-16-le: spider_count=4281425, first_line='\ufeffdotnet : [SPIDER_TELEPORT] goUp=False fromY=270 X=3346 grav=False mode=0\n'

@@ -63,6 +63,7 @@ double jumpTimingBias = positionalArgs.Length > 1 ? double.Parse(positionalArgs[
 int maxFallSpeed = 0x06; // default
 int startSpeedUiIndex = 1;  // default: 1 = 1x speed (index 0 = 0.5x)
 int startGameMode = 0; // default: cube mode
+bool forcePlatformer = false;
 int? metaSpawnYHi = null, metaSpawnYLo = null;
 int? metaScrollYHi = null, metaScrollYLo = null;
 {
@@ -73,7 +74,7 @@ int? metaScrollYHi = null, metaScrollYLo = null;
     {
         try
         {
-        var (metaSpeed, metaMaxFall, metaGameMode, mSpawnHi, mSpawnLo, mScrollHi, mScrollLo) = ParseMetadataLevelProperties(metaFile, lvlName);
+        var (metaSpeed, metaMaxFall, metaGameMode, mSpawnHi, mSpawnLo, mScrollHi, mScrollLo, mPlatformer) = ParseMetadataLevelProperties(metaFile, lvlName);
         if (metaSpeed.HasValue)
         {
             // NES/metadata convention: 0=1x, 1=0.5x, 2+=same
@@ -96,6 +97,7 @@ int? metaScrollYHi = null, metaScrollYLo = null;
         metaSpawnYLo = mSpawnLo;
         metaScrollYHi = mScrollHi;
         metaScrollYLo = mScrollLo;
+		forcePlatformer = mPlatformer;
         if (mSpawnHi.HasValue)
             Console.WriteLine($"Metadata: spawnY=0x{mSpawnHi.Value:X2}{(mSpawnLo ?? 0):X2} for '{lvlName}'");
         }
@@ -169,6 +171,15 @@ if (useProbe)
     Probe("TR", rightX, rowTopY);
     bool fs = SharedPhysics.CheckFloorSpikes(map, playerX, playerY, 15, 15, false, out int dx, out int dy);
     Console.WriteLine($"CheckFloorSpikes: {fs} at ({dx},{dy})");
+    var sideRight = SharedPhysics.CheckPlatformerSideCollision(
+        in map, playerX, playerY, 15, 15, 0, false, false,
+        movingRight: true, slopeActive: false, dblocked: false,
+        currentSlopeType: 0);
+    var sideLeft = SharedPhysics.CheckPlatformerSideCollision(
+        in map, playerX, playerY, 15, 15, 0, false, false,
+        movingRight: false, slopeActive: false, dblocked: false,
+        currentSlopeType: 0);
+    Console.WriteLine($"PlatformerSide: R={sideRight} L={sideLeft}");
     return 0;
 }
 var spriteAnchors = new Dictionary<int, (int, int)>();
@@ -242,6 +253,9 @@ if (File.Exists(cfgPath))
             metaScrollYHi = scrollHiProp.GetInt32();
         if (root.TryGetProperty("ScrollYPositionLow", out var scrollLoProp) && scrollLoProp.ValueKind == JsonValueKind.Number)
             metaScrollYLo = scrollLoProp.GetInt32();
+		if (root.TryGetProperty("ForcePlatformer", out var platformerProp) &&
+			(platformerProp.ValueKind == JsonValueKind.True || platformerProp.ValueKind == JsonValueKind.False))
+			forcePlatformer = platformerProp.GetBoolean();
 
         Console.WriteLine($"Config: {cfgPath} ({spritePixelOffsets.Count} offsets, {spriteAnchors.Count} anchors)");
     }
@@ -304,7 +318,7 @@ int nesYOffset = (57 - level.Height + groundRowsToReserve) * 16;
 int nesSpawnHi = (metaSpawnYHi ?? 0xB0) & 0xFF;
 (int nesScrollHi, int nesScrollLo) = SharedPhysics.ResolveNesInitialScroll(metaScrollYHi, metaScrollYLo);
 int nesScrollLinear = nesScrollHi * 240 + nesScrollLo;
-int startX_px = 0;
+int startX_px = forcePlatformer ? 0x11 : 0;
 int startY_px = nesSpawnHi + nesScrollLinear - nesYOffset;
 int maxY = Math.Max(0, level.Height * 16 - 16);
 if (startY_px < 0) startY_px = 0;
@@ -330,7 +344,8 @@ var engine = new PathfinderEngine(
 engine.LevelName = tmxPath;
 engine.JumpTimingBias = jumpTimingBias;
 engine.PreferCoins = preferCoins;
-engine.UseBFS = useBfs || preferCoins; // Editor: UseBFS = preferCoins (BFS collects all coins in a single pass)
+engine.ForcePlatformer = forcePlatformer;
+engine.UseBFS = useBfs || preferCoins || forcePlatformer;
 engine.Verbose = verbose;
 engine.ConfigScrollYHi = metaScrollYHi;
 engine.ConfigScrollYLo = metaScrollYLo;
@@ -554,7 +569,7 @@ static string Json5ToJson(string json5)
 // ══════════════════════════════════════════════════════════════
 // Helper: read startingSpeed and maxFallSpeed for a level from metadata
 // ══════════════════════════════════════════════════════════════
-static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode, int? spawnYHi, int? spawnYLo, int? scrollYHi, int? scrollYLo) ParseMetadataLevelProperties(string metaPath, string levelName)
+static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode, int? spawnYHi, int? spawnYLo, int? scrollYHi, int? scrollYLo, bool forcePlatformer) ParseMetadataLevelProperties(string metaPath, string levelName)
 {
     string raw = File.ReadAllText(metaPath);
     string json = Json5ToJson(raw);
@@ -578,6 +593,7 @@ static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode, int? spawn
                     {
                         int? speed = null, gameMode = null, spawnHi = null, spawnLo = null, scrollHi = null, scrollLo = null;
                         int? maxFall = 0x06;
+						bool platformer = false;
                         if (entry.TryGetProperty("startingSpeed", out var sp) && sp.ValueKind == JsonValueKind.Number)
                             speed = sp.GetInt32();
                         // Current source metadata uses a boolean-like numeric flag.
@@ -597,15 +613,18 @@ static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode, int? spawn
                             scrollHi = schi.GetInt32();
                         if (entry.TryGetProperty("scrollYPositionLow", out var sclo) && sclo.ValueKind == JsonValueKind.Number)
                             scrollLo = sclo.GetInt32();
+						if (entry.TryGetProperty("forcePlatformer", out var fp) &&
+							(fp.ValueKind == JsonValueKind.True || fp.ValueKind == JsonValueKind.False))
+							platformer = fp.GetBoolean();
                         Console.WriteLine($"  Found level '{lvl}' in {arrayName} at index {count}: speed={speed} maxFall={maxFall} gameMode={gameMode} spawnYHi={spawnHi} spawnYLo={spawnLo} scrollYHi={scrollHi} scrollYLo={scrollLo}");
-                        return (speed, maxFall, gameMode, spawnHi, spawnLo, scrollHi, scrollLo);
+						return (speed, maxFall, gameMode, spawnHi, spawnLo, scrollHi, scrollLo, platformer);
                     }
                 }
             }
             Console.WriteLine($"  Searched {count} levels in {arrayName}, '{levelName}' not found");
         }
     }
-    return (null, null, null, null, null, null, null);
+	return (null, null, null, null, null, null, null, false);
 }
 
 // ══════════════════════════════════════════════════════════════

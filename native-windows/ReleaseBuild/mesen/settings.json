@@ -1,6 +1,7 @@
 ﻿{
-  "Version": "2.1.1",
+  "Version": "2.2.1",
   "ConfigUpgrade": 5,
+  "EnableTestMode": false,
   "Video": {
     "CustomAspectRatio": 1,
     "VideoFilter": "None",
@@ -30,22 +31,24 @@
     "NtscYFilterLength": 0,
     "NtscIFilterLength": 50,
     "NtscQFilterLength": 50,
+    "EnableVariableRefreshRate": false,
     "FullscreenForceIntegerScale": false,
     "UseExclusiveFullscreen": false,
     "ExclusiveFullscreenRefreshRateNtsc": 60,
     "ExclusiveFullscreenRefreshRatePal": 50,
     "ExclusiveFullscreenResolution": "Default",
-    "ScreenRotation": "None"
+    "ScreenRotation": "None",
+    "DisableHighPrecisionFramePacing": false
   },
   "Audio": {
-    "AudioDevice": "",
+    "AudioDevice": "Primary Sound Driver",
     "EnableAudio": true,
     "DisableDynamicSampleRate": false,
     "MasterVolume": 100,
     "SampleRate": "_48000",
     "AudioLatency": 60,
     "MuteSoundInBackground": false,
-    "ReduceSoundInBackground": true,
+    "ReduceSoundInBackground": false,
     "ReduceSoundInFastForward": false,
     "VolumeReduction": 75,
     "ReverbEnabled": false,
@@ -113,6 +116,7 @@
       "Mapping1": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 4110,
         "B": 4109,
         "X": 4112,
@@ -140,26 +144,27 @@
       "Mapping2": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
-        "A": 62,
-        "B": 44,
-        "X": 67,
-        "Y": 69,
+        "NttDataKeypadButtons": null,
+        "A": 67,
+        "B": 69,
+        "X": 62,
+        "Y": 44,
         "L": 60,
         "R": 66,
         "Up": 24,
         "Down": 26,
         "Left": 23,
         "Right": 25,
-        "Start": 47,
-        "Select": 48,
+        "Start": 6,
+        "Select": 152,
         "U": 0,
         "D": 0,
-        "TurboA": 0,
-        "TurboB": 0,
-        "TurboX": 0,
-        "TurboY": 0,
-        "TurboL": 0,
-        "TurboR": 0,
+        "TurboA": 65,
+        "TurboB": 46,
+        "TurboX": 49,
+        "TurboY": 47,
+        "TurboL": 48,
+        "TurboR": 61,
         "TurboSelect": 0,
         "TurboStart": 0,
         "GenericKey1": 0
@@ -167,6 +172,7 @@
       "Mapping3": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -194,6 +200,7 @@
       "Mapping4": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -225,6 +232,7 @@
       "Mapping1": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -252,6 +260,7 @@
       "Mapping2": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -279,6 +288,7 @@
       "Mapping3": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -306,6 +316,7 @@
       "Mapping4": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -337,6 +348,7 @@
       "Mapping1": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -364,6 +376,7 @@
       "Mapping2": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -391,6 +404,7 @@
       "Mapping3": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -418,6 +432,7 @@
       "Mapping4": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -449,6 +464,7 @@
       "Mapping1": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -476,6 +492,7 @@
       "Mapping2": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -503,6 +520,7 @@
       "Mapping3": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -530,6 +548,7 @@
       "Mapping4": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -561,6 +580,7 @@
       "Mapping1": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -588,6 +608,7 @@
       "Mapping2": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -615,6 +636,7 @@
       "Mapping3": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -642,6 +664,7 @@
       "Mapping4": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -673,6 +696,7 @@
       "Mapping1": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -700,6 +724,7 @@
       "Mapping2": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -727,6 +752,7 @@
       "Mapping3": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -754,6 +780,7 @@
       "Mapping4": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -785,6 +812,7 @@
       "Mapping1": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -812,6 +840,7 @@
       "Mapping2": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -839,6 +868,7 @@
       "Mapping3": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -866,6 +896,7 @@
       "Mapping4": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -897,6 +928,7 @@
       "Mapping1": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -924,6 +956,7 @@
       "Mapping2": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -951,6 +984,7 @@
       "Mapping3": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -978,6 +1012,7 @@
       "Mapping4": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1009,6 +1044,7 @@
       "Mapping1": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1036,6 +1072,7 @@
       "Mapping2": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1063,6 +1100,7 @@
       "Mapping3": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1090,6 +1128,7 @@
       "Mapping4": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1121,6 +1160,7 @@
       "Mapping1": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1148,6 +1188,7 @@
       "Mapping2": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1175,6 +1216,7 @@
       "Mapping3": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1202,6 +1244,7 @@
       "Mapping4": {
         "MouseButtons": null,
         "SuperScopeButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1231,7 +1274,8 @@
     },
     "AllowInvalidInput": false,
     "Region": "Auto",
-    "BlendHighResolutionModes": false,
+    "ColorCorrection": "None",
+    "HighResBlendMode": "None",
     "HideBgLayer1": false,
     "HideBgLayer2": false,
     "HideBgLayer3": false,
@@ -1239,6 +1283,7 @@
     "HideSprites": false,
     "DisableFrameSkipping": false,
     "ForceFixedResolution": false,
+    "RemoveSpriteLimit": false,
     "Overscan": {
       "Left": 0,
       "Right": 0,
@@ -1279,6 +1324,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1290,6 +1336,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 4110,
         "B": 4109,
         "X": 0,
@@ -1319,6 +1366,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1330,6 +1378,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 67,
         "B": 69,
         "X": 0,
@@ -1359,6 +1408,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1370,6 +1420,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1399,6 +1450,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1410,6 +1462,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1443,6 +1496,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1454,6 +1508,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1483,6 +1538,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1494,6 +1550,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1523,6 +1580,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1534,6 +1592,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1563,6 +1622,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1574,6 +1634,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1599,7 +1660,7 @@
         "GenericKey1": 0
       },
       "TurboSpeed": 0,
-      "Type": "None"
+      "Type": "NesController"
     },
     "ExpPort": {
       "Mapping1": {
@@ -1607,6 +1668,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1618,6 +1680,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1647,6 +1710,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1658,6 +1722,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1687,6 +1752,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1698,6 +1764,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1727,6 +1794,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1738,6 +1806,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1771,6 +1840,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1782,6 +1852,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1811,6 +1882,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1822,6 +1894,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1851,6 +1924,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1862,6 +1936,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1891,6 +1966,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1902,6 +1978,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1935,6 +2012,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1946,6 +2024,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -1975,6 +2054,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -1986,6 +2066,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2015,6 +2096,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2026,6 +2108,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2055,6 +2138,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2066,6 +2150,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2099,6 +2184,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2110,6 +2196,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2139,6 +2226,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2150,6 +2238,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2179,6 +2268,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2190,6 +2280,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2219,6 +2310,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2230,6 +2322,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2263,6 +2356,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2274,6 +2368,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2303,6 +2398,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2314,6 +2410,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2343,6 +2440,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2354,6 +2452,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2383,6 +2482,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2394,6 +2494,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2427,6 +2528,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2438,6 +2540,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2467,6 +2570,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2478,6 +2582,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2507,6 +2612,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2518,6 +2624,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2547,6 +2654,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2558,6 +2666,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2591,6 +2700,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2602,6 +2712,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2631,6 +2742,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2642,6 +2754,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2671,6 +2784,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2682,6 +2796,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2711,6 +2826,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2722,6 +2838,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2755,6 +2872,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2766,6 +2884,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2795,6 +2914,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2806,6 +2926,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2835,6 +2956,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2846,6 +2968,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2875,6 +2998,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2886,6 +3010,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2919,6 +3044,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2930,6 +3056,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2959,6 +3086,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -2970,6 +3098,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -2999,6 +3128,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -3010,6 +3140,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -3039,6 +3170,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -3050,6 +3182,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -3083,6 +3216,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -3094,6 +3228,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -3123,6 +3258,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -3134,6 +3270,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -3163,6 +3300,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -3174,6 +3312,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -3203,6 +3342,7 @@
         "FamilyBasicKeyboardButtons": null,
         "PartyTapButtons": null,
         "PachinkoButtons": null,
+        "FcnsButtons": null,
         "ExcitingBoxingButtons": null,
         "JissenMahjongButtons": null,
         "SuborKeyboardButtons": null,
@@ -3214,6 +3354,7 @@
         "MouseButtons": null,
         "OekakidsButtons": null,
         "BandaiHypershotButtons": null,
+        "NttDataKeypadButtons": null,
         "A": 0,
         "B": 0,
         "X": 0,
@@ -3290,7 +3431,7 @@
     "OverwriteOriginalRom": false,
     "RandomizeMapperPowerOnState": false,
     "RandomizeCpuPpuAlignment": false,
-    "RamPowerOnState": "AllZeros",
+    "RamPowerOnState": "Random",
     "PpuExtraScanlinesBeforeNmi": 0,
     "PpuExtraScanlinesAfterNmi": 0,
     "DisableNoiseModeFlag": false,
@@ -3507,15 +3648,124 @@
       "TurboSpeed": 2,
       "Type": "GameboyController"
     },
+    "LinkedController": {
+      "Mapping1": {
+        "A": 0,
+        "B": 0,
+        "X": 0,
+        "Y": 0,
+        "L": 0,
+        "R": 0,
+        "Up": 0,
+        "Down": 0,
+        "Left": 0,
+        "Right": 0,
+        "Start": 0,
+        "Select": 0,
+        "U": 0,
+        "D": 0,
+        "TurboA": 0,
+        "TurboB": 0,
+        "TurboX": 0,
+        "TurboY": 0,
+        "TurboL": 0,
+        "TurboR": 0,
+        "TurboSelect": 0,
+        "TurboStart": 0,
+        "GenericKey1": 0
+      },
+      "Mapping2": {
+        "A": 0,
+        "B": 0,
+        "X": 0,
+        "Y": 0,
+        "L": 0,
+        "R": 0,
+        "Up": 0,
+        "Down": 0,
+        "Left": 0,
+        "Right": 0,
+        "Start": 0,
+        "Select": 0,
+        "U": 0,
+        "D": 0,
+        "TurboA": 0,
+        "TurboB": 0,
+        "TurboX": 0,
+        "TurboY": 0,
+        "TurboL": 0,
+        "TurboR": 0,
+        "TurboSelect": 0,
+        "TurboStart": 0,
+        "GenericKey1": 0
+      },
+      "Mapping3": {
+        "A": 0,
+        "B": 0,
+        "X": 0,
+        "Y": 0,
+        "L": 0,
+        "R": 0,
+        "Up": 0,
+        "Down": 0,
+        "Left": 0,
+        "Right": 0,
+        "Start": 0,
+        "Select": 0,
+        "U": 0,
+        "D": 0,
+        "TurboA": 0,
+        "TurboB": 0,
+        "TurboX": 0,
+        "TurboY": 0,
+        "TurboL": 0,
+        "TurboR": 0,
+        "TurboSelect": 0,
+        "TurboStart": 0,
+        "GenericKey1": 0
+      },
+      "Mapping4": {
+        "A": 0,
+        "B": 0,
+        "X": 0,
+        "Y": 0,
+        "L": 0,
+        "R": 0,
+        "Up": 0,
+        "Down": 0,
+        "Left": 0,
+        "Right": 0,
+        "Start": 0,
+        "Select": 0,
+        "U": 0,
+        "D": 0,
+        "TurboA": 0,
+        "TurboB": 0,
+        "TurboX": 0,
+        "TurboY": 0,
+        "TurboL": 0,
+        "TurboR": 0,
+        "TurboSelect": 0,
+        "TurboStart": 0,
+        "GenericKey1": 0
+      },
+      "TurboSpeed": 0,
+      "Type": "None"
+    },
     "Model": "AutoFavorGbc",
     "UseSgb2": true,
+    "UseLocalLinkCable": false,
+    "LocalLinkCableVideoOutput": "Both",
+    "LocalLinkCableAudioOutput": "Both",
     "BlendFrames": true,
     "GbcAdjustColors": true,
     "DisableBackground": false,
     "DisableSprites": false,
+    "RemoveSpriteLimit": false,
     "HideSgbBorders": false,
     "RamPowerOnState": "Random",
     "AllowInvalidInput": false,
+    "OverclockScanlineCount": 0,
     "BgColors": [
       4294967295,
       4289769648,
@@ -5612,6 +5862,110 @@
       "TurboSpeed": 2,
       "Type": "WsControllerVertical"
     },
+    "ControllerPcv2": {
+      "Mapping1": {
+        "A": 0,
+        "B": 0,
+        "X": 0,
+        "Y": 0,
+        "L": 0,
+        "R": 0,
+        "Up": 0,
+        "Down": 0,
+        "Left": 0,
+        "Right": 0,
+        "Start": 0,
+        "Select": 0,
+        "U": 0,
+        "D": 0,
+        "TurboA": 0,
+        "TurboB": 0,
+        "TurboX": 0,
+        "TurboY": 0,
+        "TurboL": 0,
+        "TurboR": 0,
+        "TurboSelect": 0,
+        "TurboStart": 0,
+        "GenericKey1": 0
+      },
+      "Mapping2": {
+        "A": 0,
+        "B": 0,
+        "X": 0,
+        "Y": 0,
+        "L": 0,
+        "R": 0,
+        "Up": 0,
+        "Down": 0,
+        "Left": 0,
+        "Right": 0,
+        "Start": 0,
+        "Select": 0,
+        "U": 0,
+        "D": 0,
+        "TurboA": 0,
+        "TurboB": 0,
+        "TurboX": 0,
+        "TurboY": 0,
+        "TurboL": 0,
+        "TurboR": 0,
+        "TurboSelect": 0,
+        "TurboStart": 0,
+        "GenericKey1": 0
+      },
+      "Mapping3": {
+        "A": 0,
+        "B": 0,
+        "X": 0,
+        "Y": 0,
+        "L": 0,
+        "R": 0,
+        "Up": 0,
+        "Down": 0,
+        "Left": 0,
+        "Right": 0,
+        "Start": 0,
+        "Select": 0,
+        "U": 0,
+        "D": 0,
+        "TurboA": 0,
+        "TurboB": 0,
+        "TurboX": 0,
+        "TurboY": 0,
+        "TurboL": 0,
+        "TurboR": 0,
+        "TurboSelect": 0,
+        "TurboStart": 0,
+        "GenericKey1": 0
+      },
+      "Mapping4": {
+        "A": 0,
+        "B": 0,
+        "X": 0,
+        "Y": 0,
+        "L": 0,
+        "R": 0,
+        "Up": 0,
+        "Down": 0,
+        "Left": 0,
+        "Right": 0,
+        "Start": 0,
+        "Select": 0,
+        "U": 0,
+        "D": 0,
+        "TurboA": 0,
+        "TurboB": 0,
+        "TurboX": 0,
+        "TurboY": 0,
+        "TurboL": 0,
+        "TurboR": 0,
+        "TurboSelect": 0,
+        "TurboStart": 0,
+        "GenericKey1": 0
+      },
+      "TurboSpeed": 0,
+      "Type": "Pcv2Controller"
+    },
     "Model": "Auto",
     "UseBootRom": false,
     "AutoRotate": true,
@@ -5629,9 +5983,9 @@
     "Channel5Vol": 100
   },
   "Preferences": {
-    "Theme": "Light",
-    "AutomaticallyCheckForUpdates": false,
-    "SingleInstance": true,
+    "Theme": "Dark",
+    "AutomaticallyCheckForUpdates": true,
+    "SingleInstance": false,
     "AutoLoadPatches": true,
     "PauseWhenInBackground": false,
     "PauseWhenInMenusAndConfig": false,
@@ -5695,7 +6049,7 @@
       {
         "Shortcut": "Rewind",
         "KeyCombination": {
-          "Key1": 0,
+          "Key1": 2,
           "Key2": 0,
           "Key3": 0
         },
@@ -5708,7 +6062,7 @@
       {
         "Shortcut": "IncreaseSpeed",
         "KeyCombination": {
-          "Key1": 0,
+          "Key1": 141,
           "Key2": 0,
           "Key3": 0
         },
@@ -5721,7 +6075,7 @@
       {
         "Shortcut": "DecreaseSpeed",
         "KeyCombination": {
-          "Key1": 0,
+          "Key1": 143,
           "Key2": 0,
           "Key3": 0
         },
@@ -5747,8 +6101,8 @@
       {
         "Shortcut": "IncreaseVolume",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 118,
+          "Key2": 141,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -5760,8 +6114,8 @@
       {
         "Shortcut": "DecreaseVolume",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 118,
+          "Key2": 143,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -5773,7 +6127,7 @@
       {
         "Shortcut": "ToggleFps",
         "KeyCombination": {
-          "Key1": 0,
+          "Key1": 99,
           "Key2": 0,
           "Key3": 0
         },
@@ -5786,7 +6140,7 @@
       {
         "Shortcut": "ToggleFullscreen",
         "KeyCombination": {
-          "Key1": 0,
+          "Key1": 100,
           "Key2": 0,
           "Key3": 0
         },
@@ -5799,7 +6153,7 @@
       {
         "Shortcut": "TakeScreenshot",
         "KeyCombination": {
-          "Key1": 0,
+          "Key1": 101,
           "Key2": 0,
           "Key3": 0
         },
@@ -5812,8 +6166,8 @@
       {
         "Shortcut": "Reset",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 118,
+          "Key2": 61,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -5825,8 +6179,8 @@
       {
         "Shortcut": "PowerCycle",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 118,
+          "Key2": 63,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -5838,8 +6192,8 @@
       {
         "Shortcut": "ReloadRom",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 118,
+          "Key2": 116,
           "Key3": 61
         },
         "KeyCombination2": {
@@ -5851,7 +6205,7 @@
       {
         "Shortcut": "Pause",
         "KeyCombination": {
-          "Key1": 0,
+          "Key1": 13,
           "Key2": 0,
           "Key3": 0
         },
@@ -5864,7 +6218,7 @@
       {
         "Shortcut": "RunSingleFrame",
         "KeyCombination": {
-          "Key1": 0,
+          "Key1": 146,
           "Key2": 0,
           "Key3": 0
         },
@@ -5877,8 +6231,8 @@
       {
         "Shortcut": "SetScale1x",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 120,
+          "Key2": 35,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -5890,8 +6244,8 @@
       {
         "Shortcut": "SetScale2x",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 120,
+          "Key2": 36,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -5903,8 +6257,8 @@
       {
         "Shortcut": "SetScale3x",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 120,
+          "Key2": 37,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -5916,8 +6270,8 @@
       {
         "Shortcut": "SetScale4x",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 120,
+          "Key2": 38,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -5929,8 +6283,8 @@
       {
         "Shortcut": "SetScale5x",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 120,
+          "Key2": 39,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -5942,8 +6296,8 @@
       {
         "Shortcut": "SetScale6x",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 120,
+          "Key2": 40,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -5955,8 +6309,8 @@
       {
         "Shortcut": "SetScale7x",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 120,
+          "Key2": 41,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -5968,8 +6322,8 @@
       {
         "Shortcut": "SetScale8x",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 120,
+          "Key2": 42,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -5981,8 +6335,8 @@
       {
         "Shortcut": "SetScale9x",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 120,
+          "Key2": 43,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -5994,8 +6348,8 @@
       {
         "Shortcut": "SetScale10x",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 120,
+          "Key2": 34,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -6007,8 +6361,8 @@
       {
         "Shortcut": "OpenFile",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 118,
+          "Key2": 58,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -6020,8 +6374,8 @@
       {
         "Shortcut": "SaveStateSlot1",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 116,
+          "Key2": 90,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -6033,8 +6387,8 @@
       {
         "Shortcut": "SaveStateSlot2",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 116,
+          "Key2": 91,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -6046,8 +6400,8 @@
       {
         "Shortcut": "SaveStateSlot3",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 116,
+          "Key2": 92,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -6059,8 +6413,8 @@
       {
         "Shortcut": "SaveStateSlot4",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 116,
+          "Key2": 93,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -6072,8 +6426,8 @@
       {
         "Shortcut": "SaveStateSlot5",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 116,
+          "Key2": 94,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -6085,8 +6439,8 @@
       {
         "Shortcut": "SaveStateSlot6",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 116,
+          "Key2": 95,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -6098,8 +6452,8 @@
       {
         "Shortcut": "SaveStateSlot7",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 116,
+          "Key2": 96,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -6111,8 +6465,8 @@
       {
         "Shortcut": "SaveStateToFile",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 118,
+          "Key2": 62,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -6124,7 +6478,7 @@
       {
         "Shortcut": "LoadStateSlot1",
         "KeyCombination": {
-          "Key1": 0,
+          "Key1": 90,
           "Key2": 0,
           "Key3": 0
         },
@@ -6137,7 +6491,7 @@
       {
         "Shortcut": "LoadStateSlot2",
         "KeyCombination": {
-          "Key1": 0,
+          "Key1": 91,
           "Key2": 0,
           "Key3": 0
         },
@@ -6150,7 +6504,7 @@
       {
         "Shortcut": "LoadStateSlot3",
         "KeyCombination": {
-          "Key1": 0,
+          "Key1": 92,
           "Key2": 0,
           "Key3": 0
         },
@@ -6163,7 +6517,7 @@
       {
         "Shortcut": "LoadStateSlot4",
         "KeyCombination": {
-          "Key1": 0,
+          "Key1": 93,
           "Key2": 0,
           "Key3": 0
         },
@@ -6176,7 +6530,7 @@
       {
         "Shortcut": "LoadStateSlot5",
         "KeyCombination": {
-          "Key1": 0,
+          "Key1": 94,
           "Key2": 0,
           "Key3": 0
         },
@@ -6189,7 +6543,7 @@
       {
         "Shortcut": "LoadStateSlot6",
         "KeyCombination": {
-          "Key1": 0,
+          "Key1": 95,
           "Key2": 0,
           "Key3": 0
         },
@@ -6202,7 +6556,7 @@
       {
         "Shortcut": "LoadStateSlot7",
         "KeyCombination": {
-          "Key1": 0,
+          "Key1": 96,
           "Key2": 0,
           "Key3": 0
         },
@@ -6215,7 +6569,7 @@
       {
         "Shortcut": "LoadStateSlotAuto",
         "KeyCombination": {
-          "Key1": 0,
+          "Key1": 97,
           "Key2": 0,
           "Key3": 0
         },
@@ -6228,8 +6582,8 @@
       {
         "Shortcut": "LoadStateFromFile",
         "KeyCombination": {
-          "Key1": 0,
-          "Key2": 0,
+          "Key1": 118,
+          "Key2": 55,
           "Key3": 0
         },
         "KeyCombination2": {
@@ -8389,14 +8743,14 @@
         "StatusFormat": "Text",
         "ShowEffectiveAddresses": true,
         "ShowMemoryValues": true,
-        "ShowByteCode": false,
-        "ShowClockCounter": false,
-        "ShowFrameCounter": false,
+        "ShowByteCode": true,
+        "ShowClockCounter": true,
+        "ShowFrameCounter": true,
         "ShowFramePosition": true,
         "UseLabels": true,
-        "IndentCode": false,
+        "IndentCode": true,
         "UseCustomFormat": false,
-        "Format": "",
+        "Format": "[Disassembly][EffectiveAddress] [MemoryValue,h][Align,38] A:[A,4h] X:[X,4h] Y:[Y,4h] S:[SP,4h] D:[D,4h] DB:[DB,2h] P:[P,8] V:[Scanline,3] H:[Cycle,3]",
         "Condition": ""
       },
       "SpcConfig": {
@@ -8413,7 +8767,7 @@
         "UseLabels": true,
         "IndentCode": false,
         "UseCustomFormat": false,
-        "Format": "",
+        "Format": "[Disassembly][EffectiveAddress] [MemoryValue,h][Align,38] A:[A,2h] X:[X,2h] Y:[Y,2h] S:[SP,2h] P:[P,8] V:[Scanline,3] H:[Cycle,3]",
         "Condition": ""
       },
       "NecDspConfig": {
@@ -8464,7 +8818,7 @@
         "UseLabels": true,
         "IndentCode": false,
         "UseCustomFormat": false,
-        "Format": "",
+        "Format": "[Disassembly][EffectiveAddress] [MemoryValue,h][Align,38] SRC:[SRC,2h] DST:[DST,2h] R0:[R0,4h] R1:[R1,4h] R2:[R2,4h] R3:[R3,4h] R4:[R4,4h] R5:[R5,4h] R6:[R6,4h] R7:[R7,4h] R8:[R8,4h] R9:[R9,4h] R10:[R10,4h] R11:[R11,4h] R12:[R12,4h] R13:[R13,4h] R14:[R14,4h] R15:[R15,4h] SFR:[SFR,16] V:[Scanline,3] H:[Cycle,3]",
         "Condition": ""
       },
       "Cx4Config": {
@@ -8604,17 +8958,17 @@
         "Condition": ""
       },
       "WindowSize": {
-        "Width": 0,
-        "Height": 0
+        "Width": 700,
+        "Height": 500
       },
       "WindowLocation": {
-        "X": 0,
-        "Y": 0
+        "X": 128,
+        "Y": 128
       },
       "WindowIsMaximized": false
     },
     "HexEditor": {
-      "ShowOptionPanel": true,
+      "ShowOptionPanel": false,
       "AutoRefresh": true,
       "IgnoreRedundantWrites": false,
       "BytesPerRow": 16,
@@ -8663,14 +9017,14 @@
         "ColorCode": 4292394968
       },
       "HighlightBreakpoints": false,
-      "MemoryType": "SnesMemory",
+      "MemoryType": "NesMemory",
       "WindowSize": {
-        "Width": 0,
-        "Height": 0
+        "Width": 760,
+        "Height": 548
       },
       "WindowLocation": {
-        "X": 0,
-        "Y": 0
+        "X": 620,
+        "Y": 611
       },
       "WindowIsMaximized": false
     },
@@ -8680,10 +9034,9 @@
       "RefreshOnBreakPause": true,
       "AutoRefresh": true,
       "RefreshTiming": {
+        "ConsoleConfig": {},
         "RefreshOnBreakPause": true,
-        "AutoRefresh": true,
-        "RefreshScanline": 240,
-        "RefreshCycle": 0
+        "AutoRefresh": true
       },
       "ColumnWidths": [],
       "ShowToolbar": true,
@@ -9390,7 +9743,242 @@
       "WindowIsMaximized": false
     },
     "Debugger": {
-      "SavedDockLayout": null,
+      "SavedDockLayout": {
+        "Type": "Root",
+        "Proportion": 0,
+        "Orientation": "Horizontal",
+        "Name": "",
+        "ToolTypeName": "",
+        "SelectedIndex": 0,
+        "Children": [
+          {
+            "Type": "ProportionalDock",
+            "Proportion": 0,
+            "Orientation": "Vertical",
+            "Name": "",
+            "ToolTypeName": "",
+            "SelectedIndex": 0,
+            "Children": [
+              {
+                "Type": "ProportionalDock",
+                "Proportion": 0.75,
+                "Orientation": "Horizontal",
+                "Name": "",
+                "ToolTypeName": "",
+                "SelectedIndex": 0,
+                "Children": [
+                  {
+                    "Type": "ToolDock",
+                    "Proportion": 0.6403162055335972,
+                    "Orientation": "Horizontal",
+                    "Name": "",
+                    "ToolTypeName": "",
+                    "SelectedIndex": 0,
+                    "Children": [
+                      {
+                        "Type": "Tool",
+                        "Proportion": 0,
+                        "Orientation": "Horizontal",
+                        "Name": "Disassembly",
+                        "ToolTypeName": "DisassemblyViewModel",
+                        "SelectedIndex": 0,
+                        "Children": null
+                      }
+                    ]
+                  },
+                  {
+                    "Type": "Splitter",
+                    "Proportion": 0,
+                    "Orientation": "Horizontal",
+                    "Name": "",
+                    "ToolTypeName": "",
+                    "SelectedIndex": 0,
+                    "Children": null
+                  },
+                  {
+                    "Type": "ProportionalDock",
+                    "Proportion": 0.3596837944664028,
+                    "Orientation": "Vertical",
+                    "Name": "",
+                    "ToolTypeName": "",
+                    "SelectedIndex": 0,
+                    "Children": [
+                      {
+                        "Type": "ToolDock",
+                        "Proportion": 0.5,
+                        "Orientation": "Horizontal",
+                        "Name": "",
+                        "ToolTypeName": "",
+                        "SelectedIndex": 0,
+                        "Children": [
+                          {
+                            "Type": "Tool",
+                            "Proportion": 0,
+                            "Orientation": "Horizontal",
+                            "Name": "Status",
+                            "ToolTypeName": "BaseConsoleStatusViewModel",
+                            "SelectedIndex": 0,
+                            "Children": null
+                          }
+                        ]
+                      },
+                      {
+                        "Type": "Splitter",
+                        "Proportion": 0,
+                        "Orientation": "Horizontal",
+                        "Name": "",
+                        "ToolTypeName": "",
+                        "SelectedIndex": 0,
+                        "Children": null
+                      },
+                      {
+                        "Type": "ToolDock",
+                        "Proportion": 0.5,
+                        "Orientation": "Horizontal",
+                        "Name": "",
+                        "ToolTypeName": "",
+                        "SelectedIndex": 0,
+                        "Children": [
+                          {
+                            "Type": "Tool",
+                            "Proportion": 0,
+                            "Orientation": "Horizontal",
+                            "Name": "Labels",
+                            "ToolTypeName": "LabelListViewModel",
+                            "SelectedIndex": 0,
+                            "Children": null
+                          },
+                          {
+                            "Type": "Tool",
+                            "Proportion": 0,
+                            "Orientation": "Horizontal",
+                            "Name": "Functions",
+                            "ToolTypeName": "FunctionListViewModel",
+                            "SelectedIndex": 0,
+                            "Children": null
+                          },
+                          {
+                            "Type": "Tool",
+                            "Proportion": 0,
+                            "Orientation": "Horizontal",
+                            "Name": "Find Results",
+                            "ToolTypeName": "FindResultListViewModel",
+                            "SelectedIndex": 0,
+                            "Children": null
+                          },
+                          {
+                            "Type": "Tool",
+                            "Proportion": 0,
+                            "Orientation": "Horizontal",
+                            "Name": "Controllers",
+                            "ToolTypeName": "ControllerListViewModel",
+                            "SelectedIndex": 0,
+                            "Children": null
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "Type": "Splitter",
+                "Proportion": 0,
+                "Orientation": "Horizontal",
+                "Name": "",
+                "ToolTypeName": "",
+                "SelectedIndex": 0,
+                "Children": null
+              },
+              {
+                "Type": "ProportionalDock",
+                "Proportion": 0.25,
+                "Orientation": "Horizontal",
+                "Name": "",
+                "ToolTypeName": "",
+                "SelectedIndex": 0,
+                "Children": [
+                  {
+                    "Type": "ToolDock",
+                    "Proportion": 0.24505928853755032,
+                    "Orientation": "Horizontal",
+                    "Name": "",
+                    "ToolTypeName": "",
+                    "SelectedIndex": 0,
+                    "Children": [
+                      {
+                        "Type": "Tool",
+                        "Proportion": 0,
+                        "Orientation": "Horizontal",
+                        "Name": "Watch",
+                        "ToolTypeName": "WatchListViewModel",
+                        "SelectedIndex": 0,
+                        "Children": null
+                      }
+                    ]
+                  },
+                  {
+                    "Type": "Splitter",
+                    "Proportion": 0,
+                    "Orientation": "Horizontal",
+                    "Name": "",
+                    "ToolTypeName": "",
+                    "SelectedIndex": 0,
+                    "Children": null
+                  },
+                  {
+                    "Type": "ToolDock",
+                    "Proportion": 0.42160737812911625,
+                    "Orientation": "Horizontal",
+                    "Name": "",
+                    "ToolTypeName": "",
+                    "SelectedIndex": 0,
+                    "Children": [
+                      {
+                        "Type": "Tool",
+                        "Proportion": 0,
+                        "Orientation": "Horizontal",
+                        "Name": "Breakpoints",
+                        "ToolTypeName": "BreakpointListViewModel",
+                        "SelectedIndex": 0,
+                        "Children": null
+                      }
+                    ]
+                  },
+                  {
+                    "Type": "Splitter",
+                    "Proportion": 0,
+                    "Orientation": "Horizontal",
+                    "Name": "",
+                    "ToolTypeName": "",
+                    "SelectedIndex": 0,
+                    "Children": null
+                  },
+                  {
+                    "Type": "ToolDock",
+                    "Proportion": 0.3333333333333334,
+                    "Orientation": "Horizontal",
+                    "Name": "",
+                    "ToolTypeName": "",
+                    "SelectedIndex": 0,
+                    "Children": [
+                      {
+                        "Type": "Tool",
+                        "Proportion": 0,
+                        "Orientation": "Horizontal",
+                        "Name": "Call Stack",
+                        "ToolTypeName": "CallStackViewModel",
+                        "SelectedIndex": 0,
+                        "Children": null
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
       "ShowSettingsPanel": true,
       "ShowByteCode": false,
       "ShowMemoryValues": true,
@@ -9399,7 +9987,7 @@
       "AddressDisplayType": "CpuAddress",
       "DrawPartialFrame": false,
       "Snes": {
-        "BreakOnBrk": false,
+        "BreakOnBrk": true,
         "BreakOnCop": false,
         "BreakOnWdm": false,
         "BreakOnStp": false,
@@ -9487,19 +10075,37 @@
       "ForbidBreakpointColor": 4285756275,
       "CodeActiveStatementColor": 4294967040,
       "CodeActiveMidInstructionColor": 4294958120,
-      "LabelListColumnWidths": [],
+      "LabelListColumnWidths": [
+        100,
+        80,
+        80,
+        100
+      ],
       "FunctionListColumnWidths": [],
-      "BreakpointListColumnWidths": [],
-      "WatchListColumnWidths": [],
-      "CallStackColumnWidths": [],
+      "BreakpointListColumnWidths": [
+        22,
+        22,
+        65,
+        159,
+        150
+      ],
+      "WatchListColumnWidths": [
+        200,
+        100
+      ],
+      "CallStackColumnWidths": [
+        100,
+        90,
+        90
+      ],
       "FindResultColumnWidths": [],
       "WindowSize": {
-        "Width": 0,
-        "Height": 0
+        "Width": 1004,
+        "Height": 1168
       },
       "WindowLocation": {
-        "X": 0,
-        "Y": 0
+        "X": 1185,
+        "Y": 37
       },
       "WindowIsMaximized": false
     },
@@ -9515,18 +10121,17 @@
       "AttributeHighlightMode": "None",
       "DisplayMode": "Default",
       "RefreshTiming": {
+        "ConsoleConfig": {},
         "RefreshOnBreakPause": true,
-        "AutoRefresh": true,
-        "RefreshScanline": 240,
-        "RefreshCycle": 0
+        "AutoRefresh": true
       },
       "WindowSize": {
-        "Width": 0,
-        "Height": 0
+        "Width": 600,
+        "Height": 600
       },
       "WindowLocation": {
-        "X": 0,
-        "Y": 0
+        "X": 32,
+        "Y": 32
       },
       "WindowIsMaximized": false
     },
@@ -9534,29 +10139,28 @@
       "ShowSettingsPanel": true,
       "ImageScale": 3,
       "ShowTileGrid": false,
-      "SelectedPreset": "PPU",
-      "Source": "SnesMemory",
-      "Format": "Bpp4",
-      "Layout": "Normal",
+      "SelectedPreset": "OAM",
+      "Source": "NesPpuMemory",
+      "Format": "NesBpp2",
+      "Layout": "SingleLine8x16",
       "Filter": "None",
       "Background": "Default",
-      "RowCount": 64,
-      "ColumnCount": 32,
+      "RowCount": 32,
+      "ColumnCount": 16,
       "StartAddress": 0,
-      "UseGrayscalePalette": false,
+      "UseGrayscalePalette": true,
       "RefreshTiming": {
+        "ConsoleConfig": {},
         "RefreshOnBreakPause": true,
-        "AutoRefresh": true,
-        "RefreshScanline": 240,
-        "RefreshCycle": 0
+        "AutoRefresh": true
       },
       "WindowSize": {
-        "Width": 0,
-        "Height": 0
+        "Width": 600,
+        "Height": 600
       },
       "WindowLocation": {
-        "X": 0,
-        "Y": 0
+        "X": 64,
+        "Y": 64
       },
       "WindowIsMaximized": false
     },
@@ -9565,18 +10169,17 @@
       "ShowPaletteIndexes": false,
       "Zoom": 3,
       "RefreshTiming": {
+        "ConsoleConfig": {},
         "RefreshOnBreakPause": true,
-        "AutoRefresh": true,
-        "RefreshScanline": 240,
-        "RefreshCycle": 0
+        "AutoRefresh": true
       },
       "WindowSize": {
-        "Width": 0,
-        "Height": 0
+        "Width": 600,
+        "Height": 400
       },
       "WindowLocation": {
-        "X": 0,
-        "Y": 0
+        "X": 883,
+        "Y": 243
       },
       "WindowIsMaximized": false
     },
@@ -9596,19 +10199,28 @@
     },
     "RegisterViewer": {
       "RefreshTiming": {
+        "ConsoleConfig": {
+          "Snes": {
+            "RefreshScanline": 240,
+            "RefreshCycle": 0
+          }
+        },
         "RefreshOnBreakPause": true,
-        "AutoRefresh": true,
-        "RefreshScanline": 240,
-        "RefreshCycle": 0
+        "AutoRefresh": true
       },
-      "ColumnWidths": [],
+      "ColumnWidths": [
+        92,
+        173,
+        63,
+        67
+      ],
       "WindowSize": {
-        "Width": 0,
-        "Height": 0
+        "Width": 400,
+        "Height": 500
       },
       "WindowLocation": {
-        "X": 0,
-        "Y": 0
+        "X": 192,
+        "Y": 192
       },
       "WindowIsMaximized": false
     },
@@ -9622,21 +10234,30 @@
       "DimOffscreenSprites": true,
       "ShowListView": false,
       "ListViewHeight": 100,
-      "ColumnWidths": [],
+      "ColumnWidths": [
+        50,
+        82,
+        78,
+        64,
+        60,
+        67,
+        83,
+        68,
+        60
+      ],
       "ImageScale": 2,
       "RefreshTiming": {
+        "ConsoleConfig": {},
         "RefreshOnBreakPause": true,
-        "AutoRefresh": true,
-        "RefreshScanline": 240,
-        "RefreshCycle": 0
+        "AutoRefresh": true
       },
       "WindowSize": {
-        "Width": 0,
-        "Height": 0
+        "Width": 600,
+        "Height": 600
       },
       "WindowLocation": {
-        "X": 0,
-        "Y": 0
+        "X": 352,
+        "Y": 352
       },
       "WindowIsMaximized": false
     },
@@ -9657,7 +10278,18 @@
       "TabSize": 4
     },
     "ScriptWindow": {
-      "RecentScripts": [],
+      "RecentScripts": [
+        "C:\\Users\\kando\\Documents\\Famidash Editor\\Replays\\futurefunkfix\\famidash_overlay.lua",
+        "C:\\Users\\kando\\Documents\\Famidash Editor\\Replays\\eon\\famidash_overlay.lua",
+        "C:\\Users\\kando\\Documents\\Famidash Editor\\Replays\\slaughterhouse\\famidash_overlay.lua",
+        "C:\\famidash\\LUA SCRIPTS\\famidash_hitbox_overlay.lua",
+        "C:\\famidash\\LUA SCRIPTS\\famidash_path_overlay_projected.lua",
+        "C:\\Editor Test\\famidash_path_overlay_projected.lua",
+        "C:\\Users\\kando\\Documents\\Famidash Editor\\Replays\\rotd\\famidash_overlay.lua",
+        "C:\\Users\\kando\\Documents\\Famidash Editor\\Replays\\wintherace\\famidash_overlay.lua",
+        "C:\\Users\\kando\\Documents\\Famidash Editor\\Replays\\hell\\famidash_overlay.lua",
+        "C:\\Users\\kando\\Documents\\Famidash Editor\\Replays\\azuronxolax\\famidash_overlay.lua"
+      ],
       "Zoom": 100,
       "LogWindowHeight": 100,
       "ScriptStartupBehavior": "ShowTutorial",
@@ -9670,26 +10302,36 @@
       "ShowLineNumbers": false,
       "ScriptTimeout": 1,
       "WindowSize": {
-        "Width": 0,
-        "Height": 0
+        "Width": 600,
+        "Height": 500
       },
       "WindowLocation": {
-        "X": 0,
-        "Y": 0
+        "X": 64,
+        "Y": 64
       },
       "WindowIsMaximized": false
     },
     "Profiler": {
-      "ColumnWidths": [],
+      "ColumnWidths": [
+        151,
+        77,
+        93,
+        52,
+        81,
+        60,
+        53,
+        53,
+        61
+      ],
       "AutoRefresh": true,
       "RefreshOnBreakPause": true,
       "WindowSize": {
-        "Width": 0,
-        "Height": 0
+        "Width": 700,
+        "Height": 500
       },
       "WindowLocation": {
-        "X": 0,
-        "Y": 0
+        "X": 160,
+        "Y": 160
       },
       "WindowIsMaximized": false
     },
@@ -9707,12 +10349,12 @@
     },
     "WatchWindow": {
       "WindowSize": {
-        "Width": 0,
-        "Height": 0
+        "Width": 400,
+        "Height": 400
       },
       "WindowLocation": {
-        "X": 0,
-        "Y": 0
+        "X": 1743,
+        "Y": 394
       },
       "WindowIsMaximized": false
     },
@@ -9729,12 +10371,12 @@
     },
     "DebugLog": {
       "WindowSize": {
-        "Width": 0,
-        "Height": 0
+        "Width": 400,
+        "Height": 400
       },
       "WindowLocation": {
-        "X": 0,
-        "Y": 0
+        "X": 224,
+        "Y": 224
       },
       "WindowIsMaximized": false
     },
@@ -9765,7 +10407,71 @@
     "Items": [
       {
         "RomFile": {
+          "Path": "C:\\Editor Test\\native-windows\\bin\\Debug\\net8.0-windows\\win-x64\\sim-famidash\\Famidash.nes",
+          "InnerFile": "",
+          "InnerFileIndex": 0
+        },
+        "PatchFile": null
+      },
+      {
+        "RomFile": {
+          "Path": "C:\\Users\\kando\\Downloads\\SFES.SFC",
+          "InnerFile": "",
+          "InnerFileIndex": 0
+        },
+        "PatchFile": null
+      },
+      {
+        "RomFile": {
+          "Path": "C:\\Users\\kando\\Downloads\\doomu.sfc",
+          "InnerFile": "",
+          "InnerFileIndex": 0
+        },
+        "PatchFile": null
+      },
+      {
+        "RomFile": {
           "Path": "C:\\Editor Test\\sim-famidash\\Famidash.nes",
+          "InnerFile": "",
+          "InnerFileIndex": 0
+        },
+        "PatchFile": null
+      },
+      {
+        "RomFile": {
+          "Path": "C:\\Starfox Stuff\\StarFox Exploration Build\\SFES.SFC",
+          "InnerFile": "",
+          "InnerFileIndex": 0
+        },
+        "PatchFile": null
+      },
+      {
+        "RomFile": {
+          "Path": "C:\\Users\\kando\\Downloads\\Doom (2026 Limited Run Games) (FX3) - Copy.sfc",
+          "InnerFile": "",
+          "InnerFileIndex": 0
+        },
+        "PatchFile": null
+      },
+      {
+        "RomFile": {
+          "Path": "C:\\Users\\kando\\Downloads\\Doom (2026 Limited Run Games) (FX3).sfc",
+          "InnerFile": "",
+          "InnerFileIndex": 0
+        },
+        "PatchFile": null
+      },
+      {
+        "RomFile": {
+          "Path": "C:\\Users\\kando\\Downloads\\The Ultimate Doom (2026 LRG) (FX3).sfc",
+          "InnerFile": "",
+          "InnerFileIndex": 0
+        },
+        "PatchFile": null
+      },
+      {
+        "RomFile": {
+          "Path": "C:\\NTSC-US Super Nintendo System Roms\\Doom (USA).sfc",
           "InnerFile": "",
           "InnerFileIndex": 0
         },
@@ -9803,14 +10509,18 @@
   },
   "Cheats": {
     "DisableAllCheats": false,
-    "ColumnWidths": [],
+    "ColumnWidths": [
+      22,
+      150,
+      150
+    ],
     "WindowSize": {
-      "Width": 0,
-      "Height": 0
+      "Width": 400,
+      "Height": 400
     },
     "WindowLocation": {
-      "X": 0,
-      "Y": 0
+      "X": 604,
+      "Y": 394
     },
     "WindowIsMaximized": false
   },
@@ -9824,23 +10534,23 @@
   "HistoryViewer": {
     "Volume": 100,
     "WindowSize": {
-      "Width": 0,
-      "Height": 0
+      "Width": 512,
+      "Height": 534
     },
     "WindowLocation": {
-      "X": 0,
-      "Y": 0
+      "X": 32,
+      "Y": 32
     },
     "WindowIsMaximized": false
   },
   "MainWindow": {
     "WindowSize": {
-      "Width": 409,
-      "Height": 384
+      "Width": 816,
+      "Height": 792
     },
     "WindowLocation": {
-      "X": 288,
-      "Y": 288
+      "X": 970,
+      "Y": 265
     },
     "WindowIsMaximized": false
   },
