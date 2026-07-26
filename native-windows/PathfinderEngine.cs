@@ -12,6 +12,76 @@ using System.Threading.Tasks;
 
 namespace FamidashEditor;
 
+/// <summary>
+/// Authoritative post-step state produced by PathfinderEngine's NES-accurate
+/// replay.  The native simulator consumes these frames when playing a calculated
+/// path instead of re-running its separate physics implementation.
+/// </summary>
+public sealed class PathfinderReplayFrame
+{
+	public int FrameIndex { get; init; }
+	public bool InputHeld { get; init; }
+	public sbyte HorizontalDirection { get; init; }
+	public int XFixed { get; init; }
+	public int YFixed { get; init; }
+	public int VelXFixed { get; init; }
+	public int VelYFixed { get; init; }
+	public int GlobalSpeedFixed { get; init; }
+	public int ScrollXPx { get; init; }
+	public int CurrXScrollStopFixed { get; init; }
+	public int TargetXScrollStopFixed { get; init; }
+	public int CameraYFixed { get; init; }
+	public int TargetCameraYFixed { get; init; }
+	public int ScrollYSubpx { get; init; }
+	public int GameMode { get; init; }
+	public bool Mini { get; init; }
+	public bool GravityFlipped { get; init; }
+	public bool WasZeroedByCollision { get; init; }
+	public bool OnGround { get; init; }
+	public double GravityMultiplier { get; init; }
+	public int Dashing { get; init; }
+	public int NinjaJumps { get; init; }
+	public int RobotJumpTime { get; init; }
+	public int SlopeWasOnCounter { get; init; }
+	public int SlopeFrames { get; init; }
+	public int SlopeType { get; init; }
+	public int LastSlopeType { get; init; }
+	public byte InvincibleCounter { get; init; }
+	public bool NoCamLockForced { get; init; }
+	public bool WrapMode { get; init; }
+	public bool SlowMode { get; init; }
+	public bool PlayerInvisible { get; init; }
+	public int ForcedTrails { get; init; }
+	public byte ExitPortalTimer { get; init; }
+	public bool DualActive { get; init; }
+	public int P2YFixed { get; init; }
+	public int P2VelXFixed { get; init; }
+	public int P2VelYFixed { get; init; }
+	public bool P2Mini { get; init; }
+	public bool P2GravityFlipped { get; init; }
+	public bool P2WasZeroedByCollision { get; init; }
+	public bool P2OnGround { get; init; }
+	public int P2Dashing { get; init; }
+	public int P2NinjaJumps { get; init; }
+	public int P2RobotJumpTime { get; init; }
+	public int P2SlopeWasOnCounter { get; init; }
+	public int P2SlopeFrames { get; init; }
+	public int P2SlopeType { get; init; }
+	public int P2LastSlopeType { get; init; }
+	public bool Alive { get; init; }
+	public bool EndLevel { get; init; }
+	public byte DeathType { get; init; }
+	public int DeathX { get; init; } = -1;
+	public int DeathY { get; init; } = -1;
+	public int[] NewlyCollectedCoinIndices { get; init; } = Array.Empty<int>();
+	public int BackgroundColorTriggerIndex { get; init; } = -1;
+	public int BackgroundColorTriggerSpriteId { get; init; } = -1;
+	public int ObjectColorTriggerIndex { get; init; } = -1;
+	public int ObjectColorTriggerSpriteId { get; init; } = -1;
+	public int GroundColorTriggerIndex { get; init; } = -1;
+	public int GroundColorTriggerSpriteId { get; init; } = -1;
+}
+
 public class PathfinderEngine
 {
 	private class BacktrackCheckpoint
@@ -243,6 +313,12 @@ public class PathfinderEngine
 
 		public bool WrapMode;
 
+		public bool SlowMode;
+
+		public bool PlayerInvisible;
+
+		public int ForcedTrails;
+
 		public int RainbowMaxMode;
 
 		// BFS-only lifetime of a universal random-portal section.  The NES may
@@ -386,6 +462,16 @@ public class PathfinderEngine
 		public int[] CoinTimer;      // coin1/coin2/coin3 shared animation timers
 		public int[] CoinSpeed;      // coin1/coin2/coin3 shared 8.8 speeds
 		public bool CoinAnimating;
+
+		// Visual side effects consumed by the exact NES slot pass this frame.
+		// These do not affect search-state equivalence; canonical simulator
+		// playback uses them to reproduce background/object/ground colors.
+		public int ReplayBackgroundColorTriggerIndex;
+		public int ReplayBackgroundColorTriggerSpriteId;
+		public int ReplayObjectColorTriggerIndex;
+		public int ReplayObjectColorTriggerSpriteId;
+		public int ReplayGroundColorTriggerIndex;
+		public int ReplayGroundColorTriggerSpriteId;
 
 		public SimState CloneBranch()
 		{
@@ -1284,6 +1370,12 @@ public class PathfinderEngine
 
 	/// <summary>-1 = left, 0 = neutral, +1 = right. Parallel to Inputs.</summary>
 	public List<sbyte> HorizontalInputs { get; private set; }
+
+	/// <summary>
+	/// Exact post-step states for the final replay. These are deliberately
+	/// separate from PathPoints, which only contain rounded display positions.
+	/// </summary>
+	public List<PathfinderReplayFrame> ReplayFrames { get; private set; } = new();
 
 	public bool Success { get; private set; }
 
@@ -2399,6 +2491,27 @@ public class PathfinderEngine
 		return stringBuilder.ToString();
 	}
 
+	/// <summary>
+	/// Replays an already-known input route through the authoritative PF/NES
+	/// runtime. This is used to upgrade inputs-only legacy .pfdat data before
+	/// native-simulator playback; it performs no path search or pruning.
+	/// </summary>
+	public void ReplayKnownPath(IReadOnlyList<bool> inputs,
+		IReadOnlyList<sbyte>? horizontalDirections, int startX_px, int startY_px,
+		int startSpeedUiIndex, int startGameMode, bool startGravFlipped,
+		bool startMini)
+	{
+		var inputCopy = inputs != null
+			? new List<bool>(inputs)
+			: new List<bool>();
+		IReadOnlyList<sbyte>? directionCopy =
+			horizontalDirections != null
+				? new List<sbyte>(horizontalDirections)
+				: null;
+		ReplayBfsPath(inputCopy, directionCopy, startX_px, startY_px,
+			startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
+	}
+
 	public PathfinderEngine(int[] tiles, int[] sprites, Dictionary<int, (int anchorTileX, int anchorTileY)> spriteAnchors, int mapWidth, int mapHeight, bool hasGroundLayer, int groundTileRows, int maxFallSpeed = 6, Dictionary<int, (int offsetX, int offsetY)>? spritePixelOffsets = null, int[]? nesSpriteLayer = null, NesSpriteRecord[]? nesSpriteRecords = null)
 	{
 		this.tiles = (tiles ?? Array.Empty<int>()).Select((int t) => (t >= 0) ? t : 0).ToArray();
@@ -2865,6 +2978,7 @@ public class PathfinderEngine
 	{
 		_baseLog = (EnableLogging && Verbose ? Console.Error : TextWriter.Null);
 		_log = _baseLog;
+		ReplayFrames.Clear();
 		for (int i = 0; i < allCoins.Count; i++)
 		{
 			_log.WriteLine($"[COIN_INFO] coin#{i} idx={allCoins[i].Index} sid=0x{allCoins[i].SpriteId:X2} pos=({allCoins[i].AnchorX_px},{allCoins[i].AnchorY_px}) hit=({allCoins[i].HitLeft},{allCoins[i].HitTop})-({allCoins[i].HitRight},{allCoins[i].HitBottom})");
@@ -3212,6 +3326,19 @@ public class PathfinderEngine
 			}
 		}
 		JumpTimingBias = jumpTimingBias;
+		// RunSingleAttempt can backtrack and replace its route several times.
+		// Replaying the selected final inputs once here publishes a clean,
+		// contiguous canonical state stream for native-simulator playback.
+		if (Inputs.Count > 0)
+		{
+			var finalInputs = new List<bool>(Inputs);
+			IReadOnlyList<sbyte>? finalDirections =
+				HorizontalInputs.Count == Inputs.Count
+					? new List<sbyte>(HorizontalInputs)
+					: null;
+			ReplayBfsPath(finalInputs, finalDirections, startX_px, startY_px,
+				startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
+		}
 		stopwatch.Stop();
 		double totalSeconds = stopwatch.Elapsed.TotalSeconds;
 		ResultMessage += $" [{totalSeconds:F1}s]";
@@ -7933,6 +8060,87 @@ public class PathfinderEngine
 		return num;
 	}
 
+	private PathfinderReplayFrame CaptureReplayFrame(int frameIndex, bool input,
+		sbyte horizontalDirection, in SimState s, bool alive, bool endLevel,
+		HashSet<int> replayCollectedCoins)
+	{
+		List<int>? newlyCollected = null;
+		foreach (SpriteEntry coin in allCoins)
+		{
+			if (s.ProcessedSprites.Contains(coin.Index) &&
+				replayCollectedCoins.Add(coin.Index))
+			{
+				(newlyCollected ??= new List<int>()).Add(coin.Index);
+			}
+		}
+
+		return new PathfinderReplayFrame
+		{
+			FrameIndex = frameIndex,
+			InputHeld = input,
+			HorizontalDirection = horizontalDirection,
+			XFixed = s.X_fixed,
+			YFixed = s.Y_fixed,
+			VelXFixed = s.VelX_fixed,
+			VelYFixed = s.VelY_fixed,
+			GlobalSpeedFixed = s.GlobalSpeed_fixed,
+			ScrollXPx = GetScrollX_px(in s),
+			CurrXScrollStopFixed = s.CurrXScrollStop_fixed,
+			TargetXScrollStopFixed = s.TargetXScrollStop_fixed,
+			CameraYFixed = s.CameraY_fixed,
+			TargetCameraYFixed = s.TargetCameraY_fixed,
+			ScrollYSubpx = s.ScrollYSubpx,
+			GameMode = s.GameMode,
+			Mini = s.Mini,
+			GravityFlipped = s.GravFlipped,
+			WasZeroedByCollision = s.WasZeroedByCollision,
+			OnGround = s.OnGround,
+			GravityMultiplier = s.GravityMod,
+			Dashing = s.Dashing,
+			NinjaJumps = s.NinjaJumps,
+			RobotJumpTime = s.RobotJumpTime,
+			SlopeWasOnCounter = s.SlopeWasOnCounter,
+			SlopeFrames = s.SlopeFrames,
+			SlopeType = s.SlopeType,
+			LastSlopeType = s.LastSlopeType,
+			InvincibleCounter = s.InvincibleCounter,
+			NoCamLockForced = s.NoCamLockForced,
+			WrapMode = s.WrapMode,
+			SlowMode = s.SlowMode,
+			PlayerInvisible = s.PlayerInvisible,
+			ForcedTrails = s.ForcedTrails,
+			ExitPortalTimer = s.ExitPortalTimer,
+			DualActive = s.DualActive,
+			P2YFixed = s.P2_Y_fixed,
+			P2VelXFixed = s.P2_VelX_fixed,
+			P2VelYFixed = s.P2_VelY_fixed,
+			P2Mini = s.P2_Mini,
+			P2GravityFlipped = s.P2_GravFlipped,
+			P2WasZeroedByCollision = s.P2_WasZeroedByCollision,
+			P2OnGround = s.P2_OnGround,
+			P2Dashing = s.P2_Dashing,
+			P2NinjaJumps = s.P2_NinjaJumps,
+			P2RobotJumpTime = s.P2_RobotJumpTime,
+			P2SlopeWasOnCounter = s.P2_SlopeWasOnCounter,
+			P2SlopeFrames = s.P2_SlopeFrames,
+			P2SlopeType = s.P2_SlopeType,
+			P2LastSlopeType = s.P2_LastSlopeType,
+			Alive = alive,
+			EndLevel = endLevel,
+			DeathType = s.DeathType,
+			DeathX = alive ? -1 : _lastDeathX,
+			DeathY = alive ? -1 : _lastDeathY,
+			NewlyCollectedCoinIndices =
+				newlyCollected?.ToArray() ?? Array.Empty<int>(),
+			BackgroundColorTriggerIndex = s.ReplayBackgroundColorTriggerIndex,
+			BackgroundColorTriggerSpriteId = s.ReplayBackgroundColorTriggerSpriteId,
+			ObjectColorTriggerIndex = s.ReplayObjectColorTriggerIndex,
+			ObjectColorTriggerSpriteId = s.ReplayObjectColorTriggerSpriteId,
+			GroundColorTriggerIndex = s.ReplayGroundColorTriggerIndex,
+			GroundColorTriggerSpriteId = s.ReplayGroundColorTriggerSpriteId
+		};
+	}
+
 	private void ReplayBfsPath(List<bool> inputSequence, int startX_px, int startY_px,
 		int startSpeedUiIndex, int startGameMode, bool startGravFlipped, bool startMini)
 	{
@@ -7978,6 +8186,8 @@ public class PathfinderEngine
 		Path2Points.Clear();
 		Inputs.Clear();
 		HorizontalInputs.Clear();
+		ReplayFrames.Clear();
+		var replayCollectedCoins = new HashSet<int>();
 		_prevDualActiveForPath = false;
 		_speculativeDepth = 0;
 		_frameCounter = 0;
@@ -8010,6 +8220,8 @@ public class PathfinderEngine
 				Path2Points.Add(((s.X_fixed >> 8) + 8, num3 + 8));
 			}
 			_prevDualActiveForPath = s.DualActive;
+			ReplayFrames.Add(CaptureReplayFrame(i, flag, direction, in s, flag2,
+				endLevel, replayCollectedCoins));
 			if (endLevel || !flag2)
 			{
 				break;
@@ -11784,6 +11996,15 @@ public class PathfinderEngine
 		s.ShipDbgFloorSlopeHit = false;
 		s.ShipDbgFloorTileHit = false;
 		s.ShipDbgFloorSpike = false;
+		if (!_dualP2Guard)
+		{
+			s.ReplayBackgroundColorTriggerIndex = -1;
+			s.ReplayBackgroundColorTriggerSpriteId = -1;
+			s.ReplayObjectColorTriggerIndex = -1;
+			s.ReplayObjectColorTriggerSpriteId = -1;
+			s.ReplayGroundColorTriggerIndex = -1;
+			s.ReplayGroundColorTriggerSpriteId = -1;
+		}
 		ClearPendingOrbs(ref s);
 		int x_fixed = s.X_fixed;
 		int num = x_fixed >> 8;
@@ -15634,8 +15855,31 @@ public class PathfinderEngine
 			int nesH = (sid < _nesSprH.Length) ? _nesSprH[sid] : 0;
 
 			if (nesH == NES_DECO) continue;
-			if (nesH == NES_COLR) { s.NesSlotDead[slot] = true; continue; }
-			if (nesH == NES_OUTL) { s.NesSlotDead[slot] = true; continue; }
+			if (nesH == NES_COLR)
+			{
+				if (SharedPhysics.IsBackgroundColorTrigger(sid))
+				{
+					s.ReplayBackgroundColorTriggerIndex = sprIdx;
+					s.ReplayBackgroundColorTriggerSpriteId = sid;
+				}
+				else if (SharedPhysics.IsGroundColorTrigger(sid))
+				{
+					s.ReplayGroundColorTriggerIndex = sprIdx;
+					s.ReplayGroundColorTriggerSpriteId = sid;
+				}
+				s.NesSlotDead[slot] = true;
+				continue;
+			}
+			if (nesH == NES_OUTL)
+			{
+				if (SharedPhysics.IsObjectColorTrigger(sid))
+				{
+					s.ReplayObjectColorTriggerIndex = sprIdx;
+					s.ReplayObjectColorTriggerSpriteId = sid;
+				}
+				s.NesSlotDead[slot] = true;
+				continue;
+			}
 			if (nesH == 0) continue;
 
 			if (nesH == NES_SPBH)
@@ -15702,22 +15946,22 @@ public class PathfinderEngine
 							s.TargetXScrollStop_fixed =
 								(s.NesSlotRealY[slot] & 0xF0) << 8;
 							break;
-						case 0x6F:
-						case 0x7F:
+						case 0x6F: s.PlayerInvisible = true; break;
+						case 0x7F: s.PlayerInvisible = false; break;
 						case 0x7D:
 						case 0xDF:
 						case 0xEE:
 						case 0xEF:
 						case 0xF0:
 						case 0xF1:
-						case 0xF2:
-						case 0xF3:
 							break;
+						case 0xF2: s.ForcedTrails = 2; break;
+						case 0xF3: s.ForcedTrails = 0; break;
 						case 0xF4:
+							s.SlowMode = true;
+							break;
 						case 0xF5:
-							// Slow mode changes rendered-frame cadence only. The replay
-							// cursor advances on NES physics movement, so PF has no
-							// persistent simulation state to apply for these triggers.
+							s.SlowMode = false;
 							break;
 						default:
 							// Unrecognized SPBH records remain resident and

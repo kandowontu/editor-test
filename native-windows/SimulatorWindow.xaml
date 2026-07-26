@@ -43,7 +43,7 @@
                 <CheckBox x:Name="MiniCheckBox" Content="Mini" Foreground="White" VerticalAlignment="Center" Margin="4,0,12,0" Checked="MiniCheckBox_Changed" Unchecked="MiniCheckBox_Changed" Focusable="False"/>
                 <CheckBox x:Name="InvertedCheckBox" Content="Inverted" Foreground="White" VerticalAlignment="Center" Margin="0,0,12,0" Checked="InvertedCheckBox_Changed" Unchecked="InvertedCheckBox_Changed" Focusable="False"/>
                 <CheckBox x:Name="PathfinderCheckBox" Content="Pathfinder" Foreground="#FFAAFFAA" VerticalAlignment="Center" Margin="0,0,12,0" Checked="PathfinderCheckBox_Changed" Unchecked="PathfinderCheckBox_Changed" Focusable="False"/>
-                <CheckBox x:Name="FirstPerson3DCheckBox" Content="FP 3D" Foreground="#FF99CCFF" VerticalAlignment="Center" Margin="0,0,12,0" Checked="FirstPerson3DCheckBox_Changed" Unchecked="FirstPerson3DCheckBox_Changed" Focusable="False"/>
+                <CheckBox x:Name="FirstPerson3DCheckBox" Content="3D" Foreground="#FF99CCFF" VerticalAlignment="Center" Margin="0,0,12,0" Checked="FirstPerson3DCheckBox_Changed" Unchecked="FirstPerson3DCheckBox_Changed" Focusable="False"/>
                 <TextBlock Text="Speed:" Foreground="White" VerticalAlignment="Center" Margin="4,0,8,0"/>
                 <ComboBox x:Name="SpeedComboBox" Width="80" SelectionChanged="SpeedComboBox_SelectionChanged" VerticalAlignment="Center" Margin="0,0,4,0" Focusable="False">
                     <ComboBoxItem Content="0.5x" Tag="0"/>
@@ -64,8 +64,21 @@
         <Border Grid.Row="1" ClipToBounds="True" Background="Transparent">
             <Grid x:Name="GameViewportSurface" Width="256" Height="240" HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Canvas x:Name="RenderCanvas" Width="256" Height="240" HorizontalAlignment="Left" VerticalAlignment="Top" SnapsToDevicePixels="True" UseLayoutRounding="True" MouseLeftButtonDown="RenderCanvas_MouseLeftButtonDown" MouseLeftButtonUp="RenderCanvas_MouseLeftButtonUp" MouseMove="RenderCanvas_MouseMove" />
+                <Rectangle x:Name="FirstPersonBackdrop" Width="256" Height="240" HorizontalAlignment="Left" VerticalAlignment="Top" Visibility="Collapsed" IsHitTestVisible="False">
+                    <Rectangle.Fill>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Color="#FF091426" Offset="0"/>
+                            <GradientStop Color="#FF101B2E" Offset="0.58"/>
+                            <GradientStop Color="#FF03050A" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Rectangle.Fill>
+                </Rectangle>
                 <Viewport3D x:Name="FirstPersonViewport" Width="256" Height="240" HorizontalAlignment="Left" VerticalAlignment="Top" Visibility="Collapsed" ClipToBounds="True" Cursor="SizeAll" MouseLeftButtonDown="FirstPersonViewport_MouseLeftButtonDown" MouseLeftButtonUp="FirstPersonViewport_MouseLeftButtonUp" MouseRightButtonDown="FirstPersonViewport_MouseRightButtonDown" MouseRightButtonUp="FirstPersonViewport_MouseRightButtonUp" MouseMove="FirstPersonViewport_MouseMove" />
-                <TextBlock x:Name="FirstPersonHintText" Text="FP 3D PREVIEW" Foreground="#CCFFFFFF" FontSize="11" FontFamily="Consolas" Margin="6,4,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" Visibility="Collapsed" IsHitTestVisible="False" />
+                <TextBlock x:Name="FirstPersonHintText" Text="3D  •  drag: orbit  •  right-drag: pan" Foreground="#D9FFFFFF" FontSize="10" FontFamily="Consolas" Margin="6,4,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" Visibility="Collapsed" IsHitTestVisible="False">
+                    <TextBlock.Effect>
+                        <DropShadowEffect Color="#FF000000" ShadowDepth="1" BlurRadius="2" Opacity="0.9"/>
+                    </TextBlock.Effect>
+                </TextBlock>
             </Grid>
         </Border>
 

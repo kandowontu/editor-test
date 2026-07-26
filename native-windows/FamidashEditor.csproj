@@ -40,7 +40,7 @@
     <DefineConstants>$(DefineConstants);DISABLE_DEBUG_LOGGING</DefineConstants>
   </PropertyGroup>
 
-  <!-- Removed .fms from project: we now work exclusively with the FamiStudio text export (the album.txt) -->
+  <!-- Audio metadata is loaded from the parsed JSON or packaged .fms album. -->
   
 
   <!-- Note: ship.png, ball.png, and ufo.png are now embedded as resources (see EmbeddedResource section) -->
@@ -405,11 +405,8 @@
     <None Include="fami-probe-result.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <!-- Ensure the original FamiStudio text export and .fms album are available in build/publish outputs -->
-    <None Include="..\the album.txt">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </None>
+    <!-- Ensure the .fms album is available in build/publish outputs. The
+         removed text export must not remain as a stale required build item. -->
     <None Include="the album.fms">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>

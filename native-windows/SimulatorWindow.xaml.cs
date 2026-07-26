@@ -12,6 +12,10 @@ namespace FamidashEditor
 {
     public partial class SimulatorWindow : Window
     {
+        // Stable owner document identity. The editor may switch tabs while this
+        // non-modal simulator is open; results must return to the source tab.
+        internal Guid? SourceDocumentSessionId { get; set; }
+
         // Cached embedded resource lookup to avoid calling GetManifestResourceNames() every frame.
         // Maps resource suffix (e.g. "cube.png") to BitmapImage. Thread-safe via lock.
         private static readonly object s_resourceCacheLock = new object();
@@ -39,6 +43,35 @@ namespace FamidashEditor
             "ninja_05_frame_5.png",
             "ninja_06_frame_6.png"
         };
+        private static readonly string[] s_miniCubeFrameNames =
+        {
+            "cube_mini_00_frame_0.png",
+            "cube_mini_01_frame_1.png",
+            "cube_mini_02_frame_2.png",
+            "cube_mini_03_frame_3.png",
+            "cube_mini_04_frame_4.png"
+        };
+        private static readonly string[] s_miniNinjaFrameNames =
+        {
+            "ninja_mini_00_frame_0.png",
+            "ninja_mini_01_frame_1.png",
+            "ninja_mini_02_frame_2.png",
+            "ninja_mini_03_frame_3.png",
+            "ninja_mini_04_frame_4.png"
+        };
+        private static readonly int[] s_rainbowLegacyModes =
+        {
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x24, 0x17, 0x4B
+        };
+        private static readonly int[] s_rainbowAllModes =
+        {
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x24, 0x17, 0x4B,
+            0x58, 0x6A, 0x6B, 0x6C
+        };
+
+        private static bool IsPlayerGreenDecorationTile(int tileIndex) =>
+            tileIndex is 0x0C or 0x0D or 0x0E or 0x0F or 0x13 or 0x14 or
+                0x80 or 0x81 or 0x84 or 0x85 or 0x86 or 0x87;
 
         /// <summary>
         /// Load an embedded resource image by filename suffix, using a static cache so each
@@ -74,6 +107,18 @@ namespace FamidashEditor
                 s_resourceImageCache[suffix] = result;
                 return result;
             }
+        }
+
+        private ImageSource GetCachedRenderableImage(ImageSource source)
+        {
+            if (source is WriteableBitmap)
+                return source;
+            if (renderSafeImageCache.TryGetValue(source, out var cached))
+                return cached;
+
+            ImageSource safe = App.EnsureUnfrozenForRender(source) ?? source;
+            renderSafeImageCache[source] = safe;
+            return safe;
         }
 
         // Current player index for dual-player support (0 or 1)
@@ -372,7 +417,10 @@ namespace FamidashEditor
                 {
                     // Velocity is non-zero: accumulate gravity increment
                     // NES: when gravity is inverted, subtract CUBE_GRAVITY (rotate backwards)
-                    int gravityIncrement = GameModePhysics.CUBE_GRAVITY(currplayer_table_idx);
+                    // drawplayerone indexes CUBE_GRAVITY_lo by framerate only.
+                    // At this simulator's fixed 60 Hz that is always $6B,
+                    // independent of mini physics.
+                    int gravityIncrement = SharedPhysics.CUBE_GRAVITY_NORMAL;
                     if (gravityFlipped) gravityIncrement = -gravityIncrement;
                     subFrame += gravityIncrement;
                     
@@ -409,47 +457,55 @@ namespace FamidashEditor
             catch { }
         }
 
+        private static int ComputeNesShipRotationFixed(int velocityYFixed)
+        {
+            // drawplayerone/ship performs a real 16-bit SEC/SBC from $0400.
+            int rotation = (0x0400 - velocityYFixed) & 0xFFFF;
+            int high = rotation >> 8;
+            if (high >= 0x08)
+                rotation = high < 0x80 ? 0x07FF : 0x0000;
+            return rotation;
+        }
+
+        private static int ComputeNesVelocitySpriteFrame(
+            int velocityYFixed, int velocityXFixed, bool mini,
+            bool gravityReversed, bool waveOrSnake)
+        {
+            int rotation = (0x0400 - velocityYFixed) & 0xFFFF;
+            int frame = rotation >> 8;
+
+            if (frame >= 0x08)
+            {
+                // Famidash's wave/snake branch has the opposite BCC/BCS clamp
+                // from ship/swing. Preserve the ROM behavior exactly.
+                frame = waveOrSnake
+                    ? (frame >= 0x80 ? 7 : 0)
+                    : (frame < 0x80 ? 7 : 0);
+            }
+
+            // drawplayerone/wave mirrors full-size wave/snake frames at x4+
+            // before applying the gravity frame reversal. Mini skips this.
+            int velocityXHigh = (velocityXFixed >> 8) & 0xFF;
+            if (waveOrSnake && velocityXHigh >= 0x04 && !mini)
+                frame = 7 - frame;
+
+            if (gravityReversed)
+                frame = 7 - frame;
+
+            return Math.Clamp(frame, 0, 7);
+        }
+
         /// <summary>
-        /// Update ship rotation frame based on velocity.
-        /// Similar to cube rotation, but uses direct velocity calculation with clamping.
-        /// NOTE: playerVelY_fixed in the simulator uses a different scale than NES velocity,
-        /// so we need to amplify it to get the full range of frame animations.
+        /// Update ship rotation from the exact Famidash drawplayerone/ship formula.
         /// </summary>
         private void UpdateShipRotation()
         {
             try
             {
-                // Ship frame index: 0x0400 - playerVelY (from NES code)
-                // The NES uses a simple formula: cube_rotate = 0x0400 - player_vel_y
-                // where player_vel_y is the full 16-bit signed velocity
-                // Add tolerance/dead zone around zero velocity to prevent flickering when grounded
-                int adjustedVel = playerVelY_fixed;
-                if (adjustedVel > -0x0080 && adjustedVel < 0x0080)
-                {
-                    adjustedVel = 0x0100;  // Snap to 0x0100 within ±128 units to keep straight frame
-                }
-                
-                int cubeRotate = 0x0400 - adjustedVel;
-                int hiBytes = (cubeRotate >> 8) & 0xFF;
-                
-                // Apply NES clamping: if high_byte >= 0x08, clamp the entire value
-                // This prevents velocity extremes from wrapping around
-                if (hiBytes >= 0x08)
-                {
-                    if (hiBytes < 0x80)
-                    {
-                        cubeRotate = 0x07FF;  // High byte becomes 0x07
-                    }
-                    else
-                    {
-                        cubeRotate = 0x0000;  // High byte becomes 0x00
-                    }
-                }
-                
-                shipRotate_fixed = cubeRotate;
+                shipRotate_fixed = ComputeNesShipRotationFixed(playerVelY_fixed);
                 int frameIndex = (shipRotate_fixed >> 8) & 0xFF;
-                
-                AppendSimDebug($"[SHIP_ROT] velY=0x{playerVelY_fixed:X4}, rotate=0x{cubeRotate:X4}, frame={frameIndex}");
+
+                AppendSimDebug($"[SHIP_ROT] velY=0x{playerVelY_fixed:X4}, rotate=0x{shipRotate_fixed:X4}, frame={frameIndex}");
             }
             catch { }
         }
@@ -462,34 +518,11 @@ namespace FamidashEditor
         {
             try
             {
-                // Swingcopter frame index: 0x0400 - playerVelY (same as ship)
-                // Add tolerance/dead zone around zero velocity to prevent flickering
-                int adjustedVel = playerVelY_fixed;
-                if (adjustedVel > -0x0080 && adjustedVel < 0x0080)
-                {
-                    adjustedVel = 0x0100;  // Snap to 0x0100 within ±128 units
-                }
-                
-                int cubeRotate = 0x0400 - adjustedVel;
-                int hiBytes = (cubeRotate >> 8) & 0xFF;
-                
-                // Apply NES clamping
-                if (hiBytes >= 0x08)
-                {
-                    if (hiBytes < 0x80)
-                    {
-                        cubeRotate = 0x07FF;
-                    }
-                    else
-                    {
-                        cubeRotate = 0x0000;
-                    }
-                }
-                
-                swingcopterRotate_fixed = cubeRotate;
+                swingcopterRotate_fixed =
+                    ComputeNesShipRotationFixed(playerVelY_fixed);
                 int frameIndex = (swingcopterRotate_fixed >> 8) & 0xFF;
-                
-                AppendSimDebug($"[SWING_ROT] velY=0x{playerVelY_fixed:X4}, rotate=0x{cubeRotate:X4}, frame={frameIndex}");
+
+                AppendSimDebug($"[SWING_ROT] velY=0x{playerVelY_fixed:X4}, rotate=0x{swingcopterRotate_fixed:X4}, frame={frameIndex}");
             }
             catch { }
         }
@@ -549,7 +582,7 @@ namespace FamidashEditor
                     int frameIndex = (footballRotate_fixed >> 8) & 0xFF;
                     int subFrame = footballRotate_fixed & 0xFF;
                     
-                    int gravityIncrement = GameModePhysics.CUBE_GRAVITY(currplayer_table_idx);
+                    int gravityIncrement = SharedPhysics.CUBE_GRAVITY_NORMAL;
                     // NES: when gravity flipped, subtract instead of add (rotate backwards)
                     if (gravityFlipped) gravityIncrement = -gravityIncrement;
                     
@@ -628,7 +661,7 @@ namespace FamidashEditor
                 else
                 {
                     // Velocity is non-zero: accumulate gravity increment
-                    int gravityIncrement = GameModePhysics.CUBE_GRAVITY(currplayer_table_idx);
+                    int gravityIncrement = SharedPhysics.CUBE_GRAVITY_NORMAL;
                     if (gravityFlipped) gravityIncrement = -gravityIncrement;
                     subFrame += gravityIncrement;
                     
@@ -682,21 +715,9 @@ namespace FamidashEditor
         {
             try
             {
-                // Use the stored shipRotate_fixed value that was updated in UpdateShipRotation()
-                int frameIndex = (shipRotate_fixed >> 8) & 0xFF;
-                
-                // Clamp to 0-7 range
-                if (frameIndex > 0x07) frameIndex = 0x07;
-                if (frameIndex < 0x00) frameIndex = 0x00;
-                
-                // NES does 7 - frame at display time when gravity is flipped,
-                // reversing the tilt direction to match inverted flight.
-                if (currplayer_gravity != 0)
-                {
-                    frameIndex = 7 - frameIndex;
-                }
-                
-                return frameIndex;
+                return ComputeNesVelocitySpriteFrame(
+                    playerVelY_fixed, playerVelX_fixed, miniMode,
+                    gravityReversed, waveOrSnake: false);
             }
             catch { return 0; }
         }
@@ -708,22 +729,112 @@ namespace FamidashEditor
         {
             try
             {
-                // Use the stored swingcopterRotate_fixed value that was updated in UpdateSwingcopterRotation()
-                int frameIndex = (swingcopterRotate_fixed >> 8) & 0xFF;
-                
-                // Clamp to 0-7 range
-                if (frameIndex > 0x07) frameIndex = 0x07;
-                if (frameIndex < 0x00) frameIndex = 0x00;
-                
-                // If gravity is inverted, reverse the frame
-                if (currplayer_gravity != 0)
-                {
-                    frameIndex = 7 - frameIndex;
-                }
-                
-                return frameIndex;
+                return ComputeNesVelocitySpriteFrame(
+                    playerVelY_fixed, playerVelX_fixed, miniMode,
+                    gravityReversed, waveOrSnake: false);
             }
             catch { return 0; }
+        }
+
+        private int GetWaveOrSnakeSpriteFrame()
+        {
+            try
+            {
+                return ComputeNesVelocitySpriteFrame(
+                    playerVelY_fixed, playerVelX_fixed, miniMode,
+                    gravityReversed, waveOrSnake: true);
+            }
+            catch { return 0; }
+        }
+
+        private static readonly string[] s_shipFrameNames =
+        {
+            "ship.png", "ship.png", "ship2.png", "ship3.png",
+            "ship3.png", "ship4.png", "ship6.png", "ship6.png"
+        };
+
+        private static readonly string[] s_miniShipFrameNames =
+        {
+            "ship-mini.png", "ship-mini.png", "ship-mini1.png",
+            "ship-mini2.png", "ship-mini2.png", "ship-mini3.png",
+            "ship-mini4.png", "ship-mini4.png"
+        };
+
+        private static readonly string[] s_swingFrameNames =
+        {
+            "swingcopter.png", "swingcopter.png", "swingcopter1.png",
+            "swingcopter2.png", "swingcopter2.png", "swingcopter3.png",
+            "swingcopter4.png", "swingcopter4.png"
+        };
+
+        private static readonly string[] s_miniSwingFrameNames =
+        {
+            "swingcopter-mini.png", "swingcopter-mini.png",
+            "swingcopter-mini1.png", "swingcopter-mini2.png",
+            "swingcopter-mini2.png", "swingcopter-mini3.png",
+            "swingcopter-mini4.png", "swingcopter-mini4.png"
+        };
+
+        private string GetShipSpriteImageName()
+        {
+            int frame = GetShipSpriteFrame();
+            return miniMode ? s_miniShipFrameNames[frame] :
+                s_shipFrameNames[frame];
+        }
+
+        private string GetSwingSpriteImageName()
+        {
+            int frame = GetSwingcopterSpriteFrame();
+            return miniMode ? s_miniSwingFrameNames[frame] :
+                s_swingFrameNames[frame];
+        }
+
+        private string GetWaveSpriteImageName()
+        {
+            int frame = GetWaveOrSnakeSpriteFrame();
+            return GetWaveSpriteImageName(miniMode, frame);
+        }
+
+        private static string GetWaveSpriteImageName(bool mini, int frame)
+        {
+            if (mini)
+                return frame is 3 or 4 ? "wave-mini2.png" : "wave-mini.png";
+            return frame >= 2 && frame <= 5 ? "wave2.png" : "wave.png";
+        }
+
+        private static void ApplyWaveSpriteTransform(
+            System.Windows.Controls.Image image, int frame, bool mini,
+            bool gravityReversed)
+        {
+            double angle = 0;
+            bool intrinsicVerticalFlip = false;
+            if (mini)
+            {
+                intrinsicVerticalFlip = frame >= 5;
+            }
+            else if (frame == 2)
+            {
+                angle = 22.5;
+            }
+            else if (frame == 5)
+            {
+                angle = -22.5;
+            }
+            else
+            {
+                intrinsicVerticalFlip = frame >= 6;
+            }
+            ApplyVelocitySpriteTransform(
+                image, angle, intrinsicVerticalFlip ^ gravityReversed);
+        }
+
+        private static void ApplySnakeSpriteTransform(
+            System.Windows.Controls.Image image, int frame,
+            bool gravityReversed)
+        {
+            double angle = frame <= 1 ? 45.0 :
+                frame >= 6 ? -45.0 : 0.0;
+            ApplyVelocitySpriteTransform(image, angle, gravityReversed);
         }
 
         // Static flip table for football rotation - avoids per-frame allocation
@@ -1360,6 +1471,7 @@ namespace FamidashEditor
         private System.Windows.Controls.Image? playerImage = null;
         private System.Windows.Shapes.Rectangle? playerRect = null;
         private System.Windows.Controls.Image? player2Image = null;  // Player 2 visual for dual mode
+        private int player2VisualUpdateQueued = 0;
         private System.Windows.Shapes.Rectangle? player2Rect = null;  // Player 2 rectangle fallback
         
         // Trail ghost images (3 ghost copies rendered behind the player)
@@ -4173,7 +4285,7 @@ namespace FamidashEditor
                     if (this.Owner is MainWindow mw)
                     {
                         try { mw.PauseSimulatorPlayback(); } catch { }
-                        try { mw.AddDeathMarker(deathX, deathY); } catch { }
+                        try { mw.AddDeathMarker(deathX, deathY, SourceDocumentSessionId); } catch { }
                     }
                 }));
             }
@@ -4914,15 +5026,19 @@ namespace FamidashEditor
                 string exeDir = AppDomain.CurrentDomain.BaseDirectory ?? ".";
                 string choice = "cube.png";
                 
-                // Use mini images if in mini mode
-                if (miniMode && currentGameMode == 0) choice = "cube-mini.png";
-                else if (miniMode && currentGameMode == 1) choice = "ship-mini.png";
+                // Velocity-oriented modes must select their exact Famidash
+                // draw-table frame in both normal and mini sizes.
+                if (currentGameMode == 1) choice = GetShipSpriteImageName();
+                else if (currentGameMode == 6) choice = GetWaveSpriteImageName();
+                else if (currentGameMode == 7) choice = GetSwingSpriteImageName();
+                else if (currentGameMode == 10)
+                    choice = miniMode ? "snake-mini.png" : "snake.png";
+                // Use mini images for the remaining modes.
+                else if (miniMode && currentGameMode == 0) choice = "cube-mini.png";
                 else if (miniMode && currentGameMode == 2) choice = "ball-mini.png";
                 else if (miniMode && currentGameMode == 3) choice = "ufo-mini.png";
                 else if (miniMode && currentGameMode == 4) choice = "robot-mini.png";
                 else if (miniMode && currentGameMode == 5) choice = "spider-mini.png";
-                else if (miniMode && currentGameMode == 6) choice = "wave-mini.png";
-                else if (miniMode && currentGameMode == 7) choice = "swingcopter-mini.png";
                 else if (miniMode && currentGameMode == 8) choice = "ninja-mini.png";
                 else if (miniMode && currentGameMode == 9) {
                     // Mini pogo bounce animation - show pogo-mini2.png for 8 frames after bounce
@@ -4932,36 +5048,7 @@ namespace FamidashEditor
                         choice = "pogo-mini.png";
                     }
                 }
-                else if (miniMode && currentGameMode == 10) choice = "snake-mini.png";
                 else if (miniMode && currentGameMode == 11) choice = "football-mini.png";
-                else if (currentGameMode == 1) {
-                    // Ship animation based on velocity
-                    // Game frames 0-7 map to PNG frames 0-6 (7 unique frames from NES shipFrameTable)
-                    // PNG frame mapping: 0(0/1) -> 1(2) -> 2(3) -> 3(4) -> 4(5) -> 5(6) -> 6(7)
-                    int shipFrame = GetShipSpriteFrame();  // Returns 0-7
-                    int[] shipFrameMap = { 0, 0, 1, 2, 3, 4, 5, 6 };  // Map game frame 0-7 to PNG frame index 0-6
-                    int pngFrame = shipFrameMap[shipFrame & 0x07];  // Clamp to 0-7
-                    
-                    choice = miniMode ? (pngFrame switch {
-                        0 => "ship-mini.png",
-                        1 => "ship-mini1.png",
-                        2 => "ship-mini2.png",
-                        3 => "ship-mini3.png",
-                        4 => "ship-mini4.png",
-                        5 => "ship-mini5.png",
-                        6 => "ship-mini6.png",
-                        _ => "ship-mini.png"
-                    }) : (pngFrame switch {
-                        0 => "ship.png",
-                        1 => "ship2.png",
-                        2 => "ship3.png",
-                        3 => "ship4.png",
-                        4 => "ship5.png",
-                        5 => "ship6.png",
-                        6 => "ship7.png",
-                        _ => "ship.png"
-                    });
-                }
                 else if (currentGameMode == 2) {
                     // Ball animation alternates every 6 frames
                     if (ballAnimationFrameCounter < 6) {
@@ -4973,39 +5060,6 @@ namespace FamidashEditor
                 else if (currentGameMode == 3) choice = "ufo.png";
                 else if (currentGameMode == 4) choice = "";  // Robot animation is handled in RenderFrame
                 else if (currentGameMode == 5) choice = "";  // Spider animation is handled in RenderFrame
-                else if (currentGameMode == 6) {
-                    // Wave animation based on velocity
-                    if (Math.Abs(playerVelY_fixed) <= 0x0300) {
-                        choice = "wave2.png";  // Straight (with ±0x0300 tolerance to reduce flickering)
-                    } else if (playerVelY_fixed < 0) {
-                        choice = "wave.png";   // Going up (normal, will be flipped)
-                    } else {
-                        choice = "wave.png";   // Going down (normal, no flip)
-                    }
-                }
-                else if (currentGameMode == 7) {
-                    // Swingcopter animation based on velocity - same as ship
-                    // Game frames 0-7 map to PNG frames 0-4 (5 unique frames)
-                    int swingFrame = GetSwingcopterSpriteFrame();  // Returns 0-7
-                    int[] swingFrameMap = { 0, 0, 1, 2, 2, 3, 4, 4 };  // Map game frame 0-7 to PNG frame index 0-4
-                    int pngFrame = swingFrameMap[swingFrame & 0x07];  // Clamp to 0-7
-                    
-                    choice = miniMode ? (pngFrame switch {
-                        0 => "swingcopter-mini.png",
-                        1 => "swingcopter-mini1.png",
-                        2 => "swingcopter-mini2.png",
-                        3 => "swingcopter-mini3.png",
-                        4 => "swingcopter-mini4.png",
-                        _ => "swingcopter-mini.png"
-                    }) : (pngFrame switch {
-                        0 => "swingcopter.png",
-                        1 => "swingcopter1.png",
-                        2 => "swingcopter2.png",
-                        3 => "swingcopter3.png",
-                        4 => "swingcopter4.png",
-                        _ => "swingcopter.png"
-                    });
-                }
                 else if (currentGameMode == 8) choice = "ninja.png";
                 else if (currentGameMode == 9) {
                     // Show pogo2.png for 8 frames after bounce
@@ -5015,7 +5069,6 @@ namespace FamidashEditor
                         choice = "pogo.png";
                     }
                 }
-                else if (currentGameMode == 10) choice = "snake.png";
                 else if (currentGameMode == 11) {
                     // Football animation - cube-style rotation with flip table (7 frames across 24 rotation frames)
                     int footballFrameAndFlip = GetFootballSpriteFrameAndFlip();
@@ -5148,21 +5201,7 @@ namespace FamidashEditor
                         playerVisualHeight = (int)Math.Ceiling(playerImage.Height);
                     }
                     
-                    try
-                    {
-                        // Flip game mode icons vertically when gravity is reversed (except cube and ninja modes)
-                        if (gravityReversed && currentGameMode != 0 && currentGameMode != 8)
-                        {
-                            playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
-                            playerImage.RenderTransform = new ScaleTransform(1, -1);
-                        }
-                        else
-                        {
-                            // Ensure no transform remains when gravity is normal
-                            playerImage.RenderTransform = Transform.Identity;
-                        }
-                    }
-                    catch { }
+                    try { UpdatePlayerIconFlip(); } catch { }
                     return;
                 }
 
@@ -5225,19 +5264,20 @@ namespace FamidashEditor
                         return;
                     }
                     
-                    // Wave special handling: flip based on velocity direction (moving UP = flip)
+                    // Wave uses the exact eight-entry Famidash WAVE/MINI_WAVE
+                    // draw table. Missing intermediate PNGs are represented at
+                    // their discrete NES angles using the flat source image.
                     if (currentGameMode == 6)
                     {
-                        // Wave flips when moving upward (negative velocity)
-                        if (playerVelY_fixed < 0)
-                        {
-                            playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
-                            playerImage.RenderTransform = new ScaleTransform(1, -1);
-                        }
-                        else
-                        {
-                            playerImage.RenderTransform = Transform.Identity;
-                        }
+                        int frame = GetWaveOrSnakeSpriteFrame();
+                        ApplyWaveSpriteTransform(
+                            playerImage, frame, miniMode, gravityReversed);
+                    }
+                    else if (currentGameMode == 10)
+                    {
+                        int frame = GetWaveOrSnakeSpriteFrame();
+                        ApplySnakeSpriteTransform(
+                            playerImage, frame, gravityReversed);
                     }
                     else if (gravityReversed)
                     {
@@ -5496,6 +5536,11 @@ namespace FamidashEditor
         // avoids applying object/outline tints at startup.
         private bool startupTintApplied = false;
         private System.Diagnostics.Stopwatch renderStopwatch = new System.Diagnostics.Stopwatch();
+        // CompositionTarget.Rendering follows the monitor refresh rate (often
+        // 120/144/240 Hz), while Famidash state advances at 60 Hz. Bound full
+        // WPF scene reconstruction to the NES cadence.
+        private double nextCompositionRenderMs = 0.0;
+        private const double RENDER_SCHEDULER_TOLERANCE_MS = 0.75;
 
         private int animationFrame = 0;
         // If the simulator has an owner MainWindow, prefer its animation frame so
@@ -5540,7 +5585,8 @@ namespace FamidashEditor
         private System.Collections.Generic.List<System.Windows.Controls.Image> spritePool = new System.Collections.Generic.List<System.Windows.Controls.Image>();
         private int spritesInUse = 0;
         private bool lastCacheHadAnimatedTiles = false;
-        private int lastCacheAnimationFrame = -1;
+        private int lastCacheAnimationPhase = int.MinValue;
+        private int lastCacheEditorAnimationPhase = int.MinValue;
 
         // Note: spider-orbs (0x54,0x55) are NOT decorations and should not receive player tint.
         private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x2E, 0x2F, 0x30, 0x31, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B, 0x2A, 0x3A, 0x49, 0x4A };
@@ -5559,6 +5605,22 @@ namespace FamidashEditor
 
         // Cache for ground-tinted tile images keyed by (tileIndex<<32)|ARGB
         private readonly System.Collections.Generic.Dictionary<long, ImageSource?> groundTintedTileCache = new System.Collections.Generic.Dictionary<long, ImageSource?>();
+        // Final render variants avoid repeating per-pixel tint work for every
+        // occurrence of the same tile in a cache rebuild.
+        private readonly System.Collections.Generic.Dictionary<
+            (int tileIndex, Color groundTint, Color tileTint,
+                bool forceBlack, bool startupTintApplied), ImageSource?>
+            finalGroundTileRenderCache = new();
+        private readonly System.Collections.Generic.Dictionary<
+            (int tileIndex, Color tileTint), ImageSource?>
+            finalOutlineTileRenderCache = new();
+
+        // Embedded player frames are frozen and shared. Preserve the existing
+        // unfrozen render behavior, but make each pixel copy only once per
+        // simulator instead of every time an animation cycles back to a frame.
+        private readonly System.Collections.Generic.Dictionary<ImageSource, ImageSource>
+            renderSafeImageCache = new(
+                System.Collections.Generic.ReferenceEqualityComparer.Instance);
 
         // Cache for black-masked tile variants used when backgroundForceSolidBlack is true.
         private readonly System.Collections.Generic.Dictionary<long, ImageSource?> blackMaskedTileCache = new System.Collections.Generic.Dictionary<long, ImageSource?>();
@@ -5743,7 +5805,9 @@ namespace FamidashEditor
                         // Send copies of recorded paths (both player 1 and player 2 if in dual mode)
                         var path1 = new System.Collections.Generic.List<(int x, int y)>(recordedPlayerPath);
                         var path2 = new System.Collections.Generic.List<(int x, int y)>(recordedPlayer2Path);
-                        mw.ShowPlayerPathsFromSimulator(path1, path2, dual, completed: levelCompleteTriggered);
+                        mw.ShowPlayerPathsFromSimulator(path1, path2, dual,
+                            completed: levelCompleteTriggered,
+                            sourceSessionId: SourceDocumentSessionId);
                     }
                 }
                 catch { }
@@ -5785,18 +5849,10 @@ namespace FamidashEditor
                         break;
                     }
                     try { SimulateNumericStep(); } catch { }
-                    try
-                    {
-                        if (!windowClosed)
-                        {
-                            Dispatcher?.BeginInvoke(new Action(() =>
-                            {
-                                if (!windowClosed && !pfSimulating)
-                                    RenderFrame();
-                            }), System.Windows.Threading.DispatcherPriority.Render);
-                        }
-                    }
-                    catch { }
+                    // CompositionTarget.Rendering owns visual presentation.
+                    // Queueing another full RenderFrame here made every physics
+                    // step compete with the composition render (and could build
+                    // up dispatcher work when rendering was already behind).
                     simAccumulatedMs -= SIM_STEP_MS;
                 // Path recording now happens in physics routines (SimulateNumericStep)
                 
@@ -5806,7 +5862,8 @@ namespace FamidashEditor
                 // that fly out of the cam-locked viewport are killed.
                 try
                 {
-                    if (physicsEnabled && jumpedOnce && !paused && !deathTriggered && !MainWindow.Option_NoDeath)
+                    if (physicsEnabled && jumpedOnce && !paused && !deathTriggered &&
+                        !MainWindow.Option_NoDeath && !PF_HasCanonicalReplay())
                     {
                         int screenRelY = playerY_fixed - cameraY_fixed;
                         if (!wrapMode)
@@ -5825,7 +5882,7 @@ namespace FamidashEditor
                                         if (this.Owner is MainWindow mw)
                                         {
                                             try { mw.PauseSimulatorPlayback(); } catch { }
-                                            try { mw.AddDeathMarker(playerX_fixed >> 8, playerY_fixed >> 8); } catch { }
+                                            try { mw.AddDeathMarker(playerX_fixed >> 8, playerY_fixed >> 8, SourceDocumentSessionId); } catch { }
                                         }
                                     }));
                                 }
@@ -6558,8 +6615,20 @@ namespace FamidashEditor
                     {
                         pathfinderEnabled = true;
                         PF_LoadPrecomputedInputs();
-                        try { PathfinderCheckBox.IsChecked = true; } catch { }
-                        AppendSimDebug($"[PATHFINDER] Auto-enabled with {((MainWindow)this.Owner!).PrecomputedPathfinderInputs!.Count} inputs");
+                        if (PF_HasInputData())
+                        {
+                            try { PathfinderCheckBox.IsChecked = true; } catch { }
+                            AppendSimDebug(
+                                $"[PATHFINDER] Auto-enabled canonical replay with " +
+                                $"{((MainWindow)this.Owner!).PrecomputedPathfinderInputs!.Count} frames");
+                        }
+                        else
+                        {
+                            pathfinderEnabled = false;
+                            try { PathfinderCheckBox.IsChecked = false; } catch { }
+                            AppendSimDebug(
+                                "[PATHFINDER] Auto-enable blocked: canonical replay unavailable.");
+                        }
                     }
                     else
                     {
@@ -6696,6 +6765,8 @@ namespace FamidashEditor
                 // Invalidate cached tile layer so the initial render uses new toned images
                 tileLayerCache = null;
                 try { groundTintedTileCache.Clear(); } catch { }
+                try { finalGroundTileRenderCache.Clear(); } catch { }
+                try { finalOutlineTileRenderCache.Clear(); } catch { }
                 try { AppendSimDebug($"Constructor: parallaxToned={(parallaxTonedImages!=null?parallaxTonedImages.Length:0)} groundToned={(groundTonedImages!=null?groundTonedImages.Length:0)} tileToned={(tileTonedImages!=null?tileTonedImages.Length:0)}"); } catch { }
             }
             catch { }
@@ -6745,6 +6816,12 @@ namespace FamidashEditor
 
         // Map a tile index to its animated version based on current animation frame
         // Mirrors MainWindow.GetAnimatedTileIndex for saw tiles so simulator can animate tile-based saws
+        private int GetLocalTileAnimationPhase() =>
+            unchecked((animationFrame * 9) / 20);
+
+        private int GetEditorTileAnimationPhase() =>
+            unchecked((GetEditorAnimationFrameValue() * 9) / 20);
+
         private int MapAnimatedTileIndex(int originalIndex)
         {
             // Empty/sentinel: tile arrays use -1 (and a few visual-only IDs) for
@@ -6769,21 +6846,21 @@ namespace FamidashEditor
             if (mapped >= 0x08 && mapped <= 0x0B)
             {
                 // Use the same rhythm as sprite animations (frame math below)
-                bool showFrame2 = (((GetEditorAnimationFrameValue() * 9) / 20) % 2) == 1;
+                bool showFrame2 = (GetEditorTileAnimationPhase() % 2) == 1;
                 int tileOffset = mapped - 0x08;
                 return showFrame2 ? 1004 + tileOffset : 1000 + tileOffset;
             }
 
             if (mapped == 0x04 || mapped == 0x7D || mapped == 0x7F)
             {
-                bool showFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
+                bool showFrame2 = (GetLocalTileAnimationPhase() % 2) == 1;
                 int tileOffset = (mapped == 0x04) ? 0 : (mapped == 0x7D) ? 1 : 2;
                 return showFrame2 ? 1013 + tileOffset : 1010 + tileOffset;
             }
 
             if (mapped >= 0x74 && mapped <= 0x7C)
             {
-                bool showFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
+                bool showFrame2 = (GetLocalTileAnimationPhase() % 2) == 1;
                 int tileOffset = mapped - 0x74;
                 return showFrame2 ? 1029 + tileOffset : 1020 + tileOffset;
             }
@@ -7474,7 +7551,10 @@ namespace FamidashEditor
                     PF_LoadPrecomputedInputs();
                     if (!PF_HasInputData())
                     {
-                        AppendSimDebug("[PATHFINDER] No precomputed path data! Use 'Calculate Path' in editor first.");
+                        pathfinderEnabled = false;
+                        AppendSimDebug(
+                            "[PATHFINDER] Canonical path data unavailable. " +
+                            "Run or load a valid pathfinder route first.");
                     }
                 }
                 else
@@ -7483,6 +7563,7 @@ namespace FamidashEditor
                     Interlocked.Exchange(ref keyXPressedCount, 0);
                     keyXHeld = false;
                     pfInputSequence = null;
+                    pfReplayFrames = null;
                     pfFrameIndex = 0;
                     pfLastAdvancedTick = -1;
                 }
@@ -7900,8 +7981,7 @@ namespace FamidashEditor
                 // re-preseed them from scratch (sprites[idx] must be >= 0).
                 foreach (var (spriteIndex, spriteId) in collectedCoinInfo)
                 {
-                    if (!SimulatorUsesExactNesRecords &&
-                        spriteIndex >= 0 && spriteIndex < sprites.Length)
+                    if (spriteIndex >= 0 && spriteIndex < sprites.Length)
                         sprites[spriteIndex] = spriteId;
                 }
                 collectedCoins.Clear();
@@ -8007,6 +8087,92 @@ namespace FamidashEditor
                 try { ApplyNesIntroFreezePrestepForSimulator(); } catch { }
             }
             catch { }
+        }
+
+        private static void ApplyVelocitySpriteTransform(
+            System.Windows.Controls.Image image, double angle,
+            bool verticalFlip)
+        {
+            image.RenderTransformOrigin = new Point(0.5, 0.5);
+            if (Math.Abs(angle) < 0.001 && !verticalFlip)
+            {
+                image.RenderTransform = Transform.Identity;
+                return;
+            }
+
+            var transforms = new TransformGroup();
+            if (Math.Abs(angle) >= 0.001)
+                transforms.Children.Add(new RotateTransform(angle));
+            if (verticalFlip)
+                transforms.Children.Add(new ScaleTransform(1, -1));
+            image.RenderTransform = transforms;
+        }
+
+        private void UpdatePlayer2VelocityModeVisual()
+        {
+            if (player2Image == null || !dual)
+                return;
+
+            int mode = currentGameMode;
+            if (mode != 1 && mode != 6 && mode != 7 && mode != 10)
+                return;
+
+            bool mini = player_mini[1];
+            bool gravity = player_gravity[1] != 0;
+            int velocityX = player_vel_x_fixed[1];
+            int velocityY = player_vel_y_fixed[1];
+            int frame = ComputeNesVelocitySpriteFrame(
+                velocityY, velocityX, mini, gravity,
+                waveOrSnake: mode == 6 || mode == 10);
+
+            string imageName;
+            if (mode == 1)
+            {
+                imageName = mini ? s_miniShipFrameNames[frame] :
+                    s_shipFrameNames[frame];
+            }
+            else if (mode == 7)
+            {
+                imageName = mini ? s_miniSwingFrameNames[frame] :
+                    s_swingFrameNames[frame];
+            }
+            else if (mode == 6)
+            {
+                imageName = GetWaveSpriteImageName(mini, frame);
+            }
+            else
+            {
+                imageName = mini ? "snake-mini.png" : "snake.png";
+            }
+
+            string currentName = player2Image.Tag as string ?? "";
+            if (!currentName.Equals(imageName,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                var image = LoadCachedResourceImage(imageName);
+                if (image != null)
+                {
+                    if (!player2ColorCache.TryGetValue(
+                        imageName, out BitmapSource? player2ImageSource))
+                    {
+                        player2ImageSource = ReplaceColorsForPlayer2(image);
+                        player2ColorCache[imageName] = player2ImageSource;
+                    }
+                    player2Image.Source =
+                        GetCachedRenderableImage(player2ImageSource);
+                    player2Image.Width = player2ImageSource.PixelWidth;
+                    player2Image.Height = player2ImageSource.PixelHeight;
+                    player2Image.Tag = imageName;
+                }
+            }
+
+            if (mode == 6)
+                ApplyWaveSpriteTransform(player2Image, frame, mini, gravity);
+            else if (mode == 10)
+                ApplySnakeSpriteTransform(player2Image, frame, gravity);
+            else
+                ApplyVelocitySpriteTransform(
+                    player2Image, 0, gravity);
         }
 
         // Public API: start the simulator running and request playback (used by MainWindow to auto-start)
@@ -9573,6 +9739,8 @@ namespace FamidashEditor
 
                         tileLayerCache = null;
                         try { groundTintedTileCache.Clear(); } catch { }
+                        try { finalGroundTileRenderCache.Clear(); } catch { }
+                        try { finalOutlineTileRenderCache.Clear(); } catch { }
                         try { spriteBackgroundCompositeCache.Clear(); } catch { }
                     }
                 }
@@ -9613,7 +9781,7 @@ namespace FamidashEditor
             // Prevent rendering if window is closed
             if (windowClosed) return;
 
-            try { UpdateFirstPerson3DPrototype(); } catch { }
+            try { UpdateFirstPerson3D(); } catch { }
             
             // Update wave icon based on velocity (every frame)
             if (currentGameMode == 6)
@@ -9621,12 +9789,7 @@ namespace FamidashEditor
                 try
                 {
                     string waveChoice = miniMode ? "wave-mini.png" : "wave.png";
-                    // Choose icon based on velocity magnitude
-                    // wave2.png when nearly stationary, wave.png for movement
-                    if (playerVelY_fixed == 0)
-                    {
-                        waveChoice = miniMode ? "wave-mini2.png" : "wave2.png";  // Straight/stationary
-                    }
+                    waveChoice = GetWaveSpriteImageName();
                     
                     // Check current image
                     string currentImageName = playerImage?.Tag as string ?? "";
@@ -9637,7 +9800,8 @@ namespace FamidashEditor
                         var newImg = LoadCachedResourceImage(waveChoice);
                         if (newImg != null && playerImage != null)
                         {
-                            playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                            playerImage.Source =
+                                GetCachedRenderableImage(newImg);
                             playerImage.Tag = waveChoice;
                         }
                     }
@@ -9653,31 +9817,7 @@ namespace FamidashEditor
             {
                 try
                 {
-                    // Ship animation: velocity-based 7 frames mapped to 7 PNG files
-                    int shipFrame = GetShipSpriteFrame();  // Returns 0-7
-                    int[] shipFrameMap = { 0, 0, 1, 2, 3, 4, 5, 6 };  // Map game frame 0-7 to PNG frame index 0-6
-                    int pngFrame = shipFrameMap[shipFrame & 0x07];  // Clamp to 0-7
-                    
-                    // Use mini ship images if in mini mode
-                    string shipChoice = miniMode ? (pngFrame switch {
-                        0 => "ship-mini.png",
-                        1 => "ship-mini1.png",
-                        2 => "ship-mini2.png",
-                        3 => "ship-mini3.png",
-                        4 => "ship-mini4.png",
-                        5 => "ship-mini5.png",
-                        6 => "ship-mini6.png",
-                        _ => "ship-mini.png"
-                    }) : (pngFrame switch {
-                        0 => "ship.png",
-                        1 => "ship2.png",
-                        2 => "ship3.png",
-                        3 => "ship4.png",
-                        4 => "ship5.png",
-                        5 => "ship6.png",
-                        6 => "ship7.png",
-                        _ => "ship.png"
-                    });
+                    string shipChoice = GetShipSpriteImageName();
                     
                     // Check current image
                     string currentImageName = playerImage?.Tag as string ?? "";
@@ -9688,7 +9828,8 @@ namespace FamidashEditor
                         var newImg = LoadCachedResourceImage(shipChoice);
                         if (newImg != null && playerImage != null)
                         {
-                            playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                            playerImage.Source =
+                                GetCachedRenderableImage(newImg);
                             playerImage.Tag = shipChoice;
                         }
                     }
@@ -9714,27 +9855,7 @@ namespace FamidashEditor
             {
                 try
                 {
-                    // Swingcopter animation: velocity-based 5 frames mapped to 8 game frames
-                    int swingFrame = GetSwingcopterSpriteFrame();  // Returns 0-7
-                    int[] swingFrameMap = { 0, 0, 1, 2, 2, 3, 4, 4 };  // Map game frame 0-7 to PNG frame index 0-4
-                    int pngFrame = swingFrameMap[swingFrame & 0x07];  // Clamp to 0-7
-                    
-                    // Use mini swingcopter images if in mini mode
-                    string swingChoice = miniMode ? (pngFrame switch {
-                        0 => "swingcopter-mini.png",
-                        1 => "swingcopter-mini1.png",
-                        2 => "swingcopter-mini2.png",
-                        3 => "swingcopter-mini3.png",
-                        4 => "swingcopter-mini4.png",
-                        _ => "swingcopter-mini.png"
-                    }) : (pngFrame switch {
-                        0 => "swingcopter.png",
-                        1 => "swingcopter1.png",
-                        2 => "swingcopter2.png",
-                        3 => "swingcopter3.png",
-                        4 => "swingcopter4.png",
-                        _ => "swingcopter.png"
-                    });
+                    string swingChoice = GetSwingSpriteImageName();
                     
                     // Check current image via Tag
                     string currentImageName = playerImage?.Tag as string ?? "";
@@ -9745,7 +9866,8 @@ namespace FamidashEditor
                         var newImg = LoadCachedResourceImage(swingChoice);
                         if (newImg != null && playerImage != null)
                         {
-                            playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                            playerImage.Source =
+                                GetCachedRenderableImage(newImg);
                             playerImage.Tag = swingChoice;
                         }
                     }
@@ -9789,7 +9911,8 @@ namespace FamidashEditor
                         var newImg = LoadCachedResourceImage(footballChoice);
                         if (newImg != null && playerImage != null)
                         {
-                            playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                            playerImage.Source =
+                                GetCachedRenderableImage(newImg);
                             playerImage.Tag = footballChoice;
                         }
                     }
@@ -9851,7 +9974,8 @@ namespace FamidashEditor
                             var newImg = LoadCachedResourceImage(chosenFrame);
                             if (newImg != null)
                             {
-                                playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                playerImage.Source =
+                                    GetCachedRenderableImage(newImg);
                                 playerImage.Tag = chosenFrame;
                             }
                             else
@@ -9916,22 +10040,9 @@ namespace FamidashEditor
                         bool miniVFlip = (miniSpriteEntry & 0x80) != 0;
                         
                         // Choose frame names based on mode
-                        string[] miniFrameNames = (currentGameMode == 8) ? new string[]
-                        {
-                            "ninja_mini_00_frame_0.png",
-                            "ninja_mini_01_frame_1.png",
-                            "ninja_mini_02_frame_2.png",
-                            "ninja_mini_03_frame_3.png",
-                            "ninja_mini_04_frame_4.png"
-                        }
-                        : new string[]
-                        {
-                            "cube_mini_00_frame_0.png",
-                            "cube_mini_01_frame_1.png",
-                            "cube_mini_02_frame_2.png",
-                            "cube_mini_03_frame_3.png",
-                            "cube_mini_04_frame_4.png"
-                        };
+                        string[] miniFrameNames = currentGameMode == 8
+                            ? s_miniNinjaFrameNames
+                            : s_miniCubeFrameNames;
                         string chosenFrame = miniFrameNames[miniFrameIndex];
                         
                         // Track current image name via a tag property
@@ -9944,7 +10055,8 @@ namespace FamidashEditor
                             var newImg = LoadCachedResourceImage(chosenFrame);
                             if (newImg != null)
                             {
-                                playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                playerImage.Source =
+                                    GetCachedRenderableImage(newImg);
                                 playerImage.Tag = chosenFrame;
                             }
                             else
@@ -10042,7 +10154,8 @@ namespace FamidashEditor
                         var newImg = LoadCachedResourceImage(pogoChoice);
                         if (newImg != null)
                         {
-                            playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                            playerImage.Source =
+                                GetCachedRenderableImage(newImg);
                             playerImage.Tag = pogoChoice;
                         }
                         else
@@ -10118,7 +10231,8 @@ namespace FamidashEditor
                         var newImg = LoadCachedResourceImage("." + ballChoice);
                         if (newImg != null && playerImage != null)
                         {
-                            playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                            playerImage.Source =
+                                GetCachedRenderableImage(newImg);
                             playerImage.Tag = ballChoice;
                         }
                         else
@@ -10257,7 +10371,8 @@ namespace FamidashEditor
                         
                         if (newImg != null && playerImage != null)
                         {
-                            playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                            playerImage.Source =
+                                GetCachedRenderableImage(newImg);
                             playerImage.Tag = robotChoice;  // Track which image is loaded
                             playerImage.Width = newImg.PixelWidth;
                             playerImage.Height = newImg.PixelHeight;
@@ -10367,7 +10482,8 @@ namespace FamidashEditor
                                 var cachedImg = LoadCachedResourceImage("." + spiderChoice);
                                 if (cachedImg != null)
                                 {
-                                    playerImage.Source = App.EnsureUnfrozenForRender(cachedImg) ?? cachedImg;
+                                    playerImage.Source =
+                                        GetCachedRenderableImage(cachedImg);
                                     playerImage.Tag = spiderChoice;
                                     playerImage.Width = cachedImg.PixelWidth;
                                     playerImage.Height = cachedImg.PixelHeight;
@@ -10657,7 +10773,15 @@ namespace FamidashEditor
             // Rebuild tile-layer cache when integer tile origin changes
             try
             {
-                if (tileLayerImage != null && (tileLayerCache == null || cachedStartTileX != startTileX || cachedStartTileY != startTileY || (lastCacheHadAnimatedTiles && lastCacheAnimationFrame != animationFrame)))
+                int localTileAnimationPhase = GetLocalTileAnimationPhase();
+                int editorTileAnimationPhase = GetEditorTileAnimationPhase();
+                bool animatedTileVisualChanged = lastCacheHadAnimatedTiles &&
+                    (lastCacheAnimationPhase != localTileAnimationPhase ||
+                     lastCacheEditorAnimationPhase != editorTileAnimationPhase);
+                if (tileLayerImage != null && (tileLayerCache == null ||
+                    cachedStartTileX != startTileX ||
+                    cachedStartTileY != startTileY ||
+                    animatedTileVisualChanged))
                 {
                     // When zoomed out, expand the tile coverage so more world is visible.
                     int cacheTilesX = (sim2DZoomScale < 1.0 - 0.001)
@@ -10774,7 +10898,8 @@ namespace FamidashEditor
                                     if (useTileIndex >= 1000)
                                     {
                                         // Use the same animation cadence as sprite frames so saws flip in sync
-                                        bool frame2 = (((animationFrame * 9) / 20) % 2) != 0;
+                                        bool frame2 =
+                                            (localTileAnimationPhase % 2) != 0;
                                         int ut = useTileIndex;
                                         // Prefer explicit tileImages/toned images for animated tile indices when available
                                         if (tileTonedImages != null && useTileIndex >= 0 && useTileIndex < tileTonedImages.Length && tileTonedImages[useTileIndex] != null)
@@ -10794,8 +10919,10 @@ namespace FamidashEditor
                                             int nFrames1 = len1 >= tileCount && len1 % tileCount == 0 ? len1 / tileCount : 1;
                                             int nFrames2 = len2 >= tileCount && len2 % tileCount == 0 ? len2 / tileCount : 1;
                                             int frameCount = Math.Max(1, Math.Max(nFrames1, nFrames2));
-                                            int frameIdx = (((animationFrame * 9) / 20)) % frameCount;
-                                            bool useFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
+                                            int frameIdx =
+                                                localTileAnimationPhase % frameCount;
+                                            bool useFrame2 =
+                                                (localTileAnimationPhase % 2) == 1;
 
                                             if (useFrame2 && sawFrame2TilesTinted != null)
                                             {
@@ -10817,8 +10944,10 @@ namespace FamidashEditor
                                             int nFrames1 = len1 >= tileCount && len1 % tileCount == 0 ? len1 / tileCount : 1;
                                             int nFrames2 = len2 >= tileCount && len2 % tileCount == 0 ? len2 / tileCount : 1;
                                             int frameCount = Math.Max(1, Math.Max(nFrames1, nFrames2));
-                                            int frameIdx = (((animationFrame * 9) / 20)) % frameCount;
-                                            bool useFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
+                                            int frameIdx =
+                                                localTileAnimationPhase % frameCount;
+                                            bool useFrame2 =
+                                                (localTileAnimationPhase % 2) == 1;
 
                                             if (useFrame2 && smallSawFrame2TilesTinted != null)
                                             {
@@ -10840,8 +10969,10 @@ namespace FamidashEditor
                                             int nFrames1 = len1 >= tileCount && len1 % tileCount == 0 ? len1 / tileCount : 1;
                                             int nFrames2 = len2 >= tileCount && len2 % tileCount == 0 ? len2 / tileCount : 1;
                                             int frameCount = Math.Max(1, Math.Max(nFrames1, nFrames2));
-                                            int frameIdx = (((animationFrame * 9) / 20)) % frameCount;
-                                            bool useFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
+                                            int frameIdx =
+                                                localTileAnimationPhase % frameCount;
+                                            bool useFrame2 =
+                                                (localTileAnimationPhase % 2) == 1;
 
                                             if (useFrame2 && largeSawFrame2TilesTinted != null)
                                             {
@@ -10942,33 +11073,92 @@ namespace FamidashEditor
                                             // active, regenerate from the ORIGINAL tile image using a two-step
                                             // process: (1) two-tone ground mapping that PRESERVES seams (transparent
                                             // outline param), then (2) apply the outline recolor onto that result.
-                                            // This bypasses any cached ground-only images and guarantees parity.
+                                            // Cache that final deterministic result per tile/tint state; previously
+                                            // this repeated two full pixel conversions for every occurrence.
                                             try
                                             {
-                                                if (tileImages != null && useTileIndex >= 0 && useTileIndex < tileImages.Length && tileImages[useTileIndex] != null)
+                                                var finalGroundKey = (
+                                                    useTileIndex, groundTint,
+                                                    tileTint,
+                                                    backgroundForceSolidBlack,
+                                                    startupTintApplied);
+                                                if (!finalGroundTileRenderCache.TryGetValue(
+                                                    finalGroundKey,
+                                                    out var finalGroundTile))
                                                 {
-                                                    var darker2 = PaletteHelper.RowUpColor(Color.FromArgb(groundTint.A, groundTint.R, groundTint.G, groundTint.B));
-                                                    if (tileTint.A > 0)
+                                                    finalGroundTile = chosenTile;
+                                                    if (tileImages != null &&
+                                                        useTileIndex >= 0 &&
+                                                        useTileIndex < tileImages.Length &&
+                                                        tileImages[useTileIndex] != null)
                                                     {
-                                                        // Active object tint: preserve seams during two-tone, then recolor outlines to object tint
-                                                        var twoToneArr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[useTileIndex]! }, groundTint, darker2, Color.FromArgb(0, 0, 0, 0));
-                                                        ImageSource? twoToneBase = (twoToneArr != null && twoToneArr.Length > 0) ? twoToneArr[0] : tileImages[useTileIndex];
-                                                        var finalArr = CreateOutlineTintedTileImages(new ImageSource?[] { twoToneBase }, tileTint);
-                                                        if (finalArr != null && finalArr.Length > 0 && finalArr[0] != null)
+                                                        var darker2 =
+                                                            PaletteHelper.RowUpColor(
+                                                                Color.FromArgb(
+                                                                    groundTint.A,
+                                                                    groundTint.R,
+                                                                    groundTint.G,
+                                                                    groundTint.B));
+                                                        if (tileTint.A > 0)
                                                         {
-                                                            chosenTile = finalArr[0];
+                                                            var twoToneArr =
+                                                                CreateTwoToneTileImages(
+                                                                    new ImageSource?[]
+                                                                    {
+                                                                        tileImages[useTileIndex]!
+                                                                    },
+                                                                    groundTint,
+                                                                    darker2,
+                                                                    Color.FromArgb(
+                                                                        0, 0, 0, 0));
+                                                            ImageSource? twoToneBase =
+                                                                twoToneArr != null &&
+                                                                twoToneArr.Length > 0
+                                                                    ? twoToneArr[0]
+                                                                    : tileImages[useTileIndex];
+                                                            var finalArr =
+                                                                CreateOutlineTintedTileImages(
+                                                                    new ImageSource?[]
+                                                                    {
+                                                                        twoToneBase
+                                                                    },
+                                                                    tileTint);
+                                                            if (finalArr != null &&
+                                                                finalArr.Length > 0 &&
+                                                                finalArr[0] != null)
+                                                            {
+                                                                finalGroundTile =
+                                                                    finalArr[0];
+                                                            }
+                                                        }
+                                                        else
+                                                        {
+                                                            var twoToneArr =
+                                                                CreateTwoToneTileImages(
+                                                                    new ImageSource?[]
+                                                                    {
+                                                                        tileImages[useTileIndex]!
+                                                                    },
+                                                                    groundTint,
+                                                                    darker2,
+                                                                    Color.FromArgb(
+                                                                        255, 255,
+                                                                        255, 255));
+                                                            if (twoToneArr != null &&
+                                                                twoToneArr.Length > 0 &&
+                                                                twoToneArr[0] != null)
+                                                            {
+                                                                finalGroundTile =
+                                                                    twoToneArr[0];
+                                                            }
                                                         }
                                                     }
-                                                    else
-                                                    {
-                                                        // No object tint yet: force seams to opaque white in the two-tone pass
-                                                        var twoToneArr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[useTileIndex]! }, groundTint, darker2, Color.FromArgb(255, 255, 255, 255));
-                                                        if (twoToneArr != null && twoToneArr.Length > 0 && twoToneArr[0] != null)
-                                                        {
-                                                            chosenTile = twoToneArr[0];
-                                                        }
-                                                    }
+                                                    finalGroundTileRenderCache[
+                                                        finalGroundKey] =
+                                                        finalGroundTile;
                                                 }
+                                                if (finalGroundTile != null)
+                                                    chosenTile = finalGroundTile;
                                             }
                                             catch { }
                                         }
@@ -11009,9 +11199,31 @@ namespace FamidashEditor
                                         {
                                             try
                                             {
-                                                var trecol = CreateOutlineTintedTileImages(new ImageSource?[] { baseSrc }, tileTint);
-                                                if (trecol != null && trecol.Length > 0 && trecol[0] != null)
-                                                    chosenTile = trecol[0];
+                                                var finalOutlineKey =
+                                                    (useTileIndex, tileTint);
+                                                if (!finalOutlineTileRenderCache.TryGetValue(
+                                                    finalOutlineKey,
+                                                    out var finalOutlineTile))
+                                                {
+                                                    var trecol =
+                                                        CreateOutlineTintedTileImages(
+                                                            new ImageSource?[]
+                                                            {
+                                                                baseSrc
+                                                            },
+                                                            tileTint);
+                                                    finalOutlineTile =
+                                                        trecol != null &&
+                                                        trecol.Length > 0
+                                                            ? trecol[0]
+                                                            : baseSrc;
+                                                    finalOutlineTileRenderCache[
+                                                        finalOutlineKey] =
+                                                        finalOutlineTile;
+                                                }
+                                                if (finalOutlineTile != null)
+                                                    chosenTile =
+                                                        finalOutlineTile;
                                             }
                                             catch { }
                                         }
@@ -11057,8 +11269,10 @@ namespace FamidashEditor
                                         // the player-colored pixels and doesn't accidentally black them.
                                         try
                                         {
-                                            int[] special = new int[] { 0x0C, 0x0D, 0x0E, 0x0F, 0x13, 0x14, 0x80, 0x81, 0x84, 0x85, 0x86, 0x87 };
-                                            if (chosenTile != null && tileImages != null && useTileIndex >= 0 && System.Array.IndexOf(special, useTileIndex) >= 0)
+                                            if (chosenTile != null && tileImages != null &&
+                                                useTileIndex >= 0 &&
+                                                IsPlayerGreenDecorationTile(
+                                                    useTileIndex))
                                             {
                                                 try { chosenTile = ApplyPlayerTintToGreenPixels(chosenTile, tileImages[useTileIndex], playerTint); } catch { }
                                             }
@@ -11071,8 +11285,10 @@ namespace FamidashEditor
                                             // - If this tile contains player-green deco, preserve the player-tinted color for those
                                             //   pixels. Otherwise preserve outline-colored pixels (tileTint) or placeholder green.
                                             Color excludeColor;
-                                            int[] special2 = new int[] { 0x0C, 0x0D, 0x0E, 0x0F, 0x13, 0x14, 0x80, 0x81, 0x84, 0x85, 0x86, 0x87 };
-                                            if (tileImages != null && useTileIndex >= 0 && System.Array.IndexOf(special2, useTileIndex) >= 0)
+                                            if (tileImages != null &&
+                                                useTileIndex >= 0 &&
+                                                IsPlayerGreenDecorationTile(
+                                                    useTileIndex))
                                             {
                                                 excludeColor = (playerTint.A > 0) ? playerTint : Color.FromArgb(255, 0x5A, 0xCE, 0x52);
                                             }
@@ -11170,7 +11386,9 @@ namespace FamidashEditor
                     }
                     catch { }
                     lastCacheHadAnimatedTiles = hadAnimated;
-                    lastCacheAnimationFrame = animationFrame;
+                    lastCacheAnimationPhase = localTileAnimationPhase;
+                    lastCacheEditorAnimationPhase =
+                        editorTileAnimationPhase;
                     cachedStartTileX = startTileX;
                     cachedStartTileY = startTileY;
                     _currentCacheTilesX = cacheTilesX;
@@ -11592,9 +11810,9 @@ namespace FamidashEditor
                                 {
                                     // For 0x64: limited to Swingcopter (8 modes)
                                     // For 0x7E: all modes (12 modes)
-                                    int[] orderIds = (s == 0x64) 
-                                        ? new int[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x24, 0x17, 0x4B }  // Cube, Ship, Ball, UFO, Robot, Wave, Spider, Swing
-                                        : new int[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x24, 0x17, 0x4B, 0x58, 0x6A, 0x6B, 0x6C };  // + Ninja, Pogo, Snake, Football
+                                    int[] orderIds = s == 0x64
+                                        ? s_rainbowLegacyModes
+                                        : s_rainbowAllModes;
                                     
                                     var list = new System.Collections.Generic.List<ImageSource?>();
                                     foreach (var id in orderIds)
@@ -12009,6 +12227,12 @@ namespace FamidashEditor
                 }
                 else
                 {
+                    // Canonical PF replay bypasses the normal P2 physics/render
+                    // callback. Derive velocity-mode artwork directly from P2's
+                    // authoritative state so dual ship/wave/swing/snake angles
+                    // still match Famidash.
+                    try { UpdatePlayer2VelocityModeVisual(); } catch { }
+
                     // Calculate player 2's screen position
                     int player2PixelX = (player_x_fixed[1] >> 8) - (renderCameraX_fixed >> 8);
                     int player2PixelY = (player_y_fixed[1] >> 8) - (renderCameraY_fixed >> 8);
@@ -12169,19 +12393,44 @@ namespace FamidashEditor
         // Use CompositionTarget.Rendering as the main loop to maintain consistent timing. We implement
         // a simple fixed-step simulation so animation and camera advance at 60Hz even if rendering
         // intermittently lags.
+        private bool IsCompositionRenderDue(double nowMs)
+        {
+            if (nextCompositionRenderMs <= 0.0 ||
+                nowMs - nextCompositionRenderMs > 250.0)
+            {
+                nextCompositionRenderMs = nowMs;
+            }
+
+            if (nowMs + RENDER_SCHEDULER_TOLERANCE_MS <
+                nextCompositionRenderMs)
+            {
+                return false;
+            }
+
+            do
+            {
+                nextCompositionRenderMs += SIM_STEP_MS;
+            }
+            while (nextCompositionRenderMs <=
+                nowMs + RENDER_SCHEDULER_TOLERANCE_MS);
+            return true;
+        }
+
         private void CompositionTarget_Rendering(object? sender, EventArgs e)
         {
             if (windowClosed) return;
             
             try
             {
+                double compositionNowMs =
+                    renderStopwatch.Elapsed.TotalMilliseconds;
                 // Advance a UI-driven animation counter when the numeric sim isn't running
                 // or when the sim is paused so decorative/preview animations remain active.
                 try
                 {
-                    double now = renderStopwatch.Elapsed.TotalMilliseconds;
-                    double delta = Math.Max(0.0, now - uiAnimLastMs);
-                    uiAnimLastMs = now;
+                    double delta =
+                        Math.Max(0.0, compositionNowMs - uiAnimLastMs);
+                    uiAnimLastMs = compositionNowMs;
                     // Apply time scaling to animation accumulation so animations respect slow-motion
                     uiAnimAccumulatedMs += delta * simTimeScale;
                     // Only advance UI-driven animation counter when NOT paused
@@ -12196,6 +12445,12 @@ namespace FamidashEditor
                     }
                 }
                 catch { }
+
+                // WPF raises CompositionTarget.Rendering at the monitor's refresh
+                // rate. The simulator has only one new authoritative state per
+                // 60 Hz step, so additional full scene builds are duplicates.
+                if (!IsCompositionRenderDue(compositionNowMs))
+                    return;
 
                 // If paused, still render the current frame and show the pause overlay.
                 if (paused)
@@ -12280,10 +12535,17 @@ namespace FamidashEditor
                 
                 // Increment simulation tick counter (used for timewarp and trail timing)
                 simTickCount++;
-                
+
                 // Timewarp (slowMode): skip every other physics frame, matching NES behavior
                 // On skipped frames, just return — no physics, no rendering update needed
                 if (slowMode && (simTickCount & 1) != 0)
+                    return;
+
+                // Fresh pathfinder results publish exact post-step states. Consume
+                // them directly so simulator playback cannot drift through this
+                // separate physics implementation. Legacy loaded .pfdat files
+                // have no state stream and use the compatibility replay below.
+                if (pathfinderEnabled && PF_TryApplyCanonicalFrame())
                     return;
                 
                 AppendSimDebug($"[STEP_START] step={simTickCount} pfFrame={pfFrameIndex} playerX_fixed=0x{playerX_fixed:X4} ({playerX_fixed >> 8}px), playerY_fixed=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), playerVelY_fixed=0x{playerVelY_fixed:X4}");
@@ -12970,7 +13232,7 @@ namespace FamidashEditor
                                         if (this.Owner is MainWindow mw)
                                         {
                                             try { mw.PauseSimulatorPlayback(); } catch { }
-                                            try { mw.AddDeathMarker(fsDeathX, fsDeathY); } catch { }
+                                            try { mw.AddDeathMarker(fsDeathX, fsDeathY, SourceDocumentSessionId); } catch { }
                                         }
                                     }));
                                 }
@@ -13107,7 +13369,7 @@ namespace FamidashEditor
                                             if (this.Owner is MainWindow mw)
                                             {
                                                 try { mw.PauseSimulatorPlayback(); } catch { }
-                                                try { mw.AddDeathMarker(playerRightEdge_fwd, playerCenterY_fwd); } catch { }
+                                                try { mw.AddDeathMarker(playerRightEdge_fwd, playerCenterY_fwd, SourceDocumentSessionId); } catch { }
                                             }
                                         }));
                                     }
@@ -13300,7 +13562,7 @@ namespace FamidashEditor
                                     if (this.Owner is MainWindow mw)
                                     {
                                         try { mw.PauseSimulatorPlayback(); } catch { }
-                                        try { mw.AddDeathMarker(deathX_px, deathY_px); } catch { }
+                                        try { mw.AddDeathMarker(deathX_px, deathY_px, SourceDocumentSessionId); } catch { }
                                     }
                                 }));
                             }
@@ -13328,7 +13590,7 @@ namespace FamidashEditor
                                     if (this.Owner is MainWindow mw)
                                     {
                                         try { mw.PauseSimulatorPlayback(); } catch { }
-                                        try { mw.AddDeathMarker(deathX_new_px, deathY_new_px); } catch { }
+                                        try { mw.AddDeathMarker(deathX_new_px, deathY_new_px, SourceDocumentSessionId); } catch { }
                                     }
                                 }));
                             }
@@ -13744,7 +14006,7 @@ namespace FamidashEditor
                                     deathTileY = p2FsDeathY;
                                     paused = true;
                                     _ = StopMusicAsync();
-                                    try { Dispatcher.BeginInvoke(new Action(() => { try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { } if (this.Owner is MainWindow mw) { try { mw.PauseSimulatorPlayback(); } catch { } try { mw.AddDeathMarker(p2FsDeathX, p2FsDeathY); } catch { } } })); } catch { }
+                                    try { Dispatcher.BeginInvoke(new Action(() => { try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { } if (this.Owner is MainWindow mw) { try { mw.PauseSimulatorPlayback(); } catch { } try { mw.AddDeathMarker(p2FsDeathX, p2FsDeathY, SourceDocumentSessionId); } catch { } } })); } catch { }
                                 }
                                 
                                 // 2) Forward collision check (NES bg_coll_R → bg_side_coll_common)
@@ -13796,7 +14058,7 @@ namespace FamidashEditor
                                         deathTileY = centerY_p2;
                                         paused = true;
                                         _ = StopMusicAsync();
-                                        try { Dispatcher.BeginInvoke(new Action(() => { try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { } if (this.Owner is MainWindow mw) { try { mw.PauseSimulatorPlayback(); } catch { } try { mw.AddDeathMarker(rightEdge_p2, centerY_p2); } catch { } } })); } catch { }
+                                        try { Dispatcher.BeginInvoke(new Action(() => { try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { } if (this.Owner is MainWindow mw) { try { mw.PauseSimulatorPlayback(); } catch { } try { mw.AddDeathMarker(rightEdge_p2, centerY_p2, SourceDocumentSessionId); } catch { } } })); } catch { }
                                     }
                                     
                                     // Slope Y nudge for P2 (non-wave/snake)
@@ -13896,7 +14158,7 @@ namespace FamidashEditor
                                         deathTileY = p2DeathY;
                                         paused = true;
                                         _ = StopMusicAsync();
-                                        try { Dispatcher.BeginInvoke(new Action(() => { try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { } if (this.Owner is MainWindow mw) { try { mw.PauseSimulatorPlayback(); } catch { } try { mw.AddDeathMarker(p2DeathX, p2DeathY); } catch { } } })); } catch { }
+                                        try { Dispatcher.BeginInvoke(new Action(() => { try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { } if (this.Owner is MainWindow mw) { try { mw.PauseSimulatorPlayback(); } catch { } try { mw.AddDeathMarker(p2DeathX, p2DeathY, SourceDocumentSessionId); } catch { } } })); } catch { }
                                     }
                                 }
                             }
@@ -13947,6 +14209,7 @@ namespace FamidashEditor
                             // don't deadlock (Dispatcher.Invoke blocks and can freeze).
                             int p2_gameMode = currentGameMode;
                             bool p2_mini = miniMode;
+                            int p2_velX = playerVelX_fixed;
                             int p2_velY = playerVelY_fixed;
                             bool p2_gravReversed = gravityReversed;
                             
@@ -13990,15 +14253,28 @@ namespace FamidashEditor
                             // with the background sim thread reading shared physics state.
                             try
                             {
-                                Dispatcher?.BeginInvoke(new Action(() =>
+                                if (Interlocked.CompareExchange(
+                                    ref player2VisualUpdateQueued, 1, 0) == 0)
                                 {
-                                    lock (simLock)
+                                    if (Dispatcher == null)
                                     {
-                                        try
+                                        Volatile.Write(
+                                            ref player2VisualUpdateQueued, 0);
+                                    }
+                                    else
+                                    {
+                                        Dispatcher.BeginInvoke(new Action(() =>
                                         {
+                                            try
+                                            {
+                                                lock (simLock)
+                                                {
+                                                    try
+                                                    {
                                             // Save P1 fields that UpdatePlayerImageForMode reads
                                             int save_gameMode = currentGameMode;
                                             bool save_mini = miniMode;
+                                            int save_velX = playerVelX_fixed;
                                             int save_velY = playerVelY_fixed;
                                             bool save_gravRev = gravityReversed;
                                             bool save_gravFlip = gravityFlipped;
@@ -14011,6 +14287,7 @@ namespace FamidashEditor
                                             // Temporarily set P2's captured state
                                             currentGameMode = p2_gameMode;
                                             miniMode = p2_mini;
+                                            playerVelX_fixed = p2_velX;
                                             playerVelY_fixed = p2_velY;
                                             gravityReversed = p2_gravReversed;
                                             gravityFlipped = p2_gravReversed;
@@ -14043,7 +14320,8 @@ namespace FamidashEditor
                                                         var p2RotImg = LoadCachedResourceImage(p2ChosenFrame);
                                                         if (p2RotImg != null && playerImage != null)
                                                         {
-                                                            playerImage.Source = App.EnsureUnfrozenForRender(p2RotImg) ?? p2RotImg;
+                                                            playerImage.Source =
+                                                                GetCachedRenderableImage(p2RotImg);
                                                             playerImage.Tag = p2ChosenFrame;
                                                             // Apply cube rotation flip
                                                             if (p2HFlip || p2VFlip)
@@ -14066,22 +14344,16 @@ namespace FamidashEditor
                                                         int p2MiniEntry = drawcube_sprite_table[p2MiniRawFrame];
                                                         bool p2MiniHFlip = (p2MiniEntry & 0x40) != 0;
                                                         bool p2MiniVFlip = (p2MiniEntry & 0x80) != 0;
-                                                        string[] p2MiniFrameNames = (p2_gameMode == 8) ? new string[]
-                                                        {
-                                                            "ninja_mini_00_frame_0.png", "ninja_mini_01_frame_1.png",
-                                                            "ninja_mini_02_frame_2.png", "ninja_mini_03_frame_3.png",
-                                                            "ninja_mini_04_frame_4.png"
-                                                        } : new string[]
-                                                        {
-                                                            "cube_mini_00_frame_0.png", "cube_mini_01_frame_1.png",
-                                                            "cube_mini_02_frame_2.png", "cube_mini_03_frame_3.png",
-                                                            "cube_mini_04_frame_4.png"
-                                                        };
+                                                        string[] p2MiniFrameNames =
+                                                            p2_gameMode == 8
+                                                                ? s_miniNinjaFrameNames
+                                                                : s_miniCubeFrameNames;
                                                         string p2ChosenMini = p2MiniFrameNames[p2MiniFrame];
                                                         var p2MiniImg = LoadCachedResourceImage(p2ChosenMini);
                                                         if (p2MiniImg != null && playerImage != null)
                                                         {
-                                                            playerImage.Source = App.EnsureUnfrozenForRender(p2MiniImg) ?? p2MiniImg;
+                                                            playerImage.Source =
+                                                                GetCachedRenderableImage(p2MiniImg);
                                                             playerImage.Tag = p2ChosenMini;
                                                             // Apply cube rotation flip for mini P2
                                                             if (p2MiniHFlip || p2MiniVFlip)
@@ -14104,6 +14376,7 @@ namespace FamidashEditor
                                                 player2Image.Source = playerImage.Source;
                                                 player2Image.Width = playerImage.Width;
                                                 player2Image.Height = playerImage.Height;
+                                                player2Image.Tag = playerImage.Tag;
                                                 player2Image.RenderTransformOrigin = playerImage.RenderTransformOrigin;
                                                 player2Image.RenderTransform = playerImage.RenderTransform;
                                             }
@@ -14111,6 +14384,7 @@ namespace FamidashEditor
                                             // Restore P1 fields
                                             currentGameMode = save_gameMode;
                                             miniMode = save_mini;
+                                            playerVelX_fixed = save_velX;
                                             playerVelY_fixed = save_velY;
                                             gravityReversed = save_gravRev;
                                             gravityFlipped = save_gravFlip;
@@ -14123,12 +14397,25 @@ namespace FamidashEditor
                                             
                                             // Now update playerImage with P1's correct sprite
                                             UpdatePlayerImageForMode();
+                                                    }
+                                                    catch { }
+                                                }
+                                            }
+                                            finally
+                                            {
+                                                Volatile.Write(
+                                                    ref player2VisualUpdateQueued,
+                                                    0);
+                                            }
+                                        }));
                                         }
-                                        catch { }
-                                    }
-                                }));
+                                }
                             }
-                            catch { }
+                            catch
+                            {
+                                Volatile.Write(
+                                    ref player2VisualUpdateQueued, 0);
+                            }
                         }
                     }
                     catch (Exception ex)
@@ -15240,8 +15527,15 @@ namespace FamidashEditor
 
                     tileLayerCache = null;
                     try { groundTintedTileCache.Clear(); } catch { }
+                    try { finalGroundTileRenderCache.Clear(); } catch { }
+                    try { finalOutlineTileRenderCache.Clear(); } catch { }
                     try { spriteBackgroundCompositeCache.Clear(); } catch { }
                 }
+                // The 3D renderer owns batched meshes/materials rather than WPF
+                // Image controls. Explicitly invalidate those batches after a
+                // color record executes so the new palette is visible on the
+                // very next rendered frame.
+                try { InvalidateFirstPerson3DPalette(); } catch { }
             }
             catch { }
         }
@@ -15249,52 +15543,17 @@ namespace FamidashEditor
         // Determine if a sprite id is a color trigger we should consider
         private bool IsColorTriggerSprite(int spriteIdx)
         {
-            if (spriteIdx < 0) return false;
-            // Accept ranges like the editor, but exclude certain low-nibble values per user request
-            // Background triggers: 0x80-0xAC
-            // Tile triggers: 0xB0-0xBF
-            // Ground triggers: 0xC0-0xEC
-            bool inRanges = (spriteIdx >= 0x80 && spriteIdx <= 0x8C) || spriteIdx == 0x8F ||
-                            (spriteIdx >= 0x90 && spriteIdx <= 0x9C) || spriteIdx == 0x9F ||
-                            (spriteIdx >= 0xA0 && spriteIdx <= 0xAC) || (spriteIdx >= 0xAE && spriteIdx <= 0xAF) ||
-                            (spriteIdx >= 0xB0 && spriteIdx <= 0xBF) ||
-                            (spriteIdx >= 0xC0 && spriteIdx <= 0xCC) || spriteIdx == 0xCF ||
-                            (spriteIdx >= 0xD0 && spriteIdx <= 0xDC) ||
-                            (spriteIdx >= 0xE0 && spriteIdx <= 0xEC);
-            if (!inRanges) return false;
-
-            // Disregard specific combinations where low nibble is D/E/F for certain high nibbles
-            int low = spriteIdx & 0x0F;
-            int high = spriteIdx & 0xF0;
-            if (low >= 0xD)
-            {
-                // Most high-nibble groups with low >= 0xD are excluded, but allow explicit
-                // single-value exceptions such as 0x8F and 0xCF which should act as triggers.
-                if (high == 0x80 || high == 0x90 || high == 0xA0 || high == 0xC0 || high == 0xD0 || high == 0xE0)
-                {
-                    if (spriteIdx == 0x8F || spriteIdx == 0xCF)
-                    {
-                        // explicit exceptions: keep as trigger
-                    }
-                    else
-                    {
-                        return false;
-                    }
-                }
-            }
-
-            return true;
+            return SharedPhysics.IsColorTriggerSprite(spriteIdx);
         }
 
         private bool IsBackgroundTrigger(int spriteIdx)
         {
-            // Include 0x8F as valid background trigger per request
-            return (spriteIdx >= 0x80 && spriteIdx <= 0xAC || spriteIdx == 0x8F) && IsColorTriggerSprite(spriteIdx);
+            return SharedPhysics.IsBackgroundColorTrigger(spriteIdx);
         }
 
         private bool IsTileTrigger(int spriteIdx)
         {
-            return spriteIdx >= 0xB0 && spriteIdx <= 0xBF && IsColorTriggerSprite(spriteIdx);
+            return SharedPhysics.IsObjectColorTrigger(spriteIdx);
         }
 
         private bool IsGravityModTrigger(int spriteIdx)
@@ -15304,8 +15563,7 @@ namespace FamidashEditor
 
         private bool IsGroundTrigger(int spriteIdx)
         {
-            // Include 0xCF as a valid ground trigger per request
-            return ((spriteIdx >= 0xC0 && spriteIdx <= 0xEC) || spriteIdx == 0xCF) && IsColorTriggerSprite(spriteIdx);
+            return SharedPhysics.IsGroundColorTrigger(spriteIdx);
         }
 
         private Color ColorFromTrigger(int spriteIdx)

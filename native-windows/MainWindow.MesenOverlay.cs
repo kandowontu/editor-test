@@ -10,6 +10,10 @@ namespace FamidashEditor
     public partial class MainWindow
     {
         private Process?        _mesenRunProcess;
+        private Guid?           _mesenRunSessionId;
+        private string?         _mesenRunTraceFile;
+        private string?         _mesenRunOrbDebugFile;
+        private string?         _mesenRunPhysicsDebugFile;
         private string?         _mesenLogStamp;
         private bool            _pathfinderLoggingEnabled = true;
         private bool            _mesenLuaLoggingEnabled = true;
@@ -114,6 +118,10 @@ namespace FamidashEditor
             // reloads, or exits without gameplay.
 
             _mesenRunProcess = proc;
+            _mesenRunSessionId = CurrentDocumentSessionId;
+            _mesenRunTraceFile = MesenTraceFile;
+            _mesenRunOrbDebugFile = MesenOrbDebugFile;
+            _mesenRunPhysicsDebugFile = MesenPhysicsDebugFile;
 
             // Watch for process exit and clean up
             Task.Run(() =>
@@ -125,11 +133,18 @@ namespace FamidashEditor
 
         internal void StopMesenRunMonitor()
         {
-            string traceFile = MesenTraceFile;
-            string orbDebugFile = MesenOrbDebugFile;
-            string physicsDebugFile = MesenPhysicsDebugFile;
+            string traceFile = _mesenRunTraceFile ?? MesenTraceFile;
+            string orbDebugFile =
+                _mesenRunOrbDebugFile ?? MesenOrbDebugFile;
+            string physicsDebugFile =
+                _mesenRunPhysicsDebugFile ?? MesenPhysicsDebugFile;
+            Guid? sourceSessionId = _mesenRunSessionId;
             Process? proc = _mesenRunProcess;
             _mesenRunProcess = null;
+            _mesenRunSessionId = null;
+            _mesenRunTraceFile = null;
+            _mesenRunOrbDebugFile = null;
+            _mesenRunPhysicsDebugFile = null;
             try
             {
                 if (proc != null && !proc.HasExited)
@@ -142,7 +157,11 @@ namespace FamidashEditor
             // Mesen has exited.  Parse the per-frame trace CSV and show the
             // actual NES path on the editor canvas — magenta polyline above
             // the pathfinder bias-colored paths so divergences pop visually.
-            try { LoadAndShowMesenTracePath(traceFile); } catch { }
+            try
+            {
+                LoadAndShowMesenTracePath(traceFile, sourceSessionId);
+            }
+            catch { }
             try { DeleteIfZeroByteFile(traceFile); } catch { }
             try { DeleteIfZeroByteFile(orbDebugFile); } catch { }
             try { DeleteIfZeroByteFile(physicsDebugFile); } catch { }

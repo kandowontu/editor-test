@@ -2,6 +2,7 @@ using Microsoft.Win32;
 using System;
 using System.Buffers;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -510,8 +511,11 @@ namespace FamidashEditor
     // Editor options: hide background and ground for performance
     private bool hideBackground = false;
     private bool hideGround = false;
-    // Editor option: use fast zoom (transform-only, no re-render)
-    private bool useFastZoom = false;
+    // Editor option: use fast zoom (transform-only, no re-render).
+    // New installs default to the responsive path. Existing users can still
+    // disable it for small maps; very large raster surfaces are protected by
+    // ShouldUseTransformOnlyZoom() regardless of this preference.
+    private bool useFastZoom = true;
 
         private enum SelectMode { Normal, AllSame, Lasso, Ellipse }
         private SelectMode currentSelectMode = SelectMode.Normal;
@@ -918,9 +922,25 @@ namespace FamidashEditor
 
     // Palette and assets
     private BitmapSource? tilesetBitmap;
+    private string? cachedTilesetPath;
+    private DateTime cachedTilesetWriteTimeUtc;
+    private long cachedTilesetLength;
+    private BitmapSource? cachedTilesetBitmap;
     private BitmapSource? spritesBitmap;
+    private string? cachedSpritesetPath;
+    private DateTime cachedSpritesetWriteTimeUtc;
+    private long cachedSpritesetLength;
+    private BitmapSource? cachedSpritesetBitmap;
     private BitmapSource? parallaxBitmap;
+    private string? cachedParallaxPath;
+    private DateTime cachedParallaxWriteTimeUtc;
+    private long cachedParallaxLength;
+    private BitmapSource? cachedParallaxBitmap;
     private BitmapSource? groundBitmap;
+    private string? cachedGroundPath;
+    private DateTime cachedGroundWriteTimeUtc;
+    private long cachedGroundLength;
+    private BitmapSource? cachedGroundBitmap;
     private ImageSource?[]? tileImages;
     private ImageSource?[]? spriteImages;
     private ImageSource?[]? parallaxImages;
@@ -929,6 +949,35 @@ namespace FamidashEditor
     private ImageSource?[]? parallaxTonedImages;
     private ImageSource?[]? groundTonedImages;
     private ImageSource?[]? tileTonedImages;
+    // Frozen embedded images are immutable and safe to reuse. Avoid repeatedly
+    // enumerating manifest resources and decoding the same PNG/BMP when tabs or
+    // preview/config options switch assets.
+    private readonly Dictionary<string, BitmapImage?> embeddedImageCache =
+        new(StringComparer.OrdinalIgnoreCase);
+    private string[]? embeddedResourceNames;
+    private readonly Dictionary<string, string> repoRootCache =
+        new(StringComparer.OrdinalIgnoreCase);
+    // Tint generation walks every source image and converts its pixels. Remember
+    // the exact immutable source array and color so repeated config application is
+    // a no-op while a changed array or color still regenerates immediately.
+    private ImageSource?[]? lastParallaxTintSource;
+    private ImageSource?[]? lastGroundTintSource;
+    private ImageSource?[]? lastTileTintSource;
+    private BitmapSource[]? lastSawFrame1TintSource;
+    private BitmapSource[]? lastSawFrame2TintSource;
+    private BitmapSource[]? lastSmallSawFrame1TintSource;
+    private BitmapSource[]? lastSmallSawFrame2TintSource;
+    private BitmapSource[]? lastLargeSawFrame1TintSource;
+    private BitmapSource[]? lastLargeSawFrame2TintSource;
+    private Color lastParallaxTint;
+    private Color lastGroundTint;
+    private Color lastTileTint;
+    private bool parallaxTintCacheValid;
+    private bool groundTintCacheValid;
+    private bool tileTintCacheValid;
+    private bool spritePaletteRestrictionCacheValid;
+    private bool lastSpritePaletteLockState;
+    private readonly HashSet<int> lastSpritePaletteDisabledSprites = new();
     private int selectedTile = 0;
     private int selectedSprite = -1;
     // Multi-tile/sprite selection support
@@ -951,17 +1000,25 @@ namespace FamidashEditor
     // Track changes and current file
     private string? currentFilePath = null;
     private bool hasUnsavedChanges = false;
+    private bool lastSaveSucceeded = false;
     
     // Multiple file tabs management
     private class FileTabData
     {
+        public Guid SessionId { get; } = Guid.NewGuid();
         public string? FilePath { get; set; }
         public int[] Tiles { get; set; } = Array.Empty<int>();
         public int[] Sprites { get; set; } = Array.Empty<int>();
         public Dictionary<int, (int offsetX, int offsetY)> SpritePixelOffsets { get; set; } = new Dictionary<int, (int, int)>();
+        public Dictionary<int, (int anchorTileX, int anchorTileY)> SpriteAnchors { get; set; } = new Dictionary<int, (int, int)>();
         public int MapWidth { get; set; } = 200;
         public int MapHeight { get; set; } = 27;
         public bool HasUnsavedChanges { get; set; } = false;
+        public Stack<IUndoAction> UndoStack { get; set; } = new Stack<IUndoAction>();
+        public Stack<IUndoAction> RedoStack { get; set; } = new Stack<IUndoAction>();
+        public double Zoom { get; set; } = 1.0;
+        public double HorizontalOffset { get; set; }
+        public double VerticalOffset { get; set; }
         public string? LoadedTilesetSource { get; set; }
         public string? LoadedSpritesetSource { get; set; }
         public bool LoadedHasEditorSettings { get; set; }
@@ -1018,6 +1075,24 @@ namespace FamidashEditor
         // START POS marker for this tab
         public int? StartPosX { get; set; } = null;
         public int? StartPosY { get; set; } = null;
+
+        // Replay/path overlays and replay inputs belong to the level that
+        // produced them. Keeping only UIElement instances globally allowed a
+        // result from one document to appear or replay in another document.
+        public List<(int x, int y)> PlayerPathPoints { get; set; } = new();
+        public List<(int x, int y)> PlayerPath2Points { get; set; } = new();
+        public bool PlayerPathIncomplete { get; set; }
+        public List<(List<(int x, int y)> points, Color color)> PathfinderPaths { get; set; } = new();
+        public List<(List<(int x, int y)> points, Color color)> PathfinderPath2s { get; set; } = new();
+        public List<List<(int x, int y)>> AttemptedPaths { get; set; } = new();
+        public List<List<(int x, int y)>> MesenPaths { get; set; } = new();
+        public bool AttemptedPathsCleared { get; set; }
+        public int? DeathMarkerX { get; set; }
+        public int? DeathMarkerY { get; set; }
+        public List<bool>? PrecomputedPathfinderInputs { get; set; }
+        public List<sbyte>? PrecomputedPathfinderDirections { get; set; }
+        public List<PathfinderReplayFrame>? PrecomputedPathfinderReplayFrames { get; set; }
+        public HashSet<int>? PrecomputedCollectedCoins { get; set; }
     }
 
     private int? loadedStartingGameMode = null;
@@ -1058,11 +1133,36 @@ namespace FamidashEditor
     private List<string> recentFiles = new List<string>();
     private const int MaxRecentFiles = 10;
     private bool isHandlingNewTab = false;
-    private TabItem? lastSelectedTab = null;
     // Track the last tab we set programmatically so SelectionChanged can ignore it.
     private TabItem? lastProgrammaticSelectedTab = null;
-    // Prevent handling selection changes while an async SwitchToTab is running
-    private bool isSwitchingTab = false;
+    // Serialize all switches instead of dropping a click that arrives while a
+    // large tab is still rendering. The target is captured by object so tab
+    // removals cannot make a queued numeric index point at another document.
+    private readonly SemaphoreSlim tabSwitchGate = new SemaphoreSlim(1, 1);
+    private bool isRestoringTabViewport = false;
+    private bool isClosingTab = false;
+    private bool shutdownCloseApproved = false;
+    private bool shutdownPromptInProgress = false;
+
+    internal Guid? CurrentDocumentSessionId =>
+        currentFileIndex >= 0 && currentFileIndex < openFiles.Count
+            ? openFiles[currentFileIndex].SessionId
+            : null;
+
+    private FileTabData? FindDocumentSession(Guid? sessionId)
+    {
+        if (!sessionId.HasValue) return null;
+        return openFiles.FirstOrDefault(tab =>
+            tab.SessionId == sessionId.Value);
+    }
+
+    private bool IsActiveDocumentSession(FileTabData? tabData)
+    {
+        return tabData != null &&
+            currentFileIndex >= 0 &&
+            currentFileIndex < openFiles.Count &&
+            ReferenceEquals(openFiles[currentFileIndex], tabData);
+    }
     
     // Store loaded TMX metadata to preserve when saving
     private string? loadedTilesetSource = null;
@@ -1167,8 +1267,8 @@ namespace FamidashEditor
     // Allow a small padded margin around the map so users can scroll slightly out-of-bounds
     private double mapViewportPadding = 64.0; // pixels on each side
     // Undo/redo support (unlimited)
-    private readonly Stack<IUndoAction> undoStack = new Stack<IUndoAction>();
-    private readonly Stack<IUndoAction> redoStack = new Stack<IUndoAction>();
+    private Stack<IUndoAction> undoStack = new Stack<IUndoAction>();
+    private Stack<IUndoAction> redoStack = new Stack<IUndoAction>();
     
     // Configuration file support for per-TMX settings
     private class TmxConfig
@@ -1405,9 +1505,22 @@ namespace FamidashEditor
 
                     if (!string.IsNullOrEmpty(found))
                     {
-                        LoadTileset(found);
-                        try { SliceTileset(); PopulateTilesPanel(); backgroundDirty = true; RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
-                        try { Dispatcher.Invoke(() => Redraw()); } catch { }
+                        bool tilesetChanged = LoadTileset(found);
+                        if (tilesetChanged)
+                        {
+                            backgroundDirty = true;
+                            if (!suppressMapRendering)
+                            {
+                                try
+                                {
+                                    RebuildAllTilesBitmap(
+                                        ZoomSlider?.Value ?? 1.0,
+                                        mapViewportPadding);
+                                }
+                                catch { Redraw(); }
+                                try { Redraw(); } catch { }
+                            }
+                        }
                         return;
                     }
 
@@ -1416,21 +1529,27 @@ namespace FamidashEditor
                 else
                 {
                     // Disabled: revert to embedded famidash.bmp or any previously loaded flat tileset source
+                    bool tilesetChanged = false;
                     try
                     {
                         // If a TMX provided an explicit tileset source, prefer it
                         if (!string.IsNullOrEmpty(loadedTilesetSource) && File.Exists(loadedTilesetSource))
                         {
-                            LoadTileset(loadedTilesetSource);
+                            tilesetChanged = LoadTileset(
+                                loadedTilesetSource);
                         }
                         else
                         {
                             var emb = LoadEmbeddedImage("famidash.bmp");
                             if (emb != null)
                             {
-                                tilesetBitmap = emb;
-                                SliceTileset();
-                                PopulateTilesPanel();
+                                if (!ReferenceEquals(tilesetBitmap, emb))
+                                {
+                                    tilesetBitmap = emb;
+                                    SliceTileset();
+                                    PopulateTilesPanel();
+                                    tilesetChanged = true;
+                                }
                             }
                             else
                             {
@@ -1442,29 +1561,70 @@ namespace FamidashEditor
                                 candidates.Add(Path.Combine(AppContext.BaseDirectory, "famidash.png"));
                                 foreach (var cand in candidates)
                                 {
-                                    try { if (!string.IsNullOrEmpty(cand) && File.Exists(cand)) { LoadTileset(cand); break; } } catch { }
+                                    try
+                                    {
+                                        if (!string.IsNullOrEmpty(cand) &&
+                                            File.Exists(cand))
+                                        {
+                                            tilesetChanged =
+                                                LoadTileset(cand);
+                                            break;
+                                        }
+                                    }
+                                    catch { }
                                 }
                             }
                         }
                     }
                     catch { }
 
-                    try { SliceTileset(); PopulateTilesPanel(); backgroundDirty = true; RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
-                    try { Dispatcher.Invoke(() => Redraw()); } catch { }
+                    if (tilesetChanged)
+                    {
+                        backgroundDirty = true;
+                        if (!suppressMapRendering)
+                        {
+                            try
+                            {
+                                RebuildAllTilesBitmap(
+                                    ZoomSlider?.Value ?? 1.0,
+                                    mapViewportPadding);
+                            }
+                            catch { Redraw(); }
+                            try { Redraw(); } catch { }
+                        }
+                    }
                 }
             }
             catch { }
         }
 
     // Compute disabled sprite list from the current loadedDecoSet and update UI overlays
+    private void RefreshSpritePaletteRestrictionsIfNeeded()
+    {
+        int expectedItems = spriteImages?.Length ?? 0;
+        bool paletteShapeMatches = SpritesPanel != null &&
+            SpritesPanel.Items.Count == expectedItems;
+        bool restrictionsChanged =
+            !spritePaletteRestrictionCacheValid ||
+            lastSpritePaletteLockState != lockSpritesToSet ||
+            !lastSpritePaletteDisabledSprites.SetEquals(disabledSprites);
+
+        if (restrictionsChanged || !paletteShapeMatches)
+            PopulateSpritesPanel();
+
+        lastSpritePaletteLockState = lockSpritesToSet;
+        lastSpritePaletteDisabledSprites.Clear();
+        lastSpritePaletteDisabledSprites.UnionWith(disabledSprites);
+        spritePaletteRestrictionCacheValid = true;
+    }
+
     private void ApplyLockSpritesToSet(string? decoOverride = null)
         {
         disabledSprites.Clear();
         if (!lockSpritesToSet) {
             // Remove overlays
             try { if (IncompatibleOverlay != null) IncompatibleOverlay.Children.Clear(); } catch { }
-            // Rebuild palette to remove disable visuals
-            try { PopulateSpritesPanel(); } catch { }
+            try { RefreshSpritePaletteRestrictionsIfNeeded(); } catch { }
             return;
         }
 
@@ -1504,7 +1664,7 @@ namespace FamidashEditor
         }
 
         // Update palette visuals and deselect if current selection invalid
-        try { PopulateSpritesPanel(); } catch { }
+        try { RefreshSpritePaletteRestrictionsIfNeeded(); } catch { }
         if (selectedSprite >= 0 && disabledSprites.Contains(selectedSprite))
         {
             selectedSprite = -1;
@@ -1609,8 +1769,11 @@ namespace FamidashEditor
                         if (emb != null)
                         {
                             System.Diagnostics.Debug.WriteLine("ApplyParallaxChoice: using embedded noparallax.bmp");
-                            parallaxBitmap = emb;
-                            SliceParallax();
+                            if (!ReferenceEquals(parallaxBitmap, emb))
+                            {
+                                parallaxBitmap = emb;
+                                SliceParallax();
+                            }
                         }
                         else
                         {
@@ -1653,8 +1816,11 @@ namespace FamidashEditor
                         if (emb2 != null)
                         {
                             System.Diagnostics.Debug.WriteLine("ApplyParallaxChoice: using embedded parallax.bmp");
-                            parallaxBitmap = emb2;
-                            SliceParallax();
+                            if (!ReferenceEquals(parallaxBitmap, emb2))
+                            {
+                                parallaxBitmap = emb2;
+                                SliceParallax();
+                            }
                         }
                         else
                         {
@@ -1723,7 +1889,7 @@ namespace FamidashEditor
         catch { }
     }
     
-    private void SaveTmxConfig(string tmxFilePath)
+    private bool SaveTmxConfig(string tmxFilePath)
     {
         try
         {
@@ -1738,7 +1904,7 @@ namespace FamidashEditor
             if (fd == null)
             {
                 System.Diagnostics.Debug.WriteLine($"SaveTmxConfig: File not found in openFiles, skipping save: {tmxFilePath}");
-                return;
+                return false;
             }
 
             // Use ONLY per-tab stored values (never fall back to globals)
@@ -1836,13 +2002,13 @@ namespace FamidashEditor
             try
             {
                 var offsetsSource = fd.SpritePixelOffsets;
-                if (offsetsSource != null && offsetsSource.Count > 0)
+                config.SpriteOffsets = new Dictionary<string, int[]>();
+                if (offsetsSource != null)
                 {
-                    config.SpriteOffsets = new Dictionary<string, int[]>();
                     foreach (var kvp in offsetsSource)
                     {
-                        int x = kvp.Key % mapWidth;
-                        int y = kvp.Key / mapWidth;
+                        int x = kvp.Key % fd.MapWidth;
+                        int y = kvp.Key / fd.MapWidth;
                         string key = $"{x},{y}";
                         config.SpriteOffsets[key] = new int[] { kvp.Value.offsetX, kvp.Value.offsetY };
                     }
@@ -1850,20 +2016,16 @@ namespace FamidashEditor
             }
             catch { }
 
-            // Save sprite anchors (use CURRENT tab's data, not global)
-            // Note: spriteAnchors is shared globally but should be per-tab
+            // Save sprite anchors from the same per-tab snapshot as offsets.
             try
             {
-                // Only save anchors if this is the currently active tab
-                bool isCurrentTab = (openFiles != null && currentFileIndex >= 0 && currentFileIndex < openFiles.Count && 
-                                     openFiles[currentFileIndex] == fd);
-                if (isCurrentTab && spriteAnchors?.Count > 0)
+                config.SpriteAnchors = new Dictionary<string, int[]>();
+                if (fd.SpriteAnchors != null)
                 {
-                    config.SpriteAnchors = new Dictionary<string, int[]>();
-                    foreach (var kvp in spriteAnchors!)
+                    foreach (var kvp in fd.SpriteAnchors)
                     {
-                        int x = kvp.Key % mapWidth;
-                        int y = kvp.Key / mapWidth;
+                        int x = kvp.Key % fd.MapWidth;
+                        int y = kvp.Key / fd.MapWidth;
                         string key = $"{x},{y}";
                         config.SpriteAnchors[key] = new int[] { kvp.Value.anchorTileX, kvp.Value.anchorTileY };
                     }
@@ -1920,23 +2082,27 @@ namespace FamidashEditor
                 try { if (!string.IsNullOrEmpty(config.LowerText)) merged.LowerText = config.LowerText; } catch { }
                 try { if (!string.IsNullOrEmpty(config.UpperText)) merged.UpperText = config.UpperText; } catch { }
 
-                // Sprite offsets/anchors: replace if we have any new ones, otherwise keep existing
-                try { if (config.SpriteOffsets != null && config.SpriteOffsets.Count > 0) merged.SpriteOffsets = config.SpriteOffsets; } catch { }
-                try { if (config.SpriteAnchors != null && config.SpriteAnchors.Count > 0) merged.SpriteAnchors = config.SpriteAnchors; } catch { }
+                // Sprite offsets/anchors are complete snapshots. Empty dictionaries
+                // intentionally clear shifts that were removed in the editor.
+                try { merged.SpriteOffsets = config.SpriteOffsets ?? new Dictionary<string, int[]>(); } catch { }
+                try { merged.SpriteAnchors = config.SpriteAnchors ?? new Dictionary<string, int[]>(); } catch { }
 
                 var opts = new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
                 string json = JsonSerializer.Serialize(merged, opts);
                 File.WriteAllText(configPath, json);
                 System.Diagnostics.Debug.WriteLine($"Saved config to: {configPath}");
+                return true;
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Failed to save (merge) TMX config: {ex.Message}");
+                return false;
             }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Failed to save TMX config: {ex.Message}");
+            return false;
         }
     }
     
@@ -1945,7 +2111,13 @@ namespace FamidashEditor
         try
         {
             string configPath = GetConfigPath(tmxFilePath);
-            
+
+            // Off-grid sprite placement is file-owned state. Start from an empty
+            // state so a missing config or an explicitly empty offsets object
+            // cannot inherit shifts/anchors from the previously active level.
+            spritePixelOffsets.Clear();
+            spriteAnchors.Clear();
+
             if (File.Exists(configPath))
             {
                 string json = File.ReadAllText(configPath);
@@ -2099,9 +2271,8 @@ namespace FamidashEditor
                     // Load sprite offsets from config
                     try
                     {
-                        if (config.SpriteOffsets != null && config.SpriteOffsets.Count > 0)
+                        if (config.SpriteOffsets != null)
                         {
-                            spritePixelOffsets.Clear();
                             foreach (var kvp in config.SpriteOffsets)
                             {
                                 // Parse "x,y" key back to position index
@@ -2126,9 +2297,8 @@ namespace FamidashEditor
                     // Load sprite anchors from config
                     try
                     {
-                        if (config.SpriteAnchors != null && config.SpriteAnchors.Count > 0)
+                        if (config.SpriteAnchors != null)
                         {
-                            spriteAnchors.Clear();
                             foreach (var kvp in config.SpriteAnchors)
                             {
                                 // Parse "x,y" key back to position index
@@ -2175,6 +2345,9 @@ namespace FamidashEditor
                             tabData.NoParallaxBg = noParallaxBg;
                             // Sync sprite offsets to tab data after loading from config
                             tabData.SpritePixelOffsets = new Dictionary<int, (int, int)>(spritePixelOffsets);
+                            tabData.SpriteAnchors =
+                                new Dictionary<int, (int, int)>(
+                                    spriteAnchors);
                             if (!string.IsNullOrEmpty(config.SelectedSong))
                             {
                                 tabData.SelectedSong = config.SelectedSong;
@@ -2298,9 +2471,6 @@ namespace FamidashEditor
                 try { scaledTileCaches.Clear(); } catch { }
                 try { Redraw(); } catch { }
                 
-                // Refresh tile palette to show tinted tiles
-                try { PopulateTilesPanel(); } catch { }
-                
                 System.Diagnostics.Debug.WriteLine($"No config found at: {configPath}, using defaults");
                 // default deco/block/spike sets when no config is present
                 loadedDecoSet = "DECO1";
@@ -2357,8 +2527,6 @@ namespace FamidashEditor
             try { scaledTileCaches.Clear(); } catch { }
             try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
             
-            // Refresh tile palette
-            try { PopulateTilesPanel(); } catch { }
         }
     }
     
@@ -2392,6 +2560,13 @@ namespace FamidashEditor
     private double cachedScale = 1.0;
     private bool backgroundDirty = true;
     private bool gridDirty = true;
+    // Bulk level/tab loads apply several config, tint, and asset changes. Suppress
+    // their individual render callbacks and produce one authoritative frame after
+    // all state has been installed.
+    private bool suppressMapRendering = false;
+    private bool synchronousInitialLayerBuild = false;
+    private double? mapRenderScaleOverride = null;
+    private bool isLoadingMapFile = false;
     // parallax ratio (0..1) where 1.0 = moves with camera, 0 = static world; we want 0.9
     private const double ParallaxRatio = 0.9;
     // cheap transform applied to ParallaxImage so it moves with the scroll without re-rendering pixels
@@ -2401,6 +2576,34 @@ namespace FamidashEditor
     private static readonly Brush SelectionStrokeBrush = Brushes.Cyan;
     // Caches mapping tile/sprite id -> list of map indices (for fast "select same")
     private class IndexInfo { public int[] Indices = Array.Empty<int>(); public int MinX = int.MaxValue; public int MinY = int.MaxValue; public int MaxX = int.MinValue; public int MaxY = int.MinValue; public int Count => Indices?.Length ?? 0; }
+    private sealed class IndexInfoBuilder
+    {
+        public readonly List<int> Indices = new();
+        public int MinX = int.MaxValue;
+        public int MinY = int.MaxValue;
+        public int MaxX = int.MinValue;
+        public int MaxY = int.MinValue;
+
+        public void Add(int index, int width)
+        {
+            Indices.Add(index);
+            int x = index % width;
+            int y = index / width;
+            if (x < MinX) MinX = x;
+            if (y < MinY) MinY = y;
+            if (x > MaxX) MaxX = x;
+            if (y > MaxY) MaxY = y;
+        }
+
+        public IndexInfo Build() => new()
+        {
+            Indices = Indices.ToArray(),
+            MinX = MinX,
+            MinY = MinY,
+            MaxX = MaxX,
+            MaxY = MaxY
+        };
+    }
     private readonly System.Collections.Generic.Dictionary<int, IndexInfo> tileIndexMap = new System.Collections.Generic.Dictionary<int, IndexInfo>();
     private readonly System.Collections.Generic.Dictionary<int, IndexInfo> spriteIndexMap = new System.Collections.Generic.Dictionary<int, IndexInfo>();
     // Last hovered ids (to avoid rebuilding overlay every mouse move)
@@ -2469,9 +2672,12 @@ namespace FamidashEditor
     private List<List<(int x, int y)>> _speculativePathData = new();
     // Active pathfinder engine reference (for Jump To button and cancellation)
     private PathfinderEngine? _activePathfinderEngine = null;
+    private bool pathfinderRunInProgress = false;
     // Optional death marker (red X) placed by simulator when a death occurs
     private Shapes.Line? playerDeathMarkerA = null;
     private Shapes.Line? playerDeathMarkerB = null;
+    private int? playerDeathMarkerX = null;
+    private int? playerDeathMarkerY = null;
     private Shapes.Line? playerIncompleteMarkerA = null;
     private Shapes.Line? playerIncompleteMarkerB = null;
     // START POS marker (green rectangle) - player spawns here when set
@@ -2492,6 +2698,9 @@ namespace FamidashEditor
     public System.Collections.Generic.List<bool>? PrecomputedPathfinderInputs => precomputedPathfinderInputs;
     private System.Collections.Generic.List<sbyte>? precomputedPathfinderDirections = null;
     public System.Collections.Generic.List<sbyte>? PrecomputedPathfinderDirections => precomputedPathfinderDirections;
+    private System.Collections.Generic.List<PathfinderReplayFrame>? precomputedPathfinderReplayFrames = null;
+    public System.Collections.Generic.List<PathfinderReplayFrame>? PrecomputedPathfinderReplayFrames =>
+        precomputedPathfinderReplayFrames;
     private System.Collections.Generic.HashSet<int>? precomputedCollectedCoins = null;
     public System.Collections.Generic.HashSet<int>? PrecomputedCollectedCoins => precomputedCollectedCoins;
     private System.Collections.Generic.HashSet<int>? precomputedSkippedPads = null;
@@ -3285,6 +3494,10 @@ namespace FamidashEditor
                     
                     // Update visible numeric zoom label
                     try { if (ZoomLevelLabel != null) ZoomLevelLabel.Text = $"{(ZoomSlider!=null?ZoomSlider.Value:1.0):0.00}x"; } catch { }
+
+                    // SwitchToTab restores each document's saved viewport and
+                    // performs one authoritative bulk render itself.
+                    if (isRestoringTabViewport) return;
                     
                     // If dragging selection, update ghost size and drag offset for new zoom level
                     if (isDraggingSelection && GhostImage != null && GhostImage.Source != null)
@@ -3510,7 +3723,7 @@ namespace FamidashEditor
                     paletteTileSize = snapped;
                 }
                 catch { paletteTileSize = (int)Math.Round(ev.NewValue); }
-                PopulateTilesPanel();
+                UpdatePaletteItemSizes(TilesPanel, paletteTileSize);
                 // Allow horizontal scrolling when the user enlarges tiles beyond the viewport.
                 if (TilesPanel != null)
                 {
@@ -3527,7 +3740,7 @@ namespace FamidashEditor
                         SpriteSizeSlider.Value = paletteSpriteSize;
                         suppressManualSpriteChange = false;
                     }
-                    PopulateSpritesPanel();
+                    UpdatePaletteItemSizes(SpritesPanel, paletteSpriteSize);
                     if (SpritesPanel != null)
                     {
                         SpritesPanel.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
@@ -3585,7 +3798,7 @@ namespace FamidashEditor
                 {
                     paletteSpriteSize = (int)Math.Round(ev.NewValue);
                 }
-                PopulateSpritesPanel();
+                UpdatePaletteItemSizes(SpritesPanel, paletteSpriteSize);
                 if (SpritesPanel != null)
                 {
                     SpritesPanel.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
@@ -3892,9 +4105,12 @@ namespace FamidashEditor
                 { 
                     useFastZoom = true; 
                     SaveSettingsWithTriggerOption(); 
-                    // Hide background and ground when fast zoom is enabled
-                    if (ParallaxImage != null) ParallaxImage.Visibility = Visibility.Collapsed;
-                    if (GroundImage != null) GroundImage.Visibility = Visibility.Collapsed;
+                    // Transform-only zoom scales every raster layer, including
+                    // parallax and ground; they no longer need to disappear.
+                    if (ParallaxImage != null) ParallaxImage.Visibility =
+                        hideBackground ? Visibility.Collapsed : Visibility.Visible;
+                    if (GroundImage != null) GroundImage.Visibility =
+                        hideGround ? Visibility.Collapsed : Visibility.Visible;
                 };
                 MenuOptionFastZoom.Unchecked += (s, e) => 
                 { 
@@ -4631,7 +4847,12 @@ namespace FamidashEditor
                 playerTintEnabled = true;
                 // Always refresh palette preview and scaled tile caches so the left palette updates
                 try { scaledTileCaches.Clear(); } catch { }
-                try { PopulateTilesPanel(); } catch { }
+                try
+                {
+                    if (!RefreshTilePaletteImages())
+                        PopulateTilesPanel();
+                }
+                catch { }
 
                 // Only clear tinted sprite caches and rebuild sprites when in preview mode.
                 // When not in preview mode, rebuilding sprites on every hover causes visible
@@ -4758,27 +4979,7 @@ namespace FamidashEditor
             WriteableBitmap? bitmap = portalsWb;
             if (bitmap == null || bitmap.PixelWidth <= 0 || bitmap.PixelHeight <= 0)
                 return;
-
-            bitmap.Lock();
-            try
-            {
-                unsafe
-                {
-                    IntPtr backBuffer = bitmap.BackBuffer;
-                    if (backBuffer != IntPtr.Zero)
-                    {
-                        int bytesTotal = bitmap.BackBufferStride * bitmap.PixelHeight;
-                        byte* ptr = (byte*)backBuffer.ToPointer();
-                        for (int i = 0; i < bytesTotal; i++) ptr[i] = 0;
-                    }
-                }
-                bitmap.AddDirtyRect(new Int32Rect(
-                    0, 0, bitmap.PixelWidth, bitmap.PixelHeight));
-            }
-            finally
-            {
-                bitmap.Unlock();
-            }
+            ClearWholeBitmap(bitmap);
         }
 
         private void StartPreviewTimer()
@@ -4877,7 +5078,8 @@ namespace FamidashEditor
                 if (hasSaws)
                 {
                     // Only update saw tiles inside visible bounds
-                    double scale = (ZoomSlider != null ? ZoomSlider.Value : 1.0);
+                    double scale = GetBitmapUpdateScale(
+                        ZoomSlider != null ? ZoomSlider.Value : 1.0);
                     var dpi = VisualTreeHelper.GetDpi(this);
                     int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
                     int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
@@ -5008,7 +5210,8 @@ namespace FamidashEditor
                 if (hasAnimatedOrbs)
                 {
                     // Only update animated orb sprites in the visible region
-                    double scale = (ZoomSlider != null ? ZoomSlider.Value : 1.0);
+                    double scale = GetBitmapUpdateScale(
+                        ZoomSlider != null ? ZoomSlider.Value : 1.0);
                     var dpi = VisualTreeHelper.GetDpi(this);
                     int spritePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
                     int spritePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
@@ -7263,7 +7466,7 @@ namespace FamidashEditor
                 // If no settings file exists, create default one
                 if (!System.IO.File.Exists(path))
                 {
-                    var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"hideBackground\":false,\"hideGround\":false,\"useFastZoom\":false,\"lockSpritesToSet\":true,\"showAccurateTileset\":true,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
+                    var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"hideBackground\":false,\"hideGround\":false,\"useFastZoom\":true,\"lockSpritesToSet\":true,\"showAccurateTileset\":true,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
                     System.IO.File.WriteAllText(path, defaultSettings);
                 }
                 
@@ -7283,7 +7486,7 @@ namespace FamidashEditor
                     {
                         // Old version - delete and recreate
                         try { System.IO.File.Delete(path); } catch { }
-                        var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"hideBackground\":false,\"hideGround\":false,\"useFastZoom\":false,\"lockSpritesToSet\":true,\"showAccurateTileset\":true,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
+                        var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"hideBackground\":false,\"hideGround\":false,\"useFastZoom\":true,\"lockSpritesToSet\":true,\"showAccurateTileset\":true,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
                         System.IO.File.WriteAllText(path, defaultSettings);
                         txt = defaultSettings;
                         doc = System.Text.Json.JsonDocument.Parse(txt);
@@ -7451,7 +7654,7 @@ namespace FamidashEditor
                     // optional fast zoom setting
                     if (doc.RootElement.TryGetProperty("useFastZoom", out var ufz))
                     {
-                        try { useFastZoom = ufz.GetBoolean(); } catch { useFastZoom = false; }
+                        try { useFastZoom = ufz.GetBoolean(); } catch { useFastZoom = true; }
                         if (MenuOptionFastZoom != null) MenuOptionFastZoom.IsChecked = useFastZoom;
                     }
 
@@ -7634,6 +7837,65 @@ namespace FamidashEditor
             if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
         }
 
+        private void ResetLoadedMetadataForNewDocument()
+        {
+            loadedTilesetSource = null;
+            loadedSpritesetSource = null;
+            loadedHasEditorSettings = false;
+            loadedChunkWidth = 16;
+            loadedChunkHeight = 27;
+            loadedExportTarget = null;
+            loadedExportFormat = "csv";
+            loadedParallaxSource = null;
+            originalParallaxSource = null;
+            loadedParallaxX = 0.9;
+            loadedParallaxY = 0.9;
+            loadedParallaxRepeatX = true;
+            loadedParallaxRepeatY = true;
+            loadedHasParallaxLayer = true;
+            loadedGroundSource = null;
+            loadedGroundOffsetY = 432;
+            loadedGroundRepeatX = true;
+            loadedHasGroundLayer = true;
+            loadedDecoSet = "DECO1";
+            loadedBlockSet = "BLOCKSA";
+            loadedSpikeSet = "SPIKESA";
+            loadedStartingSpeedUiIndex = 1;
+            loadedStartingBackgroundColor = 0x12;
+            loadedStartingGameMode = 0;
+            loadedStartingGroundColor = 0x02;
+            loadedStartingLowerText = null;
+            loadedStartingUpperText = null;
+            loadedStartingDifficulty = 0;
+            loadedStartingStars = 3;
+            loadedSpawnYPositionHi = null;
+            loadedSpawnYPositionLow = null;
+            loadedScrollYPositionHi = null;
+            loadedScrollYPositionLow = null;
+            loadedForcePlatformer = null;
+            loadedMaxFallSpeed = 0x06;
+            noParallaxBg = false;
+
+            try
+            {
+                if (FamiTrackCombo != null)
+                {
+                    for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+                    {
+                        if (FamiTrackCombo.Items[i] is ComboBoxItem item &&
+                            string.Equals(item.Content?.ToString(),
+                                "Stereo Madness",
+                                StringComparison.OrdinalIgnoreCase))
+                        {
+                            FamiTrackCombo.SelectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
         private void CreateNewTab(string? filePath = null)
         {
             // Note: Caller is responsible for saving current tab state before calling this
@@ -7642,6 +7904,7 @@ namespace FamidashEditor
             // no transient values from the previous tab are inherited.
             if (filePath == null)
             {
+                ResetLoadedMetadataForNewDocument();
                 int defaultW = 200;
                 int defaultH = 27;
                 var defaultTiles = Enumerable.Repeat(-1, defaultW * defaultH).ToArray();
@@ -7653,9 +7916,13 @@ namespace FamidashEditor
                     Tiles = defaultTiles,
                     Sprites = defaultSprites,
                     SpritePixelOffsets = new Dictionary<int, (int, int)>(),
+                    SpriteAnchors = new Dictionary<int, (int, int)>(),
                     MapWidth = defaultW,
                     MapHeight = defaultH,
                     HasUnsavedChanges = false,
+                    UndoStack = new Stack<IUndoAction>(),
+                    RedoStack = new Stack<IUndoAction>(),
+                    Zoom = ZoomSlider?.Value ?? 1.0,
                     LoadedTilesetSource = loadedTilesetSource,
                     LoadedSpritesetSource = loadedSpritesetSource,
                     LoadedHasEditorSettings = loadedHasEditorSettings,
@@ -7691,12 +7958,15 @@ namespace FamidashEditor
                     BackgroundTint = backgroundTint,
                     GroundTint = groundTint,
                     TileTint = tileTint,
+                    SelectedSong = "Stereo Madness",
                     StartPosX = null,  // New tabs should not inherit START POS from previous tab
                     StartPosY = null
                 };
 
                 openFiles.Add(newTabData);
                 currentFileIndex = openFiles.Count - 1;
+                undoStack = newTabData.UndoStack;
+                redoStack = newTabData.RedoStack;
                 
                 // Clear the global START POS marker immediately for new tabs
                 startPosMarkerX = null;
@@ -7764,9 +8034,6 @@ namespace FamidashEditor
                     isHandlingNewTab = false;
                 }
                 
-                // Now call SwitchToTab to properly load the new tab state
-                try { _ = SwitchToTab(openFiles.Count - 1); } catch { }
-
                 EnsureNewTabButton();
                 return;
             }
@@ -7783,9 +8050,13 @@ namespace FamidashEditor
                 Tiles = (tiles != null && tiles.Length > 0) ? (int[])tiles.Clone() : Array.Empty<int>(),
                 Sprites = (sprites != null && sprites.Length > 0) ? (int[])sprites.Clone() : Array.Empty<int>(),
                 SpritePixelOffsets = new Dictionary<int, (int, int)>(spritePixelOffsets),
+                SpriteAnchors = new Dictionary<int, (int, int)>(spriteAnchors),
                 MapWidth = mapWidth,
                 MapHeight = mapHeight,
                 HasUnsavedChanges = hasUnsavedChanges,
+                UndoStack = new Stack<IUndoAction>(),
+                RedoStack = new Stack<IUndoAction>(),
+                Zoom = ZoomSlider?.Value ?? 1.0,
                 LoadedTilesetSource = loadedTilesetSource,
                 LoadedSpritesetSource = loadedSpritesetSource,
                 LoadedHasEditorSettings = loadedHasEditorSettings,
@@ -7827,6 +8098,8 @@ namespace FamidashEditor
             
             openFiles.Add(tabData);
             currentFileIndex = openFiles.Count - 1;
+            undoStack = tabData.UndoStack;
+            redoStack = tabData.RedoStack;
             
             // Clear the global START POS marker immediately for new file tabs
             startPosMarkerX = null;
@@ -8463,6 +8736,8 @@ namespace FamidashEditor
                     // Pass current simulator-related options into the window
                     try { sim.ShowSpriteHitboxes = (MenuOptionShowSpriteHitboxes.IsChecked == true); } catch { }
                     try { sim.LevelName = currentFilePath ?? ""; } catch { }
+                    sim.SourceDocumentSessionId =
+                        CurrentDocumentSessionId;
                     sim.Owner = this;
                     // Set starting speed before ApplyStartPosMarker so it's available during initialization
                     try { sim.SetStartingSpeedUiIndex(loadedStartingSpeedUiIndex); } catch { }
@@ -8811,75 +9086,138 @@ namespace FamidashEditor
 
         private async System.Threading.Tasks.Task CloseTabAtIndex(int index)
         {
-            if (index < 0 || index >= openFiles.Count) return;
-            
-            // Stop music player when closing a tab
-            try { famiIntegration.Stop(); } catch { }
-            
-            var tabData = openFiles[index];
-            
-            // Check for unsaved changes
+            if (pathfinderRunInProgress)
+            {
+                if (StatusText != null)
+                    StatusText.Text =
+                        "Finish or stop the active pathfinder before closing a level.";
+                return;
+            }
+            if (isClosingTab || index < 0 || index >= openFiles.Count)
+                return;
+
+            isClosingTab = true;
+            try
+            {
+                FileTabData tabData = openFiles[index];
+                FileTabData? activeTab =
+                    currentFileIndex >= 0 && currentFileIndex < openFiles.Count
+                        ? openFiles[currentFileIndex]
+                        : null;
+
+                if (ReferenceEquals(tabData, activeTab))
+                    SaveCurrentTabState();
+
                 if (tabData.HasUnsavedChanges)
-            {
-                var fileName = tabData.FilePath != null ? System.IO.Path.GetFileName(tabData.FilePath) : "Untitled";
-                var result = MessageBox.Show(
-                    $"Save changes to {fileName}?",
-                    "Unsaved Changes",
-                    MessageBoxButton.YesNoCancel,
-                    MessageBoxImage.Question);
-                
-                if (result == MessageBoxResult.Cancel)
                 {
-                    return;
+                    string fileName = tabData.FilePath != null
+                        ? System.IO.Path.GetFileName(tabData.FilePath)
+                        : "Untitled";
+                    var result = MessageBox.Show(
+                        $"Save changes to {fileName}?",
+                        "Unsaved Changes",
+                        MessageBoxButton.YesNoCancel,
+                        MessageBoxImage.Question);
+
+                    if (result == MessageBoxResult.Cancel) return;
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        int saveIndex = openFiles.IndexOf(tabData);
+                        if (saveIndex < 0) return;
+                        await SwitchToTab(saveIndex);
+                        SaveButton_Click(this, new RoutedEventArgs());
+                        SaveCurrentTabState();
+                        if (!lastSaveSucceeded ||
+                            tabData.HasUnsavedChanges)
+                        {
+                            return;
+                        }
+                    }
                 }
-                else if (result == MessageBoxResult.Yes)
+
+                index = openFiles.IndexOf(tabData);
+                if (index < 0) return;
+                bool closingActive =
+                    currentFileIndex >= 0 &&
+                    currentFileIndex < openFiles.Count &&
+                    ReferenceEquals(openFiles[currentFileIndex], tabData);
+
+                if (closingActive)
                 {
-                    // Switch to that tab and save
-                    await SwitchToTab(index);
-                    SaveButton_Click(this, new RoutedEventArgs());
-                    if (hasUnsavedChanges) return; // User cancelled save
+                    try { famiIntegration.Stop(); } catch { }
                 }
+
+                openFiles.RemoveAt(index);
+                isHandlingNewTab = true;
+                try
+                {
+                    for (int i = 0; i < FileTabControl.Items.Count; i++)
+                    {
+                        if (FileTabControl.Items[i] is TabItem tab &&
+                            ReferenceEquals(tab.Tag, tabData))
+                        {
+                            FileTabControl.Items.RemoveAt(i);
+                            break;
+                        }
+                    }
+                }
+                finally
+                {
+                    isHandlingNewTab = false;
+                }
+
+                if (closingActive)
+                {
+                    if (openFiles.Count > 0)
+                    {
+                        int newIndex = Math.Min(index,
+                            openFiles.Count - 1);
+                        currentFileIndex = -1;
+                        await SwitchToTab(newIndex);
+                    }
+                    else
+                    {
+                        currentFileIndex = -1;
+                        mapWidth = 200;
+                        mapHeight = 27;
+                        ClearReplayStateForFreshDocument();
+                        InitDefaultMap();
+                        spritePixelOffsets.Clear();
+                        spriteAnchors.Clear();
+                        currentFilePath = null;
+                        hasUnsavedChanges = false;
+                        CreateNewTab(null);
+                        try
+                        {
+                            RebuildAllTilesBitmap(
+                                ZoomSlider?.Value ?? 1.0,
+                                mapViewportPadding);
+                            RebuildAllSpritesBitmap(
+                                ZoomSlider?.Value ?? 1.0,
+                                mapViewportPadding);
+                        }
+                        catch { }
+                        Redraw();
+                    }
+                }
+                else if (activeTab != null)
+                {
+                    currentFileIndex = openFiles.IndexOf(activeTab);
+                }
+
+                EnsureNewTabButton();
+                try
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        try { Activate(); Focus(); } catch { }
+                    }, System.Windows.Threading.DispatcherPriority.Background);
+                }
+                catch { }
             }
-            
-            // Remove the tab
-            openFiles.RemoveAt(index);
-            
-            // Find and remove the UI tab that references the removed tab data
-            for (int i = 0; i < FileTabControl.Items.Count; i++)
+            finally
             {
-                if (FileTabControl.Items[i] is TabItem tab && tab.Tag == tabData)
-                {
-                    // Temporarily suppress SelectionChanged handling while we remove the tab
-                    try { isHandlingNewTab = true; } catch { }
-                    try { FileTabControl.Items.RemoveAt(i); } catch { }
-                    try { isHandlingNewTab = false; } catch { }
-                    break;
-                }
-            }
-            
-            // If we closed the current tab, switch to another
-            if (currentFileIndex == index)
-            {
-                if (openFiles.Count > 0)
-                {
-                    int newIndex = Math.Min(index, openFiles.Count - 1);
-                    // Clear currentFileIndex so SwitchToTab does not save the now-closed
-                    // editor state into the shifted tab slot (which would overwrite it).
-                    currentFileIndex = -1;
-                    await SwitchToTab(newIndex);
-                    // Restore window focus after switching
-                    try { await Dispatcher.InvokeAsync(new Action(() => { try { this.Activate(); this.Focus(); } catch { } }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
-                }
-                else
-                {
-                    // No tabs left, create a new one
-                    NewMenuItem_Click(this, new RoutedEventArgs());
-                    try { await Dispatcher.InvokeAsync(new Action(() => { try { this.Activate(); this.Focus(); } catch { } }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
-                }
-            }
-            else if (currentFileIndex > index)
-            {
-                currentFileIndex--;
+                isClosingTab = false;
             }
         }
 
@@ -8891,12 +9229,186 @@ namespace FamidashEditor
             }
         }
 
+        private static List<List<(int x, int y)>> ClonePathLists(
+            IEnumerable<IEnumerable<(int x, int y)>> source)
+        {
+            return source.Select(path => path.ToList()).ToList();
+        }
+
+        private static List<(List<(int x, int y)> points, Color color)>
+            CloneColoredPathLists(
+                IEnumerable<(List<(int x, int y)> points, Color color)> source)
+        {
+            return source.Select(path =>
+                (path.points.ToList(), path.color)).ToList();
+        }
+
+        private void ResetTransientEditorStateForTabSwitch()
+        {
+            try { CancelPolygon(); } catch { }
+            try
+            {
+                isDeferredDrawing = false;
+                drawStartX = drawStartY = drawCurrentX = drawCurrentY = -1;
+                ClearDeferredPreview();
+            }
+            catch { }
+
+            isPainting = false;
+            isSelecting = false;
+            isDraggingSelection = false;
+            isResizingSelection = false;
+            isResizeModeActive = false;
+            isMiddlePanning = false;
+            dragMovedOffMap = false;
+            currentCompositeAction = null;
+            currentCompositeSpriteAction = null;
+            lastPaintX = lastPaintY = -1;
+            hasZoomAnchor = false;
+            deferZoomRebuild = false;
+            try { zoomCommitTimer?.Stop(); } catch { }
+            try { zoomThrottleTimer?.Stop(); } catch { }
+            try { selectSameHoverTimer?.Stop(); } catch { }
+            pendingHoverIndicesRef = null;
+            pendingHoverTileId = int.MinValue;
+            try { portalDirtyTimer?.Stop(); } catch { }
+            portalDirtyScheduled = false;
+            try { incompatibleDirtyTimer?.Stop(); } catch { }
+            incompatibleDirtyScheduled = false;
+
+            try { if (CanvasHost?.IsMouseCaptured == true) CanvasHost.ReleaseMouseCapture(); } catch { }
+            try { if (Mouse.Captured != null) Mouse.Captured.ReleaseMouseCapture(); } catch { }
+            try
+            {
+                if (GhostImage != null)
+                {
+                    GhostImage.Visibility = Visibility.Collapsed;
+                    GhostImage.Source = null;
+                }
+            }
+            catch { }
+            try { ClearSelection(); } catch { }
+            try { spriteFrameOffsets.Clear(); } catch { }
+            ClearSpeculativePathState();
+        }
+
+        private void ClearSpeculativePathState()
+        {
+            try
+            {
+                foreach (var element in _speculativePolylines)
+                {
+                    try { CanvasHost?.Children.Remove(element); } catch { }
+                }
+                _speculativePolylines.Clear();
+            }
+            catch { }
+            try { _speculativePathData.Clear(); } catch { }
+        }
+
+        private void ClearReplayStateForFreshDocument()
+        {
+            try { ClearPlayerPathOverlay(); } catch { }
+            try
+            {
+                if (startPosMarker != null && CanvasHost != null)
+                    CanvasHost.Children.Remove(startPosMarker);
+            }
+            catch { }
+            startPosMarker = null;
+            startPosMarkerX = null;
+            startPosMarkerY = null;
+            precomputedPathfinderInputs = null;
+            precomputedPathfinderDirections = null;
+            precomputedPathfinderReplayFrames = null;
+            precomputedCollectedCoins = null;
+            ClearSpeculativePathState();
+        }
+
+        private async Task SelectTabItemForDataAsync(FileTabData tabData)
+        {
+            try
+            {
+                foreach (var item in FileTabControl.Items)
+                {
+                    if (item is not TabItem tab ||
+                        !ReferenceEquals(tab.Tag, tabData))
+                    {
+                        continue;
+                    }
+
+                    isHandlingNewTab = true;
+                    try
+                    {
+                        lastProgrammaticSelectedTab = tab;
+                        FileTabControl.SelectedItem = tab;
+                    }
+                    finally
+                    {
+                        isHandlingNewTab = false;
+                    }
+
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        lastProgrammaticSelectedTab = null;
+                        try { Activate(); Focus(); } catch { }
+                    }, System.Windows.Threading.DispatcherPriority.Background);
+                    break;
+                }
+            }
+            catch { }
+        }
+
         private async System.Threading.Tasks.Task SwitchToTab(int index)
         {
-            if (isSwitchingTab) return;
             if (index < 0 || index >= openFiles.Count) return;
-            isSwitchingTab = true;
-            
+            FileTabData targetTab = openFiles[index];
+            if (pathfinderRunInProgress &&
+                !IsActiveDocumentSession(targetTab))
+            {
+                if (currentFileIndex >= 0 &&
+                    currentFileIndex < openFiles.Count)
+                {
+                    await SelectTabItemForDataAsync(
+                        openFiles[currentFileIndex]);
+                }
+                if (StatusText != null)
+                {
+                    StatusText.Text =
+                        "Finish or stop the active pathfinder before switching levels.";
+                }
+                return;
+            }
+
+            await tabSwitchGate.WaitAsync();
+            try
+            {
+                int targetIndex = openFiles.IndexOf(targetTab);
+                if (targetIndex < 0) return;
+                if (currentFileIndex == targetIndex)
+                {
+                    await SelectTabItemForDataAsync(targetTab);
+                    return;
+                }
+
+                await SwitchToTabCore(targetTab);
+            }
+            finally
+            {
+                tabSwitchGate.Release();
+            }
+        }
+
+        private async System.Threading.Tasks.Task SwitchToTabCore(
+            FileTabData targetTab)
+        {
+            int index = openFiles.IndexOf(targetTab);
+            if (index < 0) return;
+            double requestedDisplayScale =
+                Math.Clamp(targetTab.Zoom, 0.25, 4.0);
+            bool previousRenderSuppression = suppressMapRendering;
+            bool previousMainWindowEnabled = IsEnabled;
+
             // Show loading indicator
             LoadingWindow? loadingWindow = null;
             try
@@ -8904,24 +9416,33 @@ namespace FamidashEditor
                 loadingWindow = new LoadingWindow { Owner = this };
                 loadingWindow.SetMessage("Tab rendering, please wait...");
                 loadingWindow.Show();
-                
+
                 // Allow UI to update
                 await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
             }
             catch { }
-            
+
             try
             {
+                suppressMapRendering = true;
+                Interlocked.Increment(ref tileRenderGeneration);
+                Interlocked.Increment(ref spriteRenderGeneration);
+
                 // Save current tab state
                 if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
                 {
                     SaveCurrentTabState();
                 }
-                
+
+                ResetTransientEditorStateForTabSwitch();
+                ClearPlayerPathOverlay();
+
                 // Load new tab state
+                index = openFiles.IndexOf(targetTab);
+                if (index < 0) return;
                 currentFileIndex = index;
-                var tabData = openFiles[index];
-                
+                var tabData = targetTab;
+
                 // CRITICAL: Create completely independent deep copies
                 if (tabData.Tiles != null && tabData.Tiles.Length > 0)
                 {
@@ -8932,7 +9453,7 @@ namespace FamidashEditor
                 {
                     tiles = Array.Empty<int>();
                 }
-                
+
                 if (tabData.Sprites != null && tabData.Sprites.Length > 0)
                 {
                     sprites = new int[tabData.Sprites.Length];
@@ -8943,95 +9464,161 @@ namespace FamidashEditor
                     sprites = Array.Empty<int>();
                 }
                 spritePixelOffsets = new Dictionary<int, (int, int)>(tabData.SpritePixelOffsets);
+                spriteAnchors = new Dictionary<int, (int, int)>(
+                    tabData.SpriteAnchors);
                 mapWidth = tabData.MapWidth;
                 mapHeight = tabData.MapHeight;
                 hasUnsavedChanges = tabData.HasUnsavedChanges;
                 currentFilePath = tabData.FilePath;
+                undoStack = tabData.UndoStack;
+                redoStack = tabData.RedoStack;
+                playerPathPoints = tabData.PlayerPathPoints.ToList();
+                playerPath2Points = tabData.PlayerPath2Points.ToList();
+                playerPathIncomplete = tabData.PlayerPathIncomplete;
+                pathfinderPaths =
+                    CloneColoredPathLists(tabData.PathfinderPaths);
+                pathfinderPath2s =
+                    CloneColoredPathLists(tabData.PathfinderPath2s);
+                attemptedPaths = ClonePathLists(tabData.AttemptedPaths);
+                mesenPaths = ClonePathLists(tabData.MesenPaths);
+                _attemptedPathsCleared = tabData.AttemptedPathsCleared;
+                playerDeathMarkerX = tabData.DeathMarkerX;
+                playerDeathMarkerY = tabData.DeathMarkerY;
+                precomputedPathfinderInputs =
+                    tabData.PrecomputedPathfinderInputs?.ToList();
+                precomputedPathfinderDirections =
+                    tabData.PrecomputedPathfinderDirections?.ToList();
+                precomputedPathfinderReplayFrames =
+                    tabData.PrecomputedPathfinderReplayFrames?.ToList();
+                precomputedCollectedCoins =
+                    tabData.PrecomputedCollectedCoins != null
+                        ? new HashSet<int>(
+                            tabData.PrecomputedCollectedCoins)
+                        : null;
                 RefreshReplayButtonVisibility();
                 
                 if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
                 if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
                 
-                // Load TMX config for this file to get level-specific tints and settings
-                // This will set all the loaded* variables from the config file
-                if (!string.IsNullOrEmpty(tabData.FilePath) && System.IO.File.Exists(tabData.FilePath))
+                // The tab snapshot is authoritative while the document is open.
+                // Re-reading its config from disk here used to overwrite unsaved
+                // sprite shifts and other per-level edits on every tab switch.
+                loadedTilesetSource = tabData.LoadedTilesetSource;
+                loadedSpritesetSource = tabData.LoadedSpritesetSource;
+                loadedHasEditorSettings = tabData.LoadedHasEditorSettings;
+                loadedChunkWidth = tabData.LoadedChunkWidth;
+                loadedChunkHeight = tabData.LoadedChunkHeight;
+                loadedExportTarget = tabData.LoadedExportTarget;
+                loadedExportFormat = tabData.LoadedExportFormat;
+                loadedParallaxSource = tabData.LoadedParallaxSource;
+                originalParallaxSource = tabData.LoadedParallaxSource;
+                loadedParallaxX = tabData.LoadedParallaxX;
+                loadedParallaxY = tabData.LoadedParallaxY;
+                loadedParallaxRepeatX = tabData.LoadedParallaxRepeatX;
+                loadedParallaxRepeatY = tabData.LoadedParallaxRepeatY;
+                loadedHasParallaxLayer = tabData.LoadedHasParallaxLayer;
+                loadedGroundSource = tabData.LoadedGroundSource;
+                loadedGroundOffsetY = tabData.LoadedGroundOffsetY;
+                loadedGroundRepeatX = tabData.LoadedGroundRepeatX;
+                loadedHasGroundLayer = tabData.LoadedHasGroundLayer;
+                loadedDecoSet = tabData.LoadedDecoSet;
+                loadedBlockSet = tabData.LoadedBlockSet;
+                loadedSpikeSet = tabData.LoadedSpikeSet;
+                loadedMaxFallSpeed = tabData.LoadedMaxFallSpeed;
+                loadedStartingSpeedUiIndex =
+                    tabData.LoadedStartingSpeedUiIndex;
+                loadedStartingBackgroundColor =
+                    tabData.LoadedStartingBackgroundColor;
+                loadedStartingGameMode = tabData.LoadedStartingGameMode;
+                loadedStartingGroundColor =
+                    tabData.LoadedStartingGroundColor;
+                loadedStartingDifficulty =
+                    tabData.LoadedStartingDifficulty;
+                loadedStartingStars = tabData.LoadedStartingStars;
+                loadedStartingLowerText =
+                    tabData.LoadedStartingLowerText;
+                loadedStartingUpperText =
+                    tabData.LoadedStartingUpperText;
+                loadedSpawnYPositionHi =
+                    tabData.LoadedSpawnYPositionHi;
+                loadedSpawnYPositionLow =
+                    tabData.LoadedSpawnYPositionLow;
+                loadedScrollYPositionHi =
+                    tabData.LoadedScrollYPositionHi;
+                loadedScrollYPositionLow =
+                    tabData.LoadedScrollYPositionLow;
+                loadedForcePlatformer = tabData.LoadedForcePlatformer;
+                noParallaxBg = tabData.NoParallaxBg;
+                backgroundTint = tabData.BackgroundTint;
+                groundTint = tabData.GroundTint;
+                tileTint = tabData.TileTint;
+
+                // Restore selected song
+                try
                 {
-                    try 
-                    { 
-                        LoadTmxConfig(tabData.FilePath);
-                        
-                        // Reapply tileset if accurate tileset mode is enabled
-                        if (showAccurateTileset)
-                        {
-                            try { SetShowAccurateTileset(true); } catch { }
-                        }
-                    } 
-                    catch { }
-                }
-                else
-                {
-                    // No file, restore all metadata from tab data
-                    loadedTilesetSource = tabData.LoadedTilesetSource;
-                    loadedSpritesetSource = tabData.LoadedSpritesetSource;
-                    loadedHasEditorSettings = tabData.LoadedHasEditorSettings;
-                    loadedChunkWidth = tabData.LoadedChunkWidth;
-                    loadedChunkHeight = tabData.LoadedChunkHeight;
-                    loadedExportTarget = tabData.LoadedExportTarget;
-                    loadedExportFormat = tabData.LoadedExportFormat;
-                    loadedParallaxSource = tabData.LoadedParallaxSource;
-                    loadedParallaxX = tabData.LoadedParallaxX;
-                    loadedParallaxY = tabData.LoadedParallaxY;
-                    loadedParallaxRepeatX = tabData.LoadedParallaxRepeatX;
-                    loadedParallaxRepeatY = tabData.LoadedParallaxRepeatY;
-                    loadedHasParallaxLayer = tabData.LoadedHasParallaxLayer;
-                    loadedGroundSource = tabData.LoadedGroundSource;
-                    loadedGroundOffsetY = tabData.LoadedGroundOffsetY;
-                    loadedGroundRepeatX = tabData.LoadedGroundRepeatX;
-                    loadedHasGroundLayer = tabData.LoadedHasGroundLayer;
-                    loadedDecoSet = tabData.LoadedDecoSet;
-                    loadedBlockSet = tabData.LoadedBlockSet;
-                    loadedSpikeSet = tabData.LoadedSpikeSet;
-                    try { loadedMaxFallSpeed = tabData.LoadedMaxFallSpeed; } catch { loadedMaxFallSpeed = 0x06; }
-                    try { loadedStartingSpeedUiIndex = tabData.LoadedStartingSpeedUiIndex; } catch { loadedStartingSpeedUiIndex = 1; }
-                    try { loadedStartingBackgroundColor = tabData.LoadedStartingBackgroundColor; } catch { loadedStartingBackgroundColor = null; }
-                    try { loadedStartingGameMode = tabData.LoadedStartingGameMode; } catch { loadedStartingGameMode = null; }
-                    try { loadedStartingGroundColor = tabData.LoadedStartingGroundColor; } catch { loadedStartingGroundColor = null; }
-                    try { loadedSpawnYPositionHi = tabData.LoadedSpawnYPositionHi; } catch { loadedSpawnYPositionHi = null; }
-                    try { loadedSpawnYPositionLow = tabData.LoadedSpawnYPositionLow; } catch { loadedSpawnYPositionLow = null; }
-                    try { loadedScrollYPositionHi = tabData.LoadedScrollYPositionHi; } catch { loadedScrollYPositionHi = null; }
-                    try { loadedScrollYPositionLow = tabData.LoadedScrollYPositionLow; } catch { loadedScrollYPositionLow = null; }
-                    try { loadedForcePlatformer = tabData.LoadedForcePlatformer; } catch { loadedForcePlatformer = null; }
-                    noParallaxBg = tabData.NoParallaxBg;
-                    backgroundTint = tabData.BackgroundTint;
-                    groundTint = tabData.GroundTint;
-                    tileTint = tabData.TileTint;
-                    
-                    // Restore selected song
-                    try
+                    if (FamiTrackCombo != null)
                     {
-                        if (!string.IsNullOrEmpty(tabData.SelectedSong) && FamiTrackCombo != null)
+                        string desiredSong =
+                            string.IsNullOrEmpty(tabData.SelectedSong)
+                                ? "Stereo Madness"
+                                : tabData.SelectedSong;
+                        int selectedIndex = -1;
+                        for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
                         {
-                            // Try to find and select the song in the combo box
-                            for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+                            if (FamiTrackCombo.Items[i] is
+                                System.Windows.Controls.ComboBoxItem item &&
+                                item.Content?.ToString() ==
+                                    desiredSong)
                             {
-                                if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item && 
-                                    item.Content?.ToString() == tabData.SelectedSong)
+                                selectedIndex = i;
+                                break;
+                            }
+                        }
+                        if (selectedIndex < 0)
+                        {
+                            for (int i = 0;
+                                 i < FamiTrackCombo.Items.Count; i++)
+                            {
+                                if (FamiTrackCombo.Items[i] is
+                                    ComboBoxItem item &&
+                                    string.Equals(
+                                        item.Content?.ToString(),
+                                        "Stereo Madness",
+                                        StringComparison.OrdinalIgnoreCase))
                                 {
-                                    FamiTrackCombo.SelectedIndex = i;
+                                    selectedIndex = i;
                                     break;
                                 }
                             }
                         }
+                        FamiTrackCombo.SelectedIndex = selectedIndex;
                     }
-                    catch { }
-                    
-                    // MenuOptionNoParallax removed from UI
-                    
-                    // Rebuild tinted images
-                    UpdateParallaxTint();
-                    UpdateGroundTint();
-                    UpdateTileTint();
                 }
+                catch { }
+
+                UpdateParallaxTint();
+                UpdateGroundTint();
+                UpdateTileTint();
+                try { ApplyParallaxChoice(); } catch { }
+                try
+                {
+                    if (!string.IsNullOrEmpty(loadedSpritesetSource) &&
+                        File.Exists(loadedSpritesetSource))
+                    {
+                        LoadSpriteset(loadedSpritesetSource);
+                    }
+                    if (showAccurateTileset)
+                    {
+                        SetShowAccurateTileset(true, loadedBlockSet,
+                            loadedSpikeSet);
+                    }
+                    else if (!string.IsNullOrEmpty(loadedTilesetSource) &&
+                        File.Exists(loadedTilesetSource))
+                    {
+                        LoadTileset(loadedTilesetSource);
+                    }
+                }
+                catch { }
                 
                 // Update locked sprites if that option is enabled
                 if (lockSpritesToSet && MenuOptionLockSprites != null)
@@ -9042,45 +9629,51 @@ namespace FamidashEditor
                 // Mark background dirty and clear caches
                 backgroundDirty = true;
                 try { scaledTileCaches.Clear(); } catch { }
-                try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
-                
-                Redraw();
-                
+
+                isRestoringTabViewport = true;
+                try
+                {
+                    if (ZoomSlider != null)
+                        ZoomSlider.Value = requestedDisplayScale;
+                }
+                finally
+                {
+                    isRestoringTabViewport = false;
+                }
+                suppressMapRendering = previousRenderSuppression;
+                IsEnabled = false;
+                await RenderCurrentMapAfterBulkLoadAsync(
+                    requestedDisplayScale);
+
+                try
+                {
+                    MapScrollViewer?.UpdateLayout();
+                    MapScrollViewer?.ScrollToHorizontalOffset(
+                        tabData.HorizontalOffset);
+                    MapScrollViewer?.ScrollToVerticalOffset(
+                        tabData.VerticalOffset);
+                }
+                catch { }
+
                 // Restore START POS marker from tab data
                 SetStartPosMarker(tabData.StartPosX, tabData.StartPosY);
+                UpdatePlayerPathOverlay();
+                if (tabData.DeathMarkerX.HasValue &&
+                    tabData.DeathMarkerY.HasValue)
+                {
+                    AddDeathMarker(tabData.DeathMarkerX.Value,
+                        tabData.DeathMarkerY.Value);
+                }
             }
             finally
             {
                 // Close loading indicator
                 try { loadingWindow?.Close(); } catch { }
-                isSwitchingTab = false;
+                suppressMapRendering = previousRenderSuppression;
+                IsEnabled = previousMainWindowEnabled;
             }
 
-            // Ensure the tab control selection matches the active tab visually.
-            try
-            {
-                if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
-                {
-                    for (int i = 0; i < FileTabControl.Items.Count; i++)
-                    {
-                        if (FileTabControl.Items[i] is TabItem ti && ti.Tag is FileTabData td && openFiles.IndexOf(td) == currentFileIndex)
-                        {
-                            try
-                            {
-                                isHandlingNewTab = true;
-                                lastProgrammaticSelectedTab = ti;
-                                FileTabControl.SelectedItem = ti;
-                                try { await Dispatcher.InvokeAsync(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
-                                // Bring the main window forward after switching tabs
-                                try { await Dispatcher.InvokeAsync(new Action(() => { try { this.Activate(); this.Focus(); } catch { } }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
-                            }
-                            finally { isHandlingNewTab = false; }
-                            break;
-                        }
-                    }
-                }
-            }
-            catch { }
+            await SelectTabItemForDataAsync(targetTab);
         }
 
         private void SaveCurrentTabState()
@@ -9109,9 +9702,18 @@ namespace FamidashEditor
                 tabData.Sprites = Array.Empty<int>();
             }
             tabData.SpritePixelOffsets = new Dictionary<int, (int, int)>(spritePixelOffsets);
+            tabData.SpriteAnchors = new Dictionary<int, (int, int)>(
+                spriteAnchors);
             tabData.MapWidth = mapWidth;
             tabData.MapHeight = mapHeight;
             tabData.HasUnsavedChanges = hasUnsavedChanges;
+            tabData.UndoStack = undoStack;
+            tabData.RedoStack = redoStack;
+            tabData.Zoom = ZoomSlider?.Value ?? 1.0;
+            tabData.HorizontalOffset =
+                MapScrollViewer?.HorizontalOffset ?? 0.0;
+            tabData.VerticalOffset =
+                MapScrollViewer?.VerticalOffset ?? 0.0;
             // DO NOT update FilePath here - it should remain constant for each tab
             // Updating it would cause tab corruption when loading a new file
             // tabData.FilePath = currentFilePath;
@@ -9171,6 +9773,29 @@ namespace FamidashEditor
             // Save START POS
             tabData.StartPosX = startPosMarkerX;
             tabData.StartPosY = startPosMarkerY;
+
+            tabData.PlayerPathPoints = playerPathPoints.ToList();
+            tabData.PlayerPath2Points = playerPath2Points.ToList();
+            tabData.PlayerPathIncomplete = playerPathIncomplete;
+            tabData.PathfinderPaths =
+                CloneColoredPathLists(pathfinderPaths);
+            tabData.PathfinderPath2s =
+                CloneColoredPathLists(pathfinderPath2s);
+            tabData.AttemptedPaths = ClonePathLists(attemptedPaths);
+            tabData.MesenPaths = ClonePathLists(mesenPaths);
+            tabData.AttemptedPathsCleared = _attemptedPathsCleared;
+            tabData.DeathMarkerX = playerDeathMarkerX;
+            tabData.DeathMarkerY = playerDeathMarkerY;
+            tabData.PrecomputedPathfinderInputs =
+                precomputedPathfinderInputs?.ToList();
+            tabData.PrecomputedPathfinderDirections =
+                precomputedPathfinderDirections?.ToList();
+            tabData.PrecomputedPathfinderReplayFrames =
+                precomputedPathfinderReplayFrames?.ToList();
+            tabData.PrecomputedCollectedCoins =
+                precomputedCollectedCoins != null
+                    ? new HashSet<int>(precomputedCollectedCoins)
+                    : null;
             
             // Save selected song
             try
@@ -9220,9 +9845,9 @@ namespace FamidashEditor
 
         private async void FileTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            // Prevent re-entrancy or handling while a tab switch is in progress
+            // Programmatic selections are suppressed, while genuine user
+            // selections are queued by SwitchToTab if a render is in progress.
             if (isHandlingNewTab) return;
-            if (isSwitchingTab) return;
 
             // If this selection was triggered programmatically by our code, ignore it once and clear the marker.
             try
@@ -9230,7 +9855,6 @@ namespace FamidashEditor
                 if (lastProgrammaticSelectedTab != null && ReferenceEquals(lastProgrammaticSelectedTab, FileTabControl.SelectedItem))
                 {
                     lastProgrammaticSelectedTab = null;
-                    if (FileTabControl.SelectedItem is TabItem t) lastSelectedTab = t;
                     return;
                 }
             }
@@ -9238,12 +9862,6 @@ namespace FamidashEditor
 
                 if (FileTabControl.SelectedItem is TabItem tab)
             {
-                    // Ignore if selection didn't actually change (queued duplicate events)
-                    if (lastSelectedTab != null && ReferenceEquals(lastSelectedTab, tab))
-                    {
-                        return;
-                    }
-
                     // Only trigger new tab creation if the selected tab is the + tab and it is the last tab
                     if (tab.Tag?.ToString() == "NEW" && FileTabControl.Items[FileTabControl.Items.Count - 1] == tab)
                 {
@@ -9296,7 +9914,6 @@ namespace FamidashEditor
                     // SelectedItem programmatically, so keeping the original +
                     // TabItem here makes the next user click look like a stale
                     // duplicate selection.
-                    lastSelectedTab = FileTabControl.SelectedItem as TabItem ?? tab;
             }
         }
 
@@ -9383,42 +10000,26 @@ namespace FamidashEditor
             }
         }
 
-        private void LoadTMXFile(string filePath)
+        private async void LoadTMXFile(string filePath)
         {
     #pragma warning disable CS8602
-            filePath = NormalizeEditorFilePath(filePath);
-
-            // Clear player path and death markers when loading new level
-            try
+            if (pathfinderRunInProgress)
             {
-                if (playerPathPolyline != null && CanvasHost != null) CanvasHost.Children.Remove(playerPathPolyline);
-                playerPathPolyline = null;
-                if (playerPath2Polyline != null && CanvasHost != null) CanvasHost.Children.Remove(playerPath2Polyline);
-                playerPath2Polyline = null;
-                playerPathPoints.Clear();
-                playerPath2Points.Clear();
-                playerPathIncomplete = false;
-                if (playerDeathMarkerA != null && CanvasHost != null) CanvasHost.Children.Remove(playerDeathMarkerA);
-                if (playerDeathMarkerB != null && CanvasHost != null) CanvasHost.Children.Remove(playerDeathMarkerB);
-                playerDeathMarkerA = null;
-                playerDeathMarkerB = null;
-                if (playerIncompleteMarkerA != null && CanvasHost != null) CanvasHost.Children.Remove(playerIncompleteMarkerA);
-                if (playerIncompleteMarkerB != null && CanvasHost != null) CanvasHost.Children.Remove(playerIncompleteMarkerB);
-                playerIncompleteMarkerA = null;
-                playerIncompleteMarkerB = null;
-                if (startPosMarker != null && CanvasHost != null) CanvasHost.Children.Remove(startPosMarker);
-                startPosMarker = null;
-                startPosMarkerX = null;
-                startPosMarkerY = null;
+                if (StatusText != null)
+                    StatusText.Text =
+                        "Finish or stop the active pathfinder before opening another level.";
+                return;
             }
-            catch { }
+            if (isLoadingMapFile) return;
+            filePath = NormalizeEditorFilePath(filePath);
+            double requestedDisplayScale = ZoomSlider?.Value ?? 1.0;
 
             // If this file is already open, select that tab instead of creating a
             // duplicate tab with independent dirty state for the same on-disk file.
             int existingTabIndex = FindOpenFileTabIndex(filePath);
             if (existingTabIndex >= 0)
             {
-                try { _ = SwitchToTab(existingTabIndex); } catch { }
+                try { await SwitchToTab(existingTabIndex); } catch { }
                 try { AddToRecentFiles(filePath); } catch { }
                 if (StatusText != null) StatusText.Text = $"Switched to open tab: {System.IO.Path.GetFileName(filePath)}";
                 return;
@@ -9455,10 +10056,8 @@ namespace FamidashEditor
                         else
                         {
                             // Explicit discard: this is the one case where replacing
-                            // an untitled dirty tab is intentional.
-                            hasUnsavedChanges = false;
-                            currentTab.HasUnsavedChanges = false;
-                            try { UpdateTabHeaderForIndex(currentFileIndex); } catch { }
+                            // an untitled dirty tab is intentional. Do not mutate it
+                            // until the replacement file has parsed successfully.
                             replaceCurrentTab = true;
                         }
                     }
@@ -9469,25 +10068,37 @@ namespace FamidashEditor
                 }
             }
             catch { }
-            
+
             LoadingWindow? loadingWindow = null;
+            bool previousRenderSuppression = suppressMapRendering;
+            bool previousMainWindowEnabled = IsEnabled;
             try
             {
+                isLoadingMapFile = true;
                 string ext = Path.GetExtension(filePath).ToLowerInvariant();
                 int loadedWidth = 0;
                 int loadedHeight = 0;
                 int[]? loadedTiles = null;
                 int[]? loadedSprites = null;
+                TmxLevel? loadedTmxLevel = null;
 
                 loadingWindow = new LoadingWindow { Owner = this };
                 loadingWindow.SetMessage("Loading file...\nThis may take a while on larger maps.");
                 loadingWindow.Show();
                 Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
 
+                // Config/tint/tileset handlers normally redraw immediately. During
+                // a load those intermediate frames are invisible and can multiply
+                // large-map work several times, so defer all map rendering.
+                suppressMapRendering = true;
+                Interlocked.Increment(ref tileRenderGeneration);
+                Interlocked.Increment(ref spriteRenderGeneration);
+
                 if (ext == ".tmx")
                 {
                     // Load TMX format
                     var tmxLevel = TmxHandler.LoadTmx(filePath, useLegacyTriggerOffset);
+                    loadedTmxLevel = tmxLevel;
                     loadedWidth = tmxLevel.Width;
                     loadedHeight = tmxLevel.Height;
                     // CRITICAL: Create copies immediately to prevent any reference sharing
@@ -9505,29 +10116,6 @@ namespace FamidashEditor
                         this.Focus();
                     }
                     
-                    // Store TMX metadata to preserve when saving
-                    loadedTilesetSource = tmxLevel.TilesetSource;
-                    loadedSpritesetSource = tmxLevel.SpritesetSource;
-                    loadedHasEditorSettings = tmxLevel.HasEditorSettings;
-                    loadedChunkWidth = tmxLevel.ChunkWidth;
-                    loadedChunkHeight = tmxLevel.ChunkHeight;
-                    loadedExportTarget = tmxLevel.ExportTarget;
-                    loadedExportFormat = tmxLevel.ExportFormat;
-                    loadedParallaxSource = tmxLevel.ParallaxSource;
-                    originalParallaxSource = tmxLevel.ParallaxSource; // Save original
-                    loadedParallaxX = tmxLevel.ParallaxX;
-                    loadedParallaxY = tmxLevel.ParallaxY;
-                    loadedParallaxRepeatX = tmxLevel.ParallaxRepeatX;
-                    loadedParallaxRepeatY = tmxLevel.ParallaxRepeatY;
-                    // Treat every level as if it has the parallax/ground image layers
-                    // so the simulator always shows background/ground regardless of TMX contents.
-                    loadedHasParallaxLayer = true;
-                    loadedGroundSource = tmxLevel.GroundSource;
-                    loadedGroundOffsetY = tmxLevel.GroundOffsetY;
-                    loadedGroundRepeatX = tmxLevel.GroundRepeatX;
-                    loadedHasGroundLayer = true;
-                    // Load deco set from TMX if present; config file may override when LoadTmxConfig runs
-                    try { loadedDecoSet = string.IsNullOrEmpty(tmxLevel.DecoSet) ? "deco1" : tmxLevel.DecoSet; } catch { loadedDecoSet = "deco1"; }
                 }
                 else
                 {
@@ -9541,7 +10129,7 @@ namespace FamidashEditor
                         loadedSprites = Enumerable.Repeat(-1, loadedWidth * loadedHeight).ToArray();
                     }
                 }
-                
+
                 if (loadedWidth > 0 && loadedHeight > 0 && loadedTiles != null)
                 {
                     // CRITICAL: Save current tab state BEFORE overwriting tiles/sprites
@@ -9549,6 +10137,58 @@ namespace FamidashEditor
                     if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
                     {
                         SaveCurrentTabState();
+                    }
+
+                    // Parsing and dimensional validation succeeded. From this
+                    // point onward the open is committed; only now clear
+                    // document-specific transient state and replace globals.
+                    ResetTransientEditorStateForTabSwitch();
+                    ClearPlayerPathOverlay();
+                    try
+                    {
+                        if (startPosMarker != null && CanvasHost != null)
+                            CanvasHost.Children.Remove(startPosMarker);
+                    }
+                    catch { }
+                    startPosMarker = null;
+                    startPosMarkerX = null;
+                    startPosMarkerY = null;
+
+                    ResetLoadedMetadataForNewDocument();
+                    if (loadedTmxLevel != null)
+                    {
+                        loadedTilesetSource =
+                            loadedTmxLevel.TilesetSource;
+                        loadedSpritesetSource =
+                            loadedTmxLevel.SpritesetSource;
+                        loadedHasEditorSettings =
+                            loadedTmxLevel.HasEditorSettings;
+                        loadedChunkWidth = loadedTmxLevel.ChunkWidth;
+                        loadedChunkHeight = loadedTmxLevel.ChunkHeight;
+                        loadedExportTarget = loadedTmxLevel.ExportTarget;
+                        loadedExportFormat = loadedTmxLevel.ExportFormat;
+                        loadedParallaxSource =
+                            loadedTmxLevel.ParallaxSource;
+                        originalParallaxSource =
+                            loadedTmxLevel.ParallaxSource;
+                        loadedParallaxX = loadedTmxLevel.ParallaxX;
+                        loadedParallaxY = loadedTmxLevel.ParallaxY;
+                        loadedParallaxRepeatX =
+                            loadedTmxLevel.ParallaxRepeatX;
+                        loadedParallaxRepeatY =
+                            loadedTmxLevel.ParallaxRepeatY;
+                        loadedHasParallaxLayer = true;
+                        loadedGroundSource =
+                            loadedTmxLevel.GroundSource;
+                        loadedGroundOffsetY =
+                            loadedTmxLevel.GroundOffsetY;
+                        loadedGroundRepeatX =
+                            loadedTmxLevel.GroundRepeatX;
+                        loadedHasGroundLayer = true;
+                        loadedDecoSet =
+                            string.IsNullOrEmpty(loadedTmxLevel.DecoSet)
+                                ? "deco1"
+                                : loadedTmxLevel.DecoSet;
                     }
                     
                     // Directly set the data without going through ResizeMap to avoid undo recording
@@ -9587,10 +10227,14 @@ namespace FamidashEditor
                     
                     // Clear selection
                     ClearSelection();
+                    // A newly opened document must never inherit off-grid sprite
+                    // state from the document that happened to be active.
+                    spritePixelOffsets.Clear();
+                    spriteAnchors.Clear();
                     
                     // Clear undo/redo stacks when loading a new file
-                    undoStack.Clear();
-                    redoStack.Clear();
+                    undoStack = new Stack<IUndoAction>();
+                    redoStack = new Stack<IUndoAction>();
 
                     // Set globals for the loaded file, but do not use SetHasUnsavedChanges
                     // until currentFileIndex points at the tab that owns this data.
@@ -9634,6 +10278,27 @@ namespace FamidashEditor
                         try { loadedScrollYPositionHi = null; loadedScrollYPositionLow = null; } catch { }
                         try { loadedForcePlatformer = null; } catch { }
                         try { loadedMaxFallSpeed = 0x06; } catch { }
+                        try
+                        {
+                            if (FamiTrackCombo != null)
+                            {
+                                for (int i = 0;
+                                     i < FamiTrackCombo.Items.Count; i++)
+                                {
+                                    if (FamiTrackCombo.Items[i] is
+                                        ComboBoxItem item &&
+                                        string.Equals(
+                                            item.Content?.ToString(),
+                                            "Stereo Madness",
+                                            StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        FamiTrackCombo.SelectedIndex = i;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
 
                         // Load TMX config to get tints, sprite offsets, sets, and
                         // per-level metadata after the target tab is active.
@@ -9662,13 +10327,13 @@ namespace FamidashEditor
                         catch { }
                     }
                     
-                    // Full redraw with all bitmaps
-                    Redraw();
-                    // A first load can replace the map dimensions, causing DrawMap to
-                    // allocate a blank tile bitmap and queue an async fill. Finish one
-                    // authoritative fill while the loading window is still present;
-                    // this also invalidates any renderer left over from the prior tab.
-                    try { RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { }
+                    // All level/config/asset state is now final. Render one bounded
+                    // backing bitmap and preserve the user's visible zoom with the
+                    // existing transform-only zoom path.
+                    suppressMapRendering = previousRenderSuppression;
+                    IsEnabled = false;
+                    await RenderCurrentMapAfterBulkLoadAsync(
+                        requestedDisplayScale);
 
                     // Position main map scroll roughly two-thirds down the content so the map
                     // is not pinned to top-left when opened. Compute the maximum allowed
@@ -9699,6 +10364,7 @@ namespace FamidashEditor
                         }
                     }
                     catch { }
+                    try { SaveCurrentTabState(); } catch { }
                 }
             }
             catch (Exception ex)
@@ -9707,10 +10373,14 @@ namespace FamidashEditor
             }
             finally
             {
+                suppressMapRendering = previousRenderSuppression;
+                IsEnabled = previousMainWindowEnabled;
+                isLoadingMapFile = false;
                 if (loadingWindow != null)
                 {
                     loadingWindow.Close();
                 }
+                try { Activate(); Focus(); } catch { }
             }
         }
 
@@ -9991,10 +10661,11 @@ namespace FamidashEditor
             try
             {
                 // Default behavior: use the tile size slider unless user manually adjusted it.
+                int previousTileSize = paletteTileSize;
                 if (!manualTileSize && TileSizeSlider != null)
                     paletteTileSize = Math.Max(8, (int)Math.Round(TileSizeSlider.Value));
-                PopulateTilesPanel();
-                PopulateSpritesPanel();
+                if (paletteTileSize != previousTileSize)
+                    UpdatePaletteItemSizes(TilesPanel, paletteTileSize);
                 // After repopulating, adjust the ListBox widths to avoid clipping
                 UpdateTilesPanelWidth();
             }
@@ -10049,27 +10720,12 @@ namespace FamidashEditor
                             TileSizeSlider.Value = paletteTileSize;
                             suppressManualTileChange = false;
                         }
-                        PopulateTilesPanel();
+                        UpdatePaletteItemSizes(TilesPanel, paletteTileSize);
                     }
 
-                    // Do not auto-adjust sprite palette size here; leave sprites controllable by the user via the slider.
-
-                        // When in auto mode, set the panel widths to exactly fit 16 integer cells
-                        // computed from effective viewport. This ensures there is no fractional
-                        // leftover to distribute between cells when scrollbars toggle.
-                        if (computedTiles > maxPaletteSize) computedTiles = maxPaletteSize;
-                        // If computedTiles differs from current, apply and repopulate
-                        if (!manualTileSize && computedTiles != paletteTileSize)
-                        {
-                            paletteTileSize = computedTiles;
-                            if (TileSizeSlider != null)
-                            {
-                                suppressManualTileChange = true;
-                                TileSizeSlider.Value = paletteTileSize;
-                                suppressManualTileChange = false;
-                            }
-                            PopulateTilesPanel();
-                        }
+                        // Do not auto-adjust sprite palette size here; leave sprites
+                        // controllable by the user via the slider. When in auto mode,
+                        // set panel widths to exactly fit 16 integer cells.
 
                         double desiredWidth = paletteTileSize * 16.0; // exact multiple, no extra padding
                         if (TilesPanel != null)
@@ -10158,9 +10814,10 @@ namespace FamidashEditor
                     suppressManualSpriteChange = false;
                 }
 
-                // Repopulate panels with the computed sizes
-                PopulateTilesPanel();
-                PopulateSpritesPanel();
+                // Resize existing palette visuals. Their sources, event handlers,
+                // disabled overlays, and ordering are unchanged.
+                UpdatePaletteItemSizes(TilesPanel, paletteTileSize);
+                UpdatePaletteItemSizes(SpritesPanel, paletteSpriteSize);
 
                 // Disable horizontal scrolling on startup: we sized tiles to fit 16 columns.
                 if (TilesPanel != null)
@@ -10468,6 +11125,12 @@ namespace FamidashEditor
 
         private string? FindRepoRootFor(string filename)
         {
+            if (repoRootCache.TryGetValue(filename, out string? cachedRoot) &&
+                Directory.Exists(cachedRoot))
+            {
+                return cachedRoot;
+            }
+
             string dir = AppContext.BaseDirectory;
             System.Diagnostics.Debug.WriteLine($"FindRepoRootFor({filename}) starting from: {dir}");
             
@@ -10476,9 +11139,10 @@ namespace FamidashEditor
                 var candidate = Path.Combine(dir, filename);
                 bool exists = File.Exists(candidate);
                 System.Diagnostics.Debug.WriteLine($"  [{i}] Checking: {candidate} - Exists: {exists}");
-                
+
                 if (exists) {
                     System.Diagnostics.Debug.WriteLine($"  FOUND! Returning: {dir}");
+                    repoRootCache[filename] = dir;
                     return dir;
                 }
                 
@@ -10496,10 +11160,17 @@ namespace FamidashEditor
 
         private BitmapImage? LoadEmbeddedImage(string resourceName)
         {
+            if (embeddedImageCache.TryGetValue(resourceName,
+                out BitmapImage? cachedImage))
+            {
+                return cachedImage;
+            }
+
             try
             {
                 var assembly = Assembly.GetExecutingAssembly();
-                var resourceNames = assembly.GetManifestResourceNames();
+                var resourceNames = embeddedResourceNames ??=
+                    assembly.GetManifestResourceNames();
                 // (debug logging removed)
 
                 // Find the resource - it might have the full path prefix.
@@ -10526,6 +11197,7 @@ namespace FamidashEditor
                 {
                     System.Diagnostics.Debug.WriteLine($"Resource not found: {resourceName}");
                     System.Diagnostics.Debug.WriteLine($"Available resources: {string.Join(", ", resourceNames)}");
+                    embeddedImageCache[resourceName] = null;
                     return null;
                 }
                 
@@ -10543,6 +11215,7 @@ namespace FamidashEditor
                     bi.StreamSource = stream;
                     bi.EndInit();
                     bi.Freeze();
+                    embeddedImageCache[resourceName] = bi;
                     return bi;
                 }
             }
@@ -10972,22 +11645,78 @@ namespace FamidashEditor
             portalDebugPath = Path.Combine(AppContext.BaseDirectory, "portal-debug.txt");
         }
 
-        private void LoadTileset(string path)
+        private bool LoadTileset(string path)
         {
             try
             {
-                var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(path); bi.EndInit(); bi.Freeze();
-                tilesetBitmap = bi; SliceTileset(); PopulateTilesPanel(); if (StatusText != null) StatusText.Text = "Loaded tileset: " + Path.GetFileName(path);
+                string fullPath = Path.GetFullPath(path);
+                var fileInfo = new FileInfo(fullPath);
+                if (ReferenceEquals(tilesetBitmap, cachedTilesetBitmap) &&
+                    string.Equals(cachedTilesetPath, fullPath,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    cachedTilesetWriteTimeUtc == fileInfo.LastWriteTimeUtc &&
+                    cachedTilesetLength == fileInfo.Length)
+                {
+                    return false;
+                }
+
+                var bi = new BitmapImage();
+                bi.BeginInit();
+                bi.CacheOption = BitmapCacheOption.OnLoad;
+                bi.UriSource = new Uri(fullPath);
+                bi.EndInit();
+                bi.Freeze();
+                tilesetBitmap = bi;
+                cachedTilesetPath = fullPath;
+                cachedTilesetWriteTimeUtc = fileInfo.LastWriteTimeUtc;
+                cachedTilesetLength = fileInfo.Length;
+                cachedTilesetBitmap = bi;
+                SliceTileset();
+                PopulateTilesPanel();
+                if (StatusText != null)
+                    StatusText.Text = "Loaded tileset: " +
+                        Path.GetFileName(fullPath);
+                return true;
             }
-            catch (Exception ex) { if (StatusText != null) StatusText.Text = "Tileset load failed: " + ex.Message; }
+            catch (Exception ex)
+            {
+                if (StatusText != null)
+                    StatusText.Text = "Tileset load failed: " + ex.Message;
+                return false;
+            }
         }
 
         private void LoadSpriteset(string path)
         {
             try
             {
-                var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(path); bi.EndInit(); bi.Freeze();
-                spritesBitmap = bi; SliceSpriteset(); PopulateSpritesPanel(); if (StatusText != null) StatusText.Text = "Loaded sprites: " + Path.GetFileName(path);
+                string fullPath = Path.GetFullPath(path);
+                var fileInfo = new FileInfo(fullPath);
+                if (ReferenceEquals(spritesBitmap, cachedSpritesetBitmap) &&
+                    string.Equals(cachedSpritesetPath, fullPath,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    cachedSpritesetWriteTimeUtc == fileInfo.LastWriteTimeUtc &&
+                    cachedSpritesetLength == fileInfo.Length)
+                {
+                    return;
+                }
+
+                var bi = new BitmapImage();
+                bi.BeginInit();
+                bi.CacheOption = BitmapCacheOption.OnLoad;
+                bi.UriSource = new Uri(fullPath);
+                bi.EndInit();
+                bi.Freeze();
+                spritesBitmap = bi;
+                cachedSpritesetPath = fullPath;
+                cachedSpritesetWriteTimeUtc = fileInfo.LastWriteTimeUtc;
+                cachedSpritesetLength = fileInfo.Length;
+                cachedSpritesetBitmap = bi;
+                SliceSpriteset();
+                PopulateSpritesPanel();
+                if (StatusText != null)
+                    StatusText.Text = "Loaded sprites: " +
+                        Path.GetFileName(fullPath);
                 try { ApplyLockSpritesToSet(); } catch { }
             }
             catch (Exception ex) { if (StatusText != null) StatusText.Text = "Sprites load failed: " + ex.Message; }
@@ -10996,7 +11725,32 @@ namespace FamidashEditor
         private void LoadParallax(string path)
         {
             try {
-                var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(path); bi.EndInit(); bi.Freeze(); parallaxBitmap = bi; SliceParallax(); if (StatusText != null) StatusText.Text = "Loaded parallax: " + Path.GetFileName(path);
+                string fullPath = Path.GetFullPath(path);
+                var fileInfo = new FileInfo(fullPath);
+                if (ReferenceEquals(parallaxBitmap, cachedParallaxBitmap) &&
+                    string.Equals(cachedParallaxPath, fullPath,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    cachedParallaxWriteTimeUtc == fileInfo.LastWriteTimeUtc &&
+                    cachedParallaxLength == fileInfo.Length)
+                {
+                    return;
+                }
+
+                var bi = new BitmapImage();
+                bi.BeginInit();
+                bi.CacheOption = BitmapCacheOption.OnLoad;
+                bi.UriSource = new Uri(fullPath);
+                bi.EndInit();
+                bi.Freeze();
+                parallaxBitmap = bi;
+                cachedParallaxPath = fullPath;
+                cachedParallaxWriteTimeUtc = fileInfo.LastWriteTimeUtc;
+                cachedParallaxLength = fileInfo.Length;
+                cachedParallaxBitmap = bi;
+                SliceParallax();
+                if (StatusText != null)
+                    StatusText.Text = "Loaded parallax: " +
+                        Path.GetFileName(fullPath);
                 // No file logging here (respect user's no-logging requirement)
             }
             catch (Exception ex) { if (StatusText != null) StatusText.Text = "Parallax load failed: " + ex.Message; }
@@ -11004,7 +11758,33 @@ namespace FamidashEditor
 
         private void LoadGround(string path)
         {
-            try { var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(path); bi.EndInit(); bi.Freeze(); groundBitmap = bi; SliceGround(); if (StatusText != null) StatusText.Text = "Loaded ground: " + Path.GetFileName(path);
+            try {
+                string fullPath = Path.GetFullPath(path);
+                var fileInfo = new FileInfo(fullPath);
+                if (ReferenceEquals(groundBitmap, cachedGroundBitmap) &&
+                    string.Equals(cachedGroundPath, fullPath,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    cachedGroundWriteTimeUtc == fileInfo.LastWriteTimeUtc &&
+                    cachedGroundLength == fileInfo.Length)
+                {
+                    return;
+                }
+
+                var bi = new BitmapImage();
+                bi.BeginInit();
+                bi.CacheOption = BitmapCacheOption.OnLoad;
+                bi.UriSource = new Uri(fullPath);
+                bi.EndInit();
+                bi.Freeze();
+                groundBitmap = bi;
+                cachedGroundPath = fullPath;
+                cachedGroundWriteTimeUtc = fileInfo.LastWriteTimeUtc;
+                cachedGroundLength = fileInfo.Length;
+                cachedGroundBitmap = bi;
+                SliceGround();
+                if (StatusText != null)
+                    StatusText.Text = "Loaded ground: " +
+                        Path.GetFileName(fullPath);
                 // No file logging here (respect user's no-logging requirement)
             }
             catch (Exception ex) { if (StatusText != null) StatusText.Text = "Ground load failed: " + ex.Message; }
@@ -11085,7 +11865,9 @@ namespace FamidashEditor
             // update toned cache only if tint is active (not transparent)
             if (tileTint.A != 0)
             {
-                UpdateTileTint();
+                // The caller will populate/rebuild once after the new tileset has
+                // been completely installed.
+                UpdateTileTint(updateEditor: false);
             }
             else
             {
@@ -11163,7 +11945,7 @@ namespace FamidashEditor
             int cols = Math.Max(1, effective.PixelWidth / TileSize);
             int rows = Math.Max(1, effective.PixelHeight / TileSize);
             var list = new List<ImageSource>();
-            const int batchRows = 8; // process rows in small batches to reduce peak memory use
+            const int batchRows = 32;
             for (int by = 0; by < rows; by += batchRows)
             {
                 int endY = Math.Min(rows, by + batchRows);
@@ -11186,9 +11968,10 @@ namespace FamidashEditor
                         }
                     }
                 }
-                // Yield to UI and release any transient memory
+                // Yield occasionally so the loading window stays responsive. Do
+                // not force a full GC per batch: all cropped images remain live,
+                // so those collections cannot reclaim them and only stall loading.
                 try { Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background); } catch { }
-                try { GC.Collect(); GC.WaitForPendingFinalizers(); } catch { }
             }
             parallaxImages = list.ToArray();
             // update tinted cache only if tint is active (not transparent)
@@ -11218,7 +12001,7 @@ namespace FamidashEditor
             int rows = Math.Max(1, effective.PixelHeight / TileSize);
             groundTileRows = rows;
             var list = new List<ImageSource>();
-            const int batchRowsGround = 8;
+            const int batchRowsGround = 32;
             for (int by = 0; by < rows; by += batchRowsGround)
             {
                 int endY = Math.Min(rows, by + batchRowsGround);
@@ -11242,7 +12025,6 @@ namespace FamidashEditor
                     }
                 }
                 try { Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background); } catch { }
-                try { GC.Collect(); GC.WaitForPendingFinalizers(); } catch { }
             }
             groundImages = list.ToArray();
             // update tinted cache only if tint is active (not transparent)
@@ -11832,8 +12614,18 @@ namespace FamidashEditor
 
         private void UpdateParallaxTint()
         {
-            // Use exact RGB replacement for parallax so the displayed color matches the picker swatch.
-            parallaxTonedImages = CreateRgbReplacedImages(parallaxImages, backgroundTint);
+            if (!parallaxTintCacheValid ||
+                !ReferenceEquals(lastParallaxTintSource, parallaxImages) ||
+                lastParallaxTint != backgroundTint)
+            {
+                // Use exact RGB replacement for parallax so the displayed color
+                // matches the picker swatch.
+                parallaxTonedImages = CreateRgbReplacedImages(
+                    parallaxImages, backgroundTint);
+                lastParallaxTintSource = parallaxImages;
+                lastParallaxTint = backgroundTint;
+                parallaxTintCacheValid = true;
+            }
             // mark background/parallax cache dirty so the parallax RTB is rebuilt with the new tint
             backgroundDirty = true;
             // Status updates removed for parallax tinting (no UI status messages)
@@ -11841,66 +12633,112 @@ namespace FamidashEditor
 
         private void UpdateGroundTint()
         {
-            // For ground, use exact RGB replacement/two-tone mapping so the editor
-            // background/ground tint matches the color picker selection. Lighter = selected
-            // color, darker = palette row-up (or black when top row).
-            // Use exact replacement for ground so the floor becomes the specified palette
-            // color completely instead of preserving darker shading. This maps every
-            // non-transparent pixel to the chosen RGB while preserving alpha.
-            groundTonedImages = CreateExactRgbReplacedImages(groundImages, groundTint);
+            if (!groundTintCacheValid ||
+                !ReferenceEquals(lastGroundTintSource, groundImages) ||
+                lastGroundTint != groundTint)
+            {
+                // Use exact replacement for ground so the floor becomes the
+                // specified palette color while preserving alpha.
+                groundTonedImages = CreateExactRgbReplacedImages(
+                    groundImages, groundTint);
+                lastGroundTintSource = groundImages;
+                lastGroundTint = groundTint;
+                groundTintCacheValid = true;
+            }
             // mark background/ground cache dirty so the ground RTB is rebuilt with the new tint
             backgroundDirty = true;
             // Status updates removed for ground tinting
         }
 
-        private void UpdateTileTint()
+        private void UpdateTileTint(bool updateEditor = true)
         {
-            // Use HSL hue-shifting for most tints so we preserve shading while changing hue.
-            // Special-case fully-opaque pure black/white because HSL hue-replacement
-            // cannot produce a proper solid black/white two-tone mapping. For those
-            // two extreme colors, generate two-tone images so tiles become the
-            // expected solid black/white appearance.
-            if (tileTint.A == 255 && tileTint.R == 0 && tileTint.G == 0 && tileTint.B == 0)
+            bool regenerate =
+                !tileTintCacheValid ||
+                !ReferenceEquals(lastTileTintSource, tileImages) ||
+                !ReferenceEquals(lastSawFrame1TintSource, sawFrame1Tiles) ||
+                !ReferenceEquals(lastSawFrame2TintSource, sawFrame2Tiles) ||
+                !ReferenceEquals(lastSmallSawFrame1TintSource,
+                    smallSawFrame1Tiles) ||
+                !ReferenceEquals(lastSmallSawFrame2TintSource,
+                    smallSawFrame2Tiles) ||
+                !ReferenceEquals(lastLargeSawFrame1TintSource,
+                    largeSawFrame1Tiles) ||
+                !ReferenceEquals(lastLargeSawFrame2TintSource,
+                    largeSawFrame2Tiles) ||
+                lastTileTint != tileTint;
+
+            if (regenerate)
             {
-                // Pure black -> map non-white pixels to black and recolor outlines to black
-                tileTonedImages = CreateTwoToneTileImages(tileImages, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), tileTint);
-            }
-            else
-            {
-                // Detect near-grayscale/low-saturation tints (including pure white)
-                RgbToHsl(tileTint.R, tileTint.G, tileTint.B, out double tH, out double tS, out double tL);
-                if (tS < 0.06)
+                // Use HSL hue-shifting for most tints so we preserve shading
+                // while changing hue. Handle pure black and low-saturation
+                // colors with the existing two-tone mapping.
+                if (tileTint.A == 255 && tileTint.R == 0 &&
+                    tileTint.G == 0 && tileTint.B == 0)
                 {
-                    // For greys/whites, produce a two-tone mapping so the darker
-                    // shade is preserved and black outlines remain visible.
-                    // Compute a darker secondary by reducing lightness to ~45% of original
-                    double secL = Math.Max(0.0, tL * 0.45);
-                    RgbFromHsl(tH, tS, secL, out byte sr, out byte sg, out byte sb);
-                    var secondary = Color.FromArgb(255, sr, sg, sb);
-                    // Use opaque black for outline tint so lines remain distinct
-                    var outline = Color.FromArgb(255, 0, 0, 0);
-                    tileTonedImages = CreateTwoToneTileImages(tileImages, tileTint, secondary, outline);
+                    tileTonedImages = CreateTwoToneTileImages(tileImages,
+                        Color.FromArgb(255, 0, 0, 0),
+                        Color.FromArgb(255, 0, 0, 0), tileTint);
                 }
                 else
                 {
-                    tileTonedImages = CreateHslShiftedImages(tileImages, tileTint);
+                    RgbToHsl(tileTint.R, tileTint.G, tileTint.B,
+                        out double tH, out double tS, out double tL);
+                    if (tS < 0.06)
+                    {
+                        double secL = Math.Max(0.0, tL * 0.45);
+                        RgbFromHsl(tH, tS, secL, out byte sr, out byte sg,
+                            out byte sb);
+                        var secondary = Color.FromArgb(255, sr, sg, sb);
+                        var outline = Color.FromArgb(255, 0, 0, 0);
+                        tileTonedImages = CreateTwoToneTileImages(tileImages,
+                            tileTint, secondary, outline);
+                    }
+                    else
+                    {
+                        tileTonedImages = CreateHslShiftedImages(
+                            tileImages, tileTint);
+                    }
                 }
+
+                sawFrame1TilesTinted = CreateHslShiftedImages(
+                    sawFrame1Tiles, tileTint);
+                sawFrame2TilesTinted = CreateHslShiftedImages(
+                    sawFrame2Tiles, tileTint);
+                smallSawFrame1TilesTinted = CreateHslShiftedImages(
+                    smallSawFrame1Tiles, tileTint);
+                smallSawFrame2TilesTinted = CreateHslShiftedImages(
+                    smallSawFrame2Tiles, tileTint);
+                largeSawFrame1TilesTinted = CreateHslShiftedImages(
+                    largeSawFrame1Tiles, tileTint);
+                largeSawFrame2TilesTinted = CreateHslShiftedImages(
+                    largeSawFrame2Tiles, tileTint);
+
+                lastTileTintSource = tileImages;
+                lastSawFrame1TintSource = sawFrame1Tiles;
+                lastSawFrame2TintSource = sawFrame2Tiles;
+                lastSmallSawFrame1TintSource = smallSawFrame1Tiles;
+                lastSmallSawFrame2TintSource = smallSawFrame2Tiles;
+                lastLargeSawFrame1TintSource = largeSawFrame1Tiles;
+                lastLargeSawFrame2TintSource = largeSawFrame2Tiles;
+                lastTileTint = tileTint;
+                tileTintCacheValid = true;
+
+                // Scaled pixels are derived from the toned images.
+                try { scaledTileCaches.Clear(); } catch { }
             }
 
-            // Also tint the animated saw frames using HSL hue shift
-            sawFrame1TilesTinted = CreateHslShiftedImages(sawFrame1Tiles, tileTint);
-            sawFrame2TilesTinted = CreateHslShiftedImages(sawFrame2Tiles, tileTint);
-            smallSawFrame1TilesTinted = CreateHslShiftedImages(smallSawFrame1Tiles, tileTint);
-            smallSawFrame2TilesTinted = CreateHslShiftedImages(smallSawFrame2Tiles, tileTint);
-            largeSawFrame1TilesTinted = CreateHslShiftedImages(largeSawFrame1Tiles, tileTint);
-            largeSawFrame2TilesTinted = CreateHslShiftedImages(largeSawFrame2Tiles, tileTint);
+            if (!updateEditor)
+                return;
             
-            // Clear pre-scaled caches so scaled pixels are rebuilt from the toned images
-            try { scaledTileCaches.Clear(); } catch { }
             // Rebuild tiles bitmap so tint appears immediately
             try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
-            // Refresh palette so the left frame shows tinted tiles as well
-            try { PopulateTilesPanel(); } catch { }
+            // Sources changed, but palette controls and handlers did not.
+            try
+            {
+                if (!RefreshTilePaletteImages())
+                    PopulateTilesPanel();
+            }
+            catch { }
             // Status updates removed for tile tinting
         }
 
@@ -11975,6 +12813,80 @@ namespace FamidashEditor
             );
         }
 
+        private static Image? GetPaletteItemImage(object? item)
+        {
+            if (item is not Border border)
+                return null;
+            if (border.Child is Image image)
+                return image;
+            if (border.Child is Panel panel)
+            {
+                foreach (UIElement child in panel.Children)
+                {
+                    if (child is Image nestedImage)
+                        return nestedImage;
+                }
+            }
+            return null;
+        }
+
+        private static void UpdatePaletteItemSizes(
+            ListBox? panel, double itemSize)
+        {
+            if (panel == null) return;
+            foreach (object item in panel.Items)
+            {
+                Image? image = GetPaletteItemImage(item);
+                if (image == null) continue;
+                image.Width = itemSize;
+                image.Height = itemSize;
+            }
+        }
+
+        private ImageSource? GetTilePaletteSource(int tileIndex)
+        {
+            if (tileImages == null || tileIndex < 0 ||
+                tileIndex >= tileImages.Length)
+            {
+                return null;
+            }
+
+            ImageSource? baseSource = tileImages[tileIndex];
+            ImageSource? tonedSource =
+                tileTonedImages != null &&
+                tileTonedImages.Length == tileImages.Length
+                    ? tileTonedImages[tileIndex]
+                    : null;
+
+            if (IsPlayerReplacementTile(tileIndex) &&
+                playerTintEnabled && baseSource != null)
+            {
+                return CreatePlayerReplacedFromBaseAndToned(
+                    baseSource, tonedSource ?? baseSource, playerTint);
+            }
+
+            return tonedSource ?? baseSource;
+        }
+
+        private bool RefreshTilePaletteImages()
+        {
+            if (TilesPanel == null || tileImages == null)
+                return false;
+
+            int expectedItems = Math.Min(256, tileImages.Length);
+            if (TilesPanel.Items.Count != expectedItems)
+                return false;
+
+            foreach (object item in TilesPanel.Items)
+            {
+                Image? image = GetPaletteItemImage(item);
+                if (image?.Tag is not int tileIndex)
+                    return false;
+                image.Source = GetTilePaletteSource(tileIndex);
+            }
+            return true;
+        }
+
         private void PopulateTilesPanel()
         {
             if (TilesPanel == null) return;
@@ -12008,28 +12920,7 @@ namespace FamidashEditor
             {
                 if (idx >= tileImages.Length) continue;
                 var src = tileImages[idx];
-                // prefer tinted tiles in the left palette when available, except for
-                // the special player-replacement tiles which must show the player
-                // tinted green pixels while preserving toned colors for non-green.
-                ImageSource? paletteSrc = null;
-                bool isPlayerTile = IsPlayerReplacementTile(idx);
-                var baseSrc = (idx < tileImages.Length) ? tileImages[idx] : src;
-                var tonedSrc = (tileTonedImages != null && tileTonedImages.Length == tileImages.Length) ? tileTonedImages[idx] : null;
-                if (isPlayerTile)
-                {
-                    if (playerTintEnabled && baseSrc != null)
-                    {
-                        paletteSrc = CreatePlayerReplacedFromBaseAndToned(baseSrc, tonedSrc ?? baseSrc, playerTint);
-                    }
-                    else
-                    {
-                        paletteSrc = tonedSrc ?? baseSrc;
-                    }
-                }
-                else
-                {
-                    paletteSrc = tonedSrc ?? src;
-                }
+                ImageSource? paletteSrc = GetTilePaletteSource(idx);
                 
                 // Debug: check if specific tiles have valid sources
                 if ((idx == 34 || idx == 36) && paletteSrc == null)
@@ -12079,24 +12970,6 @@ namespace FamidashEditor
                         ((Image)s).CaptureMouse();
                     }
 
-                    // Right-click: make this the active selected tile and activate tile layer
-                    img.MouseRightButtonDown += (s, e) => {
-                        int clickedTile = (int)((Image)s).Tag;
-                        selectedTile = clickedTile;
-                        selectedTiles = new List<int> { clickedTile };
-                        selectionWidth = 1;
-                        selectionHeight = 1;
-                        selectedSprite = -1;
-                        tilesLayerActive = true;
-                        spritesLayerActive = false;
-                        // Activate brush/place tool and tile draw mode so it's ready for placement
-                        try { if (PlaceTool != null) PlaceTool.IsChecked = true; } catch { }
-                        try { if (DrawTileButton != null) DrawTileButton.IsChecked = true; } catch { }
-                        UpdatePaletteHighlight();
-                        try { if (CanvasHost != null) CanvasHost.Focus(); } catch { }
-                        e.Handled = true;
-                    };
-
                     // Restore any preserved map selection so picking a tile doesn't clear it
                     try
                     {
@@ -12109,7 +12982,27 @@ namespace FamidashEditor
                     }
                     catch { }
                 };
-                
+
+                // Right-click: make this the active selected tile and activate tile
+                // layer. Register this once when the palette item is created; the old
+                // placement inside MouseLeftButtonDown accumulated one handler after
+                // every left click.
+                img.MouseRightButtonDown += (s, e) => {
+                    int clickedTile = (int)((Image)s).Tag;
+                    selectedTile = clickedTile;
+                    selectedTiles = new List<int> { clickedTile };
+                    selectionWidth = 1;
+                    selectionHeight = 1;
+                    selectedSprite = -1;
+                    tilesLayerActive = true;
+                    spritesLayerActive = false;
+                    try { if (PlaceTool != null) PlaceTool.IsChecked = true; } catch { }
+                    try { if (DrawTileButton != null) DrawTileButton.IsChecked = true; } catch { }
+                    UpdatePaletteHighlight();
+                    try { if (CanvasHost != null) CanvasHost.Focus(); } catch { }
+                    e.Handled = true;
+                };
+
                 // Mouse move updates selection
                 img.MouseMove += (s, e) => {
                     if (isSelectingMultipleTiles && tileSelectionStart != null)
@@ -12536,8 +13429,12 @@ namespace FamidashEditor
 
         private void DrawMap()
         {
+            if (suppressMapRendering)
+                return;
+
             // Compute sizes and ensure layer bitmaps exist; actual per-tile updates are incremental elsewhere
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double scale = mapRenderScaleOverride ??
+                ((ZoomSlider != null) ? ZoomSlider.Value : 1.0);
             double pad = mapViewportPadding;
             double fullW = mapWidth * TileSize * scale;
             
@@ -12588,17 +13485,18 @@ namespace FamidashEditor
             {
                 ParallaxImage.Source = parallaxRtb;
                 ParallaxImage.Width = displayFullW; ParallaxImage.Height = displayFullH;
+                ParallaxImage.LayoutTransform = Transform.Identity; // Clear temporary zoom transform
                 ParallaxImage.RenderTransform = parallaxTransform; // Use only parallax transform
-                // Hide when either hideBackground is enabled OR fast zoom is active
-                ParallaxImage.Visibility = (hideBackground || useFastZoom) ? Visibility.Collapsed : Visibility.Visible;
+                ParallaxImage.Visibility = hideBackground
+                    ? Visibility.Collapsed : Visibility.Visible;
             }
             if (GroundImage != null && groundRtb != null)
             {
                 GroundImage.Source = groundRtb;
                 GroundImage.Width = displayFullW; GroundImage.Height = displayFullH;
                 GroundImage.LayoutTransform = Transform.Identity; // Clear temporary zoom transform
-                // Hide when either hideGround is enabled OR fast zoom is active
-                GroundImage.Visibility = (hideGround || useFastZoom) ? Visibility.Collapsed : Visibility.Visible;
+                GroundImage.Visibility = hideGround
+                    ? Visibility.Collapsed : Visibility.Visible;
             }
             if (TilesImage != null && tilesWb != null)
             {
@@ -13126,40 +14024,101 @@ namespace FamidashEditor
         }
 
         // Public: called by simulator to set the player path (raw world pixel coords)
-        public void ShowPlayerPathFromSimulator(System.Collections.Generic.IEnumerable<(int x, int y)> pts, bool completed = true)
+        public void ShowPlayerPathFromSimulator(
+            System.Collections.Generic.IEnumerable<(int x, int y)> pts,
+            bool completed = true, Guid? sourceSessionId = null)
         {
             try
             {
-                Dispatcher?.BeginInvoke(new Action(() =>
+                FileTabData? owner = FindDocumentSession(sourceSessionId);
+                if (sourceSessionId.HasValue && owner == null) return;
+                if (owner == null && currentFileIndex >= 0 &&
+                    currentFileIndex < openFiles.Count)
+                {
+                    owner = openFiles[currentFileIndex];
+                }
+                var pathSnapshot = pts?.ToList() ??
+                    new List<(int x, int y)>();
+                Action updatePath = () =>
                 {
                     try
                     {
-                        playerPathPoints = pts?.ToList() ?? new System.Collections.Generic.List<(int x, int y)>();
+                        if (owner != null)
+                        {
+                            owner.PlayerPathPoints =
+                                pathSnapshot.ToList();
+                            owner.PlayerPath2Points.Clear();
+                            owner.PlayerPathIncomplete = !completed;
+                        }
+                        if (owner != null &&
+                            !IsActiveDocumentSession(owner))
+                        {
+                            return;
+                        }
+
+                        playerPathPoints = pathSnapshot.ToList();
                         playerPath2Points = new System.Collections.Generic.List<(int x, int y)>();  // Clear player 2 path
                         playerPathIncomplete = !completed;
                         UpdatePlayerPathOverlay();
                     }
                     catch { }
-                }));
+                };
+                if (Dispatcher == null || Dispatcher.CheckAccess())
+                    updatePath();
+                else
+                    _ = Dispatcher.BeginInvoke(updatePath);
             }
             catch { }
         }
 
-        public void ShowPlayerPathsFromSimulator(System.Collections.Generic.IEnumerable<(int x, int y)> path1, System.Collections.Generic.IEnumerable<(int x, int y)> path2, bool dualMode, bool completed = true)
+        public void ShowPlayerPathsFromSimulator(
+            System.Collections.Generic.IEnumerable<(int x, int y)> path1,
+            System.Collections.Generic.IEnumerable<(int x, int y)> path2,
+            bool dualMode, bool completed = true,
+            Guid? sourceSessionId = null)
         {
             try
             {
-                Dispatcher?.BeginInvoke(new Action(() =>
+                FileTabData? owner = FindDocumentSession(sourceSessionId);
+                if (sourceSessionId.HasValue && owner == null) return;
+                if (owner == null && currentFileIndex >= 0 &&
+                    currentFileIndex < openFiles.Count)
+                {
+                    owner = openFiles[currentFileIndex];
+                }
+                var path1Snapshot = path1?.ToList() ??
+                    new List<(int x, int y)>();
+                var path2Snapshot = path2?.ToList() ??
+                    new List<(int x, int y)>();
+                Action updatePaths = () =>
                 {
                     try
                     {
-                        playerPathPoints = path1?.ToList() ?? new System.Collections.Generic.List<(int x, int y)>();
-                        playerPath2Points = (path2?.ToList() ?? new System.Collections.Generic.List<(int x, int y)>());  // Always show path2 if it has data, even after exiting dual mode
+                        if (owner != null)
+                        {
+                            owner.PlayerPathPoints =
+                                path1Snapshot.ToList();
+                            owner.PlayerPath2Points =
+                                path2Snapshot.ToList();
+                            owner.PlayerPathIncomplete = !completed;
+                        }
+                        if (owner != null &&
+                            !IsActiveDocumentSession(owner))
+                        {
+                            return;
+                        }
+
+                        playerPathPoints = path1Snapshot.ToList();
+                        playerPath2Points = path2Snapshot.ToList();  // Always show path2 if it has data, even after exiting dual mode
                         playerPathIncomplete = !completed;
                         UpdatePlayerPathOverlay();
                     }
                     catch { }
-                }));
+                };
+                if (Dispatcher == null || Dispatcher.CheckAccess())
+                    updatePaths();
+                else
+                    _ = Dispatcher.BeginInvoke(updatePaths);
             }
             catch { }
         }
@@ -13188,6 +14147,7 @@ namespace FamidashEditor
                 try { if (playerIncompleteMarkerA != null && CanvasHost != null) CanvasHost.Children.Remove(playerIncompleteMarkerA); } catch { }
                 try { if (playerIncompleteMarkerB != null && CanvasHost != null) CanvasHost.Children.Remove(playerIncompleteMarkerB); } catch { }
                 playerDeathMarkerA = null; playerDeathMarkerB = null;
+                playerDeathMarkerX = null; playerDeathMarkerY = null;
                 playerIncompleteMarkerA = null; playerIncompleteMarkerB = null;
             }
             catch { }
@@ -13211,10 +14171,18 @@ namespace FamidashEditor
         /// attempt as a separate polyline overlay.  Called when Mesen closes so
         /// the user can visually compare PF (bias-colored) vs NES (magenta).
         /// </summary>
-        public void LoadAndShowMesenTracePath(string traceCsvPath)
+        public void LoadAndShowMesenTracePath(string traceCsvPath,
+            Guid? sourceSessionId = null)
         {
             try
             {
+                FileTabData? owner = FindDocumentSession(sourceSessionId);
+                if (sourceSessionId.HasValue && owner == null) return;
+                if (owner == null && currentFileIndex >= 0 &&
+                    currentFileIndex < openFiles.Count)
+                {
+                    owner = openFiles[currentFileIndex];
+                }
                 if (string.IsNullOrEmpty(traceCsvPath) || !System.IO.File.Exists(traceCsvPath))
                     return;
                 var attempts = new System.Collections.Generic.List<System.Collections.Generic.List<(int x, int y)>>();
@@ -13245,6 +14213,16 @@ namespace FamidashEditor
                 {
                     try
                     {
+                        if (owner != null)
+                        {
+                            owner.MesenPaths =
+                                ClonePathLists(attempts);
+                        }
+                        if (owner != null &&
+                            !IsActiveDocumentSession(owner))
+                        {
+                            return;
+                        }
                         // Replace any existing Mesen paths with the freshly-parsed set.
                         mesenPaths = attempts;
                         UpdatePlayerPathOverlay();
@@ -13279,19 +14257,39 @@ namespace FamidashEditor
         }
 
         // Public: draw a red X at the given world pixel coords (used when top-death occurs)
-        public void AddDeathMarker(int worldX_px, int worldY_px)
+        public void AddDeathMarker(int worldX_px, int worldY_px,
+            Guid? sourceSessionId = null)
         {
             try
             {
-                Dispatcher?.BeginInvoke(new Action(() =>
+                FileTabData? owner = FindDocumentSession(sourceSessionId);
+                if (sourceSessionId.HasValue && owner == null) return;
+                if (owner == null && currentFileIndex >= 0 &&
+                    currentFileIndex < openFiles.Count)
+                {
+                    owner = openFiles[currentFileIndex];
+                }
+                Action updateMarker = () =>
                 {
                     try
                     {
+                        if (owner != null)
+                        {
+                            owner.DeathMarkerX = worldX_px;
+                            owner.DeathMarkerY = worldY_px;
+                        }
+                        if (owner != null &&
+                            !IsActiveDocumentSession(owner))
+                        {
+                            return;
+                        }
                         if (CanvasHost == null) return;
                         // Remove previous
                         try { if (playerDeathMarkerA != null) CanvasHost.Children.Remove(playerDeathMarkerA); } catch { }
                         try { if (playerDeathMarkerB != null) CanvasHost.Children.Remove(playerDeathMarkerB); } catch { }
                         playerDeathMarkerA = null; playerDeathMarkerB = null;
+                        playerDeathMarkerX = worldX_px;
+                        playerDeathMarkerY = worldY_px;
 
                         double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
                         double pad = mapViewportPadding;
@@ -13307,7 +14305,12 @@ namespace FamidashEditor
                         CanvasHost.Children.Add(lineA); CanvasHost.Children.Add(lineB);
                     }
                     catch { }
-                }));
+                };
+
+                if (Dispatcher == null || Dispatcher.CheckAccess())
+                    updateMarker();
+                else
+                    _ = Dispatcher.BeginInvoke(updateMarker);
             }
             catch { }
         }
@@ -13317,7 +14320,7 @@ namespace FamidashEditor
         {
             try
             {
-                Dispatcher?.BeginInvoke(new Action(() =>
+                Action updateMarker = () =>
                 {
                     try
                     {
@@ -13405,7 +14408,12 @@ namespace FamidashEditor
                         CanvasHost.Children.Add(container);
                     }
                     catch { }
-                }));
+                };
+
+                if (Dispatcher == null || Dispatcher.CheckAccess())
+                    updateMarker();
+                else
+                    _ = Dispatcher.BeginInvoke(updateMarker);
             }
             catch { }
         }
@@ -13425,6 +14433,28 @@ namespace FamidashEditor
         }
 
         // Ensure the background, tiles and grid bitmaps exist for the current size/scale.
+        private static unsafe void ClearWholeBitmap(WriteableBitmap bitmap)
+        {
+            bitmap.Lock();
+            try
+            {
+                IntPtr buffer = bitmap.BackBuffer;
+                if (buffer != IntPtr.Zero)
+                {
+                    nuint byteCount = checked((nuint)(
+                        (long)bitmap.BackBufferStride * bitmap.PixelHeight));
+                    System.Runtime.InteropServices.NativeMemory.Clear(
+                        buffer.ToPointer(), byteCount);
+                    bitmap.AddDirtyRect(new Int32Rect(
+                        0, 0, bitmap.PixelWidth, bitmap.PixelHeight));
+                }
+            }
+            finally
+            {
+                bitmap.Unlock();
+            }
+        }
+
         private void EnsureLayerBitmaps(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight)
         {
             var dpi = VisualTreeHelper.GetDpi(this);
@@ -13439,7 +14469,7 @@ namespace FamidashEditor
                 
                 // Build parallax and ground - skip if fast zoom is enabled and this is just a zoom change
                 // (Fast zoom keeps parallax/ground at old scale with transforms for better performance)
-                if (!(useFastZoom && isZoomOnly))
+                if (!(ShouldUseTransformOnlyZoom() && isZoomOnly))
                 {
                     BuildParallaxBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi);
                     BuildGroundBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi);
@@ -13459,50 +14489,32 @@ namespace FamidashEditor
             {
                 tilesWb = new WriteableBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32, null);
                 cachedPixelWidth = pixelPaddedWidth; cachedPixelHeight = pixelPaddedHeight; cachedScale = scale;
-                // initialize to transparent
-                var empty = new byte[pixelPaddedHeight * tilesWb.BackBufferStride];
-                tilesWb.WritePixels(new Int32Rect(0, 0, pixelPaddedWidth, pixelPaddedHeight), empty, tilesWb.BackBufferStride, 0);
-                // Render tiles asynchronously to avoid blocking UI
-                RebuildAllTilesBitmapAsync(scale, pad);
+                // Initialize without allocating a second map-sized managed array.
+                ClearWholeBitmap(tilesWb);
+                if (synchronousInitialLayerBuild)
+                {
+                    // A bulk load already owns a loading window. Render once now
+                    // instead of starting an async pass that the final pass cancels.
+                    RebuildAllTilesBitmap(scale, pad);
+                }
+                else
+                {
+                    // Render tiles asynchronously to avoid blocking normal UI work.
+                    RebuildAllTilesBitmapAsync(scale, pad);
+                }
             }
             // Create or recreate sprites writeable bitmap if size changed (use same flag as tiles!)
             if (sizeOrScaleChanged)
             {
                 spritesWb = new WriteableBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32, null);
-                // initialize to transparent
-                var empty = new byte[pixelPaddedHeight * spritesWb.BackBufferStride];
-                spritesWb.WritePixels(new Int32Rect(0, 0, pixelPaddedWidth, pixelPaddedHeight), empty, spritesWb.BackBufferStride, 0);
+                ClearWholeBitmap(spritesWb);
                 // create or recreate portals writeable bitmap if size changed
                 portalsWb = new WriteableBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32, null);
-                var emptyPortal = new byte[pixelPaddedHeight * portalsWb.BackBufferStride];
-                portalsWb.WritePixels(new Int32Rect(0, 0, pixelPaddedWidth, pixelPaddedHeight), emptyPortal, portalsWb.BackBufferStride, 0);
-                // Render portals then sprites if preview mode is enabled, otherwise clear portals bitmap
-                if (previewMode)
-                {
-                    RebuildPortalsRegion(0, 0, mapWidth - 1, mapHeight - 1, scale, pad);
-                }
-                else
-                {
-                    // Clear portals bitmap (ensure no stale portal images remain)
-                    try
-                    {
-                        portalsWb.Lock();
-                        unsafe
-                        {
-                            IntPtr pb = portalsWb.BackBuffer;
-                            if (pb != IntPtr.Zero)
-                            {
-                                int stride = portalsWb.BackBufferStride;
-                                int bytesTotal = stride * cachedPixelHeight;
-                                byte* p = (byte*)pb.ToPointer();
-                                for (int i = 0; i < bytesTotal; i++) p[i] = 0;
-                            }
-                        }
-                        portalsWb.AddDirtyRect(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight));
-                    }
-                    finally { try { portalsWb.Unlock(); } catch { } }
-                }
-                RebuildAllSpritesBitmap(scale, pad);
+                ClearWholeBitmap(portalsWb);
+                // RebuildAllSpritesBitmapAsync owns portal rendering. Doing a
+                // synchronous full portal pass here rendered every portal twice.
+                if (!synchronousInitialLayerBuild)
+                    RebuildAllSpritesBitmap(scale, pad);
             }
         }
 
@@ -13919,7 +14931,7 @@ namespace FamidashEditor
                     await System.Threading.Tasks.Task.Delay(200);
                 }
             }
-            
+
             System.Diagnostics.Debug.WriteLine("RebuildParallaxGroundDeferredAsync: All expansions complete");
         }
 
@@ -13941,9 +14953,150 @@ namespace FamidashEditor
             else { parallaxTransform.X = shiftX; parallaxTransform.Y = shiftY; }
             if (ParallaxImage != null) ParallaxImage.RenderTransform = parallaxTransform;
         }
+
+        private double GetBulkLoadRasterScale(double displayScale)
+        {
+            displayScale = Math.Max(0.25, displayScale);
+            if (!ShouldUseTransformOnlyZoom())
+                return displayScale;
+
+            // Transform-only zoom does not benefit from creating a zoom² backing
+            // bitmap. Start no larger than native scale, then step down only when
+            // WPF's practical bitmap dimension/pixel limits require it.
+            double candidate = Math.Min(1.0,
+                Math.Floor(displayScale * 4.0 + 1e-9) / 4.0);
+            candidate = Math.Max(0.25, candidate);
+
+            DpiScale dpi = VisualTreeHelper.GetDpi(this);
+            double groundDiuAtScaleOne = 0.0;
+            if (groundBitmap != null && groundImages != null &&
+                groundImages.Length > 0)
+            {
+                groundDiuAtScaleOne =
+                    groundBitmap.PixelHeight / dpi.DpiScaleY;
+            }
+
+            const double MaxRasterDimension = 30_000.0;
+            const double MaxRasterPixels = 32_000_000.0;
+            while (true)
+            {
+                double widthPx =
+                    (mapWidth * TileSize * candidate +
+                     mapViewportPadding * 2.0) * dpi.DpiScaleX;
+                double heightPx =
+                    ((mapHeight * TileSize + groundDiuAtScaleOne -
+                      4.0 * TileSize) * candidate +
+                     mapViewportPadding * 2.0) * dpi.DpiScaleY;
+                heightPx = Math.Max(1.0, heightPx);
+                if (widthPx <= MaxRasterDimension &&
+                    heightPx <= MaxRasterDimension &&
+                    widthPx * heightPx <= MaxRasterPixels)
+                {
+                    break;
+                }
+                candidate = candidate > 0.25
+                    ? candidate - 0.25
+                    : candidate * 0.5;
+                if (candidate < 0.0625)
+                {
+                    candidate = 0.0625;
+                    break;
+                }
+            }
+            return candidate;
+        }
+
+        private async Task RenderCurrentMapAfterBulkLoadAsync(
+            double requestedDisplayScale)
+        {
+            double rasterScale = GetBulkLoadRasterScale(
+                requestedDisplayScale);
+            try
+            {
+                zoomCommitTimer?.Stop();
+                zoomThrottleTimer?.Stop();
+                deferZoomRebuild = false;
+                hasZoomAnchor = false;
+                mapRenderScaleOverride = rasterScale;
+
+                // Cancel stale async work from the previous map and force fresh
+                // layer ownership even when the new map has identical dimensions.
+                Interlocked.Increment(ref tileRenderGeneration);
+                Interlocked.Increment(ref spriteRenderGeneration);
+                backgroundRtb = null;
+                parallaxRtb = null;
+                groundRtb = null;
+                gridRtb = null;
+                tilesWb = null;
+                spritesWb = null;
+                portalsWb = null;
+                cachedPixelWidth = 0;
+                cachedPixelHeight = 0;
+                backgroundDirty = true;
+                gridDirty = true;
+
+                // DrawMap performs the one synchronous tile pass. The sprite pass
+                // remains awaitable so the loading window can repaint between its
+                // bounded batches without allowing a second competing rebuild.
+                synchronousInitialLayerBuild = true;
+                DrawMap();
+                synchronousInitialLayerBuild = false;
+                await RebuildAllSpritesBitmapAsync(
+                    rasterScale, mapViewportPadding);
+
+                mapRenderScaleOverride = null;
+                UpdateQuickZoomTransform();
+                try { MapScrollViewer?.UpdateLayout(); } catch { }
+                try { ClampScrollOffsets(); } catch { }
+                try { UpdateParallaxTransform(); } catch { }
+            }
+            finally
+            {
+                synchronousInitialLayerBuild = false;
+                mapRenderScaleOverride = null;
+                if (Math.Abs(cachedScale - requestedDisplayScale) > 1e-6)
+                    UpdateQuickZoomTransform();
+            }
+        }
         
         // Provide immediate visual feedback during zoom by scaling existing images
         // This avoids the delay of rebuilding all bitmaps
+        private bool ShouldUseTransformOnlyZoom()
+        {
+            if (useFastZoom) return true;
+
+            // A full-map WPF bitmap grows with zoom². Keep large surfaces on
+            // the already-rendered raster and let WPF scale it on the GPU.
+            // The dimension guard also avoids pathological ultra-wide levels.
+            try
+            {
+                double scale = ZoomSlider?.Value ?? 1.0;
+                DpiScale dpi = VisualTreeHelper.GetDpi(this);
+                double widthPx =
+                    (mapWidth * TileSize * scale + mapViewportPadding * 2.0) *
+                    dpi.DpiScaleX;
+                double heightPx =
+                    (mapHeight * TileSize * scale + mapViewportPadding * 2.0) *
+                    dpi.DpiScaleY;
+                const double MaxRasterPixels = 32_000_000.0;
+                const double MaxRasterDimension = 32_000.0;
+                return widthPx > MaxRasterDimension ||
+                    heightPx > MaxRasterDimension ||
+                    widthPx * heightPx > MaxRasterPixels;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        private double GetBitmapUpdateScale(double requestedScale)
+        {
+            if (ShouldUseTransformOnlyZoom() && cachedScale > 0)
+                return cachedScale;
+            return requestedScale;
+        }
+
         private void UpdateQuickZoomTransform()
         {
             if (ZoomSlider == null) return;
@@ -13959,11 +15112,12 @@ namespace FamidashEditor
                 if (BackgroundImage != null) BackgroundImage.LayoutTransform = scaleTransform;
                 if (ParallaxImage != null)
                 {
-                    // Combine with parallax translate transform
-                    var group = new TransformGroup();
-                    group.Children.Add(scaleTransform);
-                    if (parallaxTransform != null) group.Children.Add(parallaxTransform);
-                    ParallaxImage.RenderTransform = group;
+                    // Keep zoom scaling separate from the continuously updated
+                    // parallax translation. ScrollChanged owns RenderTransform and
+                    // must not be able to discard the temporary zoom scale.
+                    ParallaxImage.LayoutTransform = scaleTransform;
+                    if (parallaxTransform != null)
+                        ParallaxImage.RenderTransform = parallaxTransform;
                 }
                 if (GroundImage != null) GroundImage.LayoutTransform = scaleTransform;
                 if (TilesImage != null) TilesImage.LayoutTransform = scaleTransform;
@@ -13982,7 +15136,7 @@ namespace FamidashEditor
 
             // Fast zoom: skip all rendering, keep all transforms, DON'T update cachedScale
             // (cachedScale must stay at the actual bitmap render scale for hover calculations)
-            if (useFastZoom)
+            if (ShouldUseTransformOnlyZoom())
             {
                 hasZoomAnchor = false;
                 return;
@@ -14151,27 +15305,41 @@ namespace FamidashEditor
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
             {
-                // Draw grid using integer device pixels to keep alignment stable across zoom/DPI changes
+                // Draw grid using integer device pixels to keep alignment stable
+                // across zoom/DPI changes. The old implementation drew one
+                // rectangle per cell (width*height draw calls); a grid only needs
+                // width+height lines.
                 int alpha = Math.Min(255, (int)(gridDarkness * 255 * 1.6));
-                // Pen thickness set to one device pixel
                 double penThickness = 1.0 / dpi.DpiScaleX;
-                var pen = new Pen(new SolidColorBrush(Color.FromArgb((byte)alpha, 200, 200, 200)), penThickness);
+                var gridBrush = new SolidColorBrush(
+                    Color.FromArgb((byte)alpha, 200, 200, 200));
+                gridBrush.Freeze();
+                var pen = new Pen(gridBrush, penThickness);
                 pen.Freeze();
                 int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
                 int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
-                int padPx = (int)Math.Round(pad * dpi.DpiScaleX);
-                for (int y = 0; y < mapHeight; y++)
+                int padPxX = (int)Math.Round(pad * dpi.DpiScaleX);
+                int padPxY = (int)Math.Round(pad * dpi.DpiScaleY);
+                double left = padPxX / dpi.DpiScaleX;
+                double top = padPxY / dpi.DpiScaleY;
+                double right =
+                    (padPxX + mapWidth * tilePixelW) / dpi.DpiScaleX;
+                double bottom =
+                    (padPxY + mapHeight * tilePixelH) / dpi.DpiScaleY;
+
+                for (int x = 0; x <= mapWidth; x++)
                 {
-                    for (int x = 0; x < mapWidth; x++)
-                    {
-                        int pxPix = padPx + x * tilePixelW;
-                        int pyPix = padPx + y * tilePixelH;
-                        double px = pxPix / dpi.DpiScaleX;
-                        double py = pyPix / dpi.DpiScaleY;
-                        double w = tilePixelW / dpi.DpiScaleX;
-                        double h = tilePixelH / dpi.DpiScaleY;
-                        dc.DrawRectangle(Brushes.Transparent, pen, new Rect(px, py, w, h));
-                    }
+                    double px =
+                        (padPxX + x * tilePixelW) / dpi.DpiScaleX;
+                    dc.DrawLine(pen, new Point(px, top),
+                        new Point(px, bottom));
+                }
+                for (int y = 0; y <= mapHeight; y++)
+                {
+                    double py =
+                        (padPxY + y * tilePixelH) / dpi.DpiScaleY;
+                    dc.DrawLine(pen, new Point(left, py),
+                        new Point(right, py));
                 }
             }
             gridRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
@@ -14181,7 +15349,9 @@ namespace FamidashEditor
         // Rebuild the entire tiles writeable bitmap from the tiles[] array
         private void RebuildAllTilesBitmap(double scale, double pad)
         {
+            if (suppressMapRendering) return;
             if (tilesWb == null) return;
+            scale = GetBitmapUpdateScale(scale);
             // A synchronous rebuild supersedes every queued async batch. Without
             // this, a first-load render from the previous tab can resume later and
             // repaint the new tab's bitmap with stale dimensions/content.
@@ -14202,12 +15372,10 @@ namespace FamidashEditor
                 {
                     IntPtr pBackBuffer = tilesWb.BackBuffer;
                     int backBufferStride = tilesWb.BackBufferStride;
-                    int bytesTotal = backBufferStride * cachedPixelHeight;
-                    byte* ptr = (byte*)pBackBuffer.ToPointer();
-                    for (int i = 0; i < bytesTotal; i++)
-                    {
-                        ptr[i] = 0;
-                    }
+                    nuint bytesTotal = checked((nuint)(
+                        (long)backBufferStride * cachedPixelHeight));
+                    System.Runtime.InteropServices.NativeMemory.Clear(
+                        pBackBuffer.ToPointer(), bytesTotal);
                 }
                 
                 // Write each tile using cached pixels
@@ -14226,13 +15394,15 @@ namespace FamidashEditor
             {
                 tilesWb.Unlock();
             }
-            try { BuildSelectSameIndexMaps(); } catch { }
+            try { BuildTileSelectSameIndexMap(); } catch { }
         }
         
         // Async version that renders tiles in small batches to avoid blocking UI
         private async void RebuildAllTilesBitmapAsync(double scale, double pad)
         {
+            if (suppressMapRendering) return;
             if (tilesWb == null) return;
+            scale = GetBitmapUpdateScale(scale);
             int generation = Interlocked.Increment(ref tileRenderGeneration);
             WriteableBitmap targetBitmap = tilesWb;
             int renderMapWidth = mapWidth;
@@ -14250,7 +15420,9 @@ namespace FamidashEditor
             // For very large maps, use bigger batches and skip pre-rendering
             int totalTiles = renderMapWidth * renderMapHeight;
             bool isLargeMap = totalTiles > 50000;
-            int batchSize = isLargeMap ? Math.Max(2000, renderMapWidth * 2) : Math.Max(500, renderMapWidth);
+            int batchSize = isLargeMap
+                ? Math.Clamp(renderMapWidth, 768, 2048)
+                : Math.Clamp(renderMapWidth, 384, 1024);
             
             System.Diagnostics.Debug.WriteLine($"RebuildAllTilesBitmapAsync: {totalTiles} tiles, batchSize={batchSize}, isLargeMap={isLargeMap}");
             
@@ -14335,7 +15507,7 @@ namespace FamidashEditor
                 !ReferenceEquals(tilesWb, targetBitmap))
                 return;
             System.Diagnostics.Debug.WriteLine($"RebuildAllTilesBitmapAsync: Complete");
-            try { BuildSelectSameIndexMaps(); } catch { }
+            try { BuildTileSelectSameIndexMap(); } catch { }
         }
 
         // Build or ensure a scaled tile pixel cache for the given zoom and dpi.
@@ -14511,6 +15683,13 @@ namespace FamidashEditor
         private void UpdateTileBitmapAt(int x, int y, double scale, double pad, int? preTilePxW = null, int? preTilePxH = null, DpiScale? preDpi = null)
         {
             if (tilesWb == null) return;
+            double bitmapScale = GetBitmapUpdateScale(scale);
+            if (Math.Abs(bitmapScale - scale) > 1e-6)
+            {
+                scale = bitmapScale;
+                preTilePxW = null;
+                preTilePxH = null;
+            }
             var dpi = preDpi ?? VisualTreeHelper.GetDpi(this);
             int tilePixelW = preTilePxW ?? Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
             int tilePixelH = preTilePxH ?? Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
@@ -14560,6 +15739,7 @@ namespace FamidashEditor
         private void UpdateSpriteBitmapAt(int x, int y, double scale, double pad)
         {
             if (spritesWb == null || sprites == null) return;
+            scale = GetBitmapUpdateScale(scale);
             
             var dpi = VisualTreeHelper.GetDpi(this);
             int spritePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
@@ -14595,11 +15775,8 @@ namespace FamidashEditor
                         {
                             long destOffset = (destY + row) * backBufferStride + destX * 4;
                             byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
-                            
-                            for (int col = 0; col < clearWidth * 4; col++)
-                            {
-                                destPtr[col] = 0; // Set to transparent
-                            }
+                            System.Runtime.InteropServices.NativeMemory.Clear(
+                                destPtr, checked((nuint)(clearWidth * 4)));
                         }
                         
                         // In preview mode, check if there's a portal nearby that extends into this position
@@ -14834,15 +16011,17 @@ namespace FamidashEditor
                 
                 // Ensure we don't read past the end of this row
                 int maxCol = Math.Min(copyWidth * 4, srcPixels.Length - srcOffset);
-                for (int col = 0; col < maxCol; col++)
+                if (maxCol <= 0) continue;
+                fixed (byte* srcPtr = &srcPixels[srcOffset])
                 {
-                    destPtr[col] = srcPixels[srcOffset + col];
+                    Buffer.MemoryCopy(srcPtr, destPtr, maxCol, maxCol);
                 }
             }
         }
 
         private void RebuildAllSpritesBitmap(double scale, double pad)
         {
+            if (suppressMapRendering) return;
             // Most editor callers only need to request the latest frame. The task
             // itself is generation-aware, so a newer request cancels stale batches.
             _ = RebuildAllSpritesBitmapAsync(scale, pad);
@@ -14851,7 +16030,9 @@ namespace FamidashEditor
         private async Task RebuildAllSpritesBitmapAsync(double scale, double pad,
             CancellationToken cancellationToken = default)
         {
+            if (suppressMapRendering) return;
             if (spritesWb == null || spriteImages == null) return;
+            scale = GetBitmapUpdateScale(scale);
 
             int generation = Interlocked.Increment(ref spriteRenderGeneration);
             bool gateHeld = false;
@@ -14925,10 +16106,11 @@ namespace FamidashEditor
                         {
                             IntPtr backBuffer = targetBitmap.BackBuffer;
                             if (backBuffer == IntPtr.Zero) return;
-                            int bytesTotal = targetBitmap.BackBufferStride *
-                                targetBitmap.PixelHeight;
-                            byte* ptr = (byte*)backBuffer.ToPointer();
-                            for (int i = 0; i < bytesTotal; i++) ptr[i] = 0;
+                            nuint bytesTotal = checked((nuint)(
+                                (long)targetBitmap.BackBufferStride *
+                                targetBitmap.PixelHeight));
+                            System.Runtime.InteropServices.NativeMemory.Clear(
+                                backBuffer.ToPointer(), bytesTotal);
                         }
                         targetBitmap.AddDirtyRect(new Int32Rect(
                             0, 0, renderPixelWidth, renderPixelHeight));
@@ -14939,15 +16121,42 @@ namespace FamidashEditor
                     }
                 });
 
-                int totalSprites = renderMapWidth * renderMapHeight;
-                bool isLargeMap = totalSprites > 50000;
-                int batchSize = isLargeMap
-                    ? Math.Max(2000, renderMapWidth * 2)
-                    : Math.Max(500, renderMapWidth);
+                // Most map cells do not contain sprites. Preserve NES/editor
+                // ordering by keeping indices ascending, but do not send every
+                // empty cell through the dispatcher and render loop.
+                var activeSpriteIndexList = new List<int>(
+                    Math.Min(renderSprites.Length, 4096));
+                var spriteIndexBuilders =
+                    new Dictionary<int, IndexInfoBuilder>();
+                int validSpriteImageCount = spriteImages.Length;
+                for (int i = 0; i < renderSprites.Length; i++)
+                {
+                    int spriteId = renderSprites[i];
+                    if (spriteId >= 0)
+                    {
+                        if (!spriteIndexBuilders.TryGetValue(spriteId,
+                            out var indexBuilder))
+                        {
+                            indexBuilder = new IndexInfoBuilder();
+                            spriteIndexBuilders[spriteId] = indexBuilder;
+                        }
+                        indexBuilder.Add(i, renderMapWidth);
+                    }
+                    if (spriteId >= 0 && spriteId < validSpriteImageCount)
+                        activeSpriteIndexList.Add(i);
+                }
+                if (IsSuperseded()) return;
+                spriteIndexMap.Clear();
+                foreach (var pair in spriteIndexBuilders)
+                    spriteIndexMap[pair.Key] = pair.Value.Build();
+                int[] activeSpriteIndices = activeSpriteIndexList.ToArray();
+                int totalMapCells = renderMapWidth * renderMapHeight;
+                int totalSprites = activeSpriteIndices.Length;
+                int batchSize = totalSprites > 2000 ? 768 : 384;
 
                 System.Diagnostics.Debug.WriteLine(
-                    $"RebuildAllSpritesBitmap: {totalSprites} sprites, " +
-                    $"batchSize={batchSize}, isLargeMap={isLargeMap}");
+                    $"RebuildAllSpritesBitmap: {totalSprites} sprites in " +
+                    $"{totalMapCells} cells, batchSize={batchSize}");
 
                 for (int batchStart = 0; batchStart < totalSprites;
                     batchStart += batchSize)
@@ -14966,10 +16175,10 @@ namespace FamidashEditor
                             for (int i = renderBatchStart;
                                 i < renderBatchEnd; i++)
                             {
-                                int x = i % renderMapWidth;
-                                int y = i / renderMapWidth;
-                                int idx = renderSprites[i];
-                                if (idx < 0 || idx >= spriteImages.Length) continue;
+                                int mapIndex = activeSpriteIndices[i];
+                                int x = mapIndex % renderMapWidth;
+                                int y = mapIndex / renderMapWidth;
+                                int idx = renderSprites[mapIndex];
                                 try
                                 {
                                     UpdateSpriteBitmapAtLocked(x, y, idx, scale,
@@ -14982,14 +16191,17 @@ namespace FamidashEditor
                                 }
                             }
 
-                            int minY = renderBatchStart / renderMapWidth;
-                            int maxY = (renderBatchEnd - 1) / renderMapWidth;
+                            int minY = activeSpriteIndices[renderBatchStart] /
+                                renderMapWidth;
+                            int maxY = activeSpriteIndices[renderBatchEnd - 1] /
+                                renderMapWidth;
                             int maxOffsetUp = spritePixelH;
                             int maxOffsetDown = 0;
                             for (int i = renderBatchStart;
                                 i < renderBatchEnd; i++)
                             {
-                                if (!spritePixelOffsets.TryGetValue(i,
+                                int mapIndex = activeSpriteIndices[i];
+                                if (!spritePixelOffsets.TryGetValue(mapIndex,
                                     out var offset)) continue;
                                 int scaledOffsetY = (int)Math.Round(
                                     Math.Abs(offset.offsetY) * scale *
@@ -15155,6 +16367,7 @@ namespace FamidashEditor
             if (spriteImages == null) return;
             if (spriteImages == null) return;
             if (spriteImages == null) return;
+            scale = GetBitmapUpdateScale(scale);
             try
             {
                 var dpi = VisualTreeHelper.GetDpi(this);
@@ -15194,13 +16407,8 @@ namespace FamidashEditor
                             {
                                 long destOffset = (pxTop + row) * stride + pxLeft * 4;
                                 byte* ptr = (byte*)pBackBuffer.ToPointer() + destOffset;
-                                for (int col = 0; col < widthPx; col++)
-                                {
-                                    ptr[col * 4 + 0] = 0;
-                                    ptr[col * 4 + 1] = 0;
-                                    ptr[col * 4 + 2] = 0;
-                                    ptr[col * 4 + 3] = 0;
-                                }
+                                System.Runtime.InteropServices.NativeMemory.Clear(
+                                    ptr, checked((nuint)(widthPx * 4)));
                             }
                         }
                         portalsWb.AddDirtyRect(new Int32Rect(pxLeft, pxTop, widthPx, heightPx));
@@ -15268,6 +16476,7 @@ namespace FamidashEditor
         private void ClearSpritesBitmapTileRect(int minX, int minY, int maxX, int maxY, double scale, double pad)
         {
             if (spritesWb == null) return;
+            scale = GetBitmapUpdateScale(scale);
             var dpi = VisualTreeHelper.GetDpi(this);
             int spritePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
             int spritePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
@@ -15303,13 +16512,8 @@ namespace FamidashEditor
                         {
                             long destOffset = (pxTop + row) * stride + pxLeft * 4;
                             byte* ptr = (byte*)pBackBuffer.ToPointer() + destOffset;
-                            for (int col = 0; col < widthPx; col++)
-                            {
-                                ptr[col * 4 + 0] = 0;
-                                ptr[col * 4 + 1] = 0;
-                                ptr[col * 4 + 2] = 0;
-                                ptr[col * 4 + 3] = 0;
-                            }
+                            System.Runtime.InteropServices.NativeMemory.Clear(
+                                ptr, checked((nuint)(widthPx * 4)));
                         }
                     }
                     spritesWb.AddDirtyRect(new Int32Rect(pxLeft, pxTop, widthPx, heightPx));
@@ -15322,6 +16526,7 @@ namespace FamidashEditor
         private void ClearPortalsBitmapTileRect(int minX, int minY, int maxX, int maxY, double scale, double pad)
         {
             if (portalsWb == null) return;
+            scale = GetBitmapUpdateScale(scale);
             var dpi = VisualTreeHelper.GetDpi(this);
             int spritePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
             int spritePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
@@ -15357,13 +16562,8 @@ namespace FamidashEditor
                         {
                             long destOffset = (pxTop + row) * stride + pxLeft * 4;
                             byte* ptr = (byte*)pBackBuffer.ToPointer() + destOffset;
-                            for (int col = 0; col < widthPx; col++)
-                            {
-                                ptr[col * 4 + 0] = 0;
-                                ptr[col * 4 + 1] = 0;
-                                ptr[col * 4 + 2] = 0;
-                                ptr[col * 4 + 3] = 0;
-                            }
+                            System.Runtime.InteropServices.NativeMemory.Clear(
+                                ptr, checked((nuint)(widthPx * 4)));
                         }
                     }
                     portalsWb.AddDirtyRect(new Int32Rect(pxLeft, pxTop, widthPx, heightPx));
@@ -18130,7 +19330,7 @@ namespace FamidashEditor
             // Update visuals for affected tiles
             try
             {
-                double updateScale = useFastZoom ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
+                double updateScale = ShouldUseTransformOnlyZoom() ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
                 foreach (var i in visited)
                 {
                     int tx = i % mapWidth; int ty = i / mapWidth;
@@ -19056,63 +20256,60 @@ namespace FamidashEditor
             if (GhostImage != null) { GhostImage.Visibility = Visibility.Collapsed; GhostImage.Source = null; }
         }
 
-        // Build fast lookup maps from tile/sprite id -> indices. Called after tile/sprite layers are rebuilt.
-        private void BuildSelectSameIndexMaps()
+        // Build fast lookup maps from ids to indices. Tile and sprite rebuilds
+        // complete independently, so do not rescan the unaffected layer.
+        private void BuildTileSelectSameIndexMap()
         {
             try
             {
-                tileIndexMap.Clear(); spriteIndexMap.Clear();
-                if (tiles != null && tiles.Length > 0)
+                tileIndexMap.Clear();
+
+                if (tiles.Length > 0)
                 {
-                    var tmp = new System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<int>>();
+                    var builders = new Dictionary<int, IndexInfoBuilder>();
                     for (int i = 0; i < tiles.Length; i++)
                     {
-                        int v = tiles[i];
-                        // include -1 (empty) as a valid id so "select same" can target blanks instantly
-                        if (!tmp.TryGetValue(v, out var l)) { l = new System.Collections.Generic.List<int>(); tmp[v] = l; }
-                        l.Add(i);
-                    }
-                    foreach (var kv in tmp)
-                    {
-                        var list = kv.Value;
-                        list.Sort();
-                        var info = new IndexInfo { Indices = list.ToArray() };
-                        // compute bounding box
-                        int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
-                        foreach (var idx in info.Indices)
+                        int id = tiles[i];
+                        // Every select-same entry point rejects -1, so caching
+                        // all empty cells only creates a giant unused array.
+                        if (id < 0) continue;
+                        if (!builders.TryGetValue(id, out var builder))
                         {
-                            int sx = idx % mapWidth; int sy = idx / mapWidth;
-                            if (sx < minX) minX = sx; if (sy < minY) minY = sy; if (sx > maxX) maxX = sx; if (sy > maxY) maxY = sy;
+                            builder = new IndexInfoBuilder();
+                            builders[id] = builder;
                         }
-                        if (minX == int.MaxValue) { minX = 0; minY = 0; maxX = 0; maxY = 0; }
-                        info.MinX = minX; info.MinY = minY; info.MaxX = maxX; info.MaxY = maxY;
-                        tileIndexMap[kv.Key] = info;
+                        builder.Add(i, mapWidth);
                     }
+                    // Indices were encountered in ascending order; no sort or
+                    // second bounding-box pass is necessary.
+                    foreach (var pair in builders)
+                        tileIndexMap[pair.Key] = pair.Value.Build();
                 }
-                if (sprites != null && sprites.Length > 0)
+            }
+            catch { }
+        }
+
+        private void BuildSpriteSelectSameIndexMap()
+        {
+            try
+            {
+                spriteIndexMap.Clear();
+                if (sprites.Length > 0)
                 {
-                    var tmp2 = new System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<int>>();
+                    var builders = new Dictionary<int, IndexInfoBuilder>();
                     for (int i = 0; i < sprites.Length; i++)
                     {
-                        int v = sprites[i];
-                        if (!tmp2.TryGetValue(v, out var l2)) { l2 = new System.Collections.Generic.List<int>(); tmp2[v] = l2; }
-                        l2.Add(i);
-                    }
-                    foreach (var kv in tmp2)
-                    {
-                        var list = kv.Value;
-                        list.Sort();
-                        var info = new IndexInfo { Indices = list.ToArray() };
-                        int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
-                        foreach (var idx in info.Indices)
+                        int id = sprites[i];
+                        if (id < 0) continue;
+                        if (!builders.TryGetValue(id, out var builder))
                         {
-                            int sx = idx % mapWidth; int sy = idx / mapWidth;
-                            if (sx < minX) minX = sx; if (sy < minY) minY = sy; if (sx > maxX) maxX = sx; if (sy > maxY) maxY = sy;
+                            builder = new IndexInfoBuilder();
+                            builders[id] = builder;
                         }
-                        if (minX == int.MaxValue) { minX = 0; minY = 0; maxX = 0; maxY = 0; }
-                        info.MinX = minX; info.MinY = minY; info.MaxX = maxX; info.MaxY = maxY;
-                        spriteIndexMap[kv.Key] = info;
+                        builder.Add(i, mapWidth);
                     }
+                    foreach (var pair in builders)
+                        spriteIndexMap[pair.Key] = pair.Value.Build();
                 }
             }
             catch { }
@@ -20220,7 +21417,8 @@ namespace FamidashEditor
         {
             selTiles = null; selSprites = null; selW = 0; selH = 0; selX = selY = -1;
             selectionSet.Clear();
-            spriteAnchors.Clear(); // Clear anchors when selection is cleared
+            // spriteAnchors is persistent document data used to serialize
+            // off-grid sprite shifts. A visual deselection must not erase it.
             if (SelectionOverlay != null) SelectionOverlay.Children.Clear();
             if (StatusText != null) StatusText.Text = string.Empty;
             try { var mb = FindName("ManipulateButton") as Button; if (mb != null) mb.IsEnabled = false; } catch { }
@@ -20945,7 +22143,7 @@ namespace FamidashEditor
                         if (spritesLayerActive && selectedSprite >= 0)
                         {
                             // Update the newly placed sprite
-                            double updateScale = useFastZoom ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
+                            double updateScale = ShouldUseTransformOnlyZoom() ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
                             UpdateSpriteBitmapAt(x, y, updateScale, mapViewportPadding);
                             
                             // If we PLACED a portal in preview mode, rebuild portal pixels for the affected region only
@@ -20969,7 +22167,7 @@ namespace FamidashEditor
                         if (tilesLayerActive && selectedTiles.Count > 0)
                         {
                             // Update all affected tiles
-                            double updateScale = useFastZoom ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
+                            double updateScale = ShouldUseTransformOnlyZoom() ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
                             for (int dy = 0; dy < selectionHeight; dy++)
                             {
                                 for (int dx = 0; dx < selectionWidth; dx++)
@@ -21048,7 +22246,7 @@ namespace FamidashEditor
                 {
                     lastPaintX = x; lastPaintY = y;
                     try { 
-                        double updateScale = useFastZoom ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
+                        double updateScale = ShouldUseTransformOnlyZoom() ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
                         if (tilesLayerActive)
                         {
                             // Update all affected tiles
@@ -21083,7 +22281,7 @@ namespace FamidashEditor
         private void UpdateCoords(Point p)
         {
             // For fast zoom: use cachedScale since bitmaps are at that scale (transforms handle visual zoom)
-            double scale = useFastZoom ? cachedScale : ((ZoomSlider != null) ? ZoomSlider.Value : 1.0);
+            double scale = ShouldUseTransformOnlyZoom() ? cachedScale : ((ZoomSlider != null) ? ZoomSlider.Value : 1.0);
             double pad = mapViewportPadding;
             // Determine whether pointer is inside the map area (accounting for padding)
             bool inBounds = p.X >= pad && p.Y >= pad && p.X < pad + mapWidth * TileSize * scale && p.Y < pad + mapHeight * TileSize * scale;
@@ -21230,12 +22428,12 @@ namespace FamidashEditor
             if (MapScrollViewer == null) return (-1, -1);
             var dpi = VisualTreeHelper.GetDpi(this);
             // For fast zoom: use cachedScale since that's the actual bitmap scale (CanvasHost is transformed)
-            double scale = useFastZoom ? cachedScale : ((ZoomSlider != null) ? ZoomSlider.Value : 1.0);
+            double scale = ShouldUseTransformOnlyZoom() ? cachedScale : ((ZoomSlider != null) ? ZoomSlider.Value : 1.0);
             
             // When fast zoom is active, CanvasHost has a LayoutTransform of (ZoomSlider.Value / cachedScale).
             // e.GetPosition(CanvasHost) returns post-transform coordinates, so we need to reverse the transform
             // to get back to bitmap coordinates.
-            if (useFastZoom && ZoomSlider != null && cachedScale > 0)
+            if (ShouldUseTransformOnlyZoom() && ZoomSlider != null && cachedScale > 0)
             {
                 double transformScale = ZoomSlider.Value / cachedScale;
                 if (Math.Abs(transformScale - 1.0) > 1e-6)
@@ -21595,6 +22793,7 @@ namespace FamidashEditor
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
+            lastSaveSucceeded = false;
             // If we already have a current file path, perform a silent save to that path.
             if (!string.IsNullOrEmpty(currentFilePath))
             {
@@ -21602,6 +22801,11 @@ namespace FamidashEditor
                 {
                     string target = currentFilePath;
                     string ext = Path.GetExtension(target).ToLower();
+
+                    // SaveTmxConfig reads the per-tab snapshot by design. Capture
+                    // the live offsets/anchors and metadata immediately before
+                    // writing so Ctrl+S cannot serialize stale sprite shifts.
+                    SaveCurrentTabState();
 
                     if (ext == ".tmx")
                     {
@@ -21644,7 +22848,10 @@ namespace FamidashEditor
                         }
                         
                         // Save TMX config (sprite offsets, tints, sets, etc.)
-                        try { SaveTmxConfig(target); } catch { }
+                        if (!SaveTmxConfig(target))
+                            throw new IOException(
+                                "The level was written, but its sprite-shift " +
+                                "configuration could not be saved.");
                     }
                     else
                     {
@@ -21653,6 +22860,7 @@ namespace FamidashEditor
                     }
 
                     SetHasUnsavedChanges(false);
+                    lastSaveSucceeded = true;
                     if (StatusText != null) StatusText.Text = "Saved " + target;
                 }
                 catch (Exception ex)
@@ -21667,8 +22875,29 @@ namespace FamidashEditor
             var dlg = new SaveFileDialog { Filter = "Tiled Map (TMX)|*.tmx|JSON level|*.json|All files|*.*", DefaultExt = "tmx" };
             if (dlg.ShowDialog(this) == true)
             {
+                string? previousFilePath = currentFilePath;
+                FileTabData? currentTab =
+                    currentFileIndex >= 0 &&
+                    currentFileIndex < openFiles.Count
+                        ? openFiles[currentFileIndex]
+                        : null;
+                string? previousTabPath = currentTab?.FilePath;
+                bool previousCreatedAsUntitled =
+                    currentTab?.CreatedAsUntitled ?? false;
+                bool previousDirty = hasUnsavedChanges;
                 try
                 {
+                    int conflictingTab = FindOpenFileTabIndex(dlg.FileName);
+                    if (conflictingTab >= 0 &&
+                        conflictingTab != currentFileIndex)
+                    {
+                        MessageBox.Show(this,
+                            "That file is already open in another tab.",
+                            "Save As", MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                        return;
+                    }
+
                     string ext = Path.GetExtension(dlg.FileName).ToLower();
 
                     if (ext == ".tmx")
@@ -21711,8 +22940,6 @@ namespace FamidashEditor
                                 "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
                         }
                         
-                        // Save TMX config (sprite offsets, tints, sets, etc.)
-                        try { SaveTmxConfig(dlg.FileName); } catch { }
                     }
                     else
                     {
@@ -21720,26 +22947,43 @@ namespace FamidashEditor
                         File.WriteAllText(dlg.FileName, JsonSerializer.Serialize(model));
                     }
 
-                    currentFilePath = dlg.FileName;
-                    SetHasUnsavedChanges(false);
-                    // If there is a current tab, update its recorded file path and UI header
-                    try
+                    // The main file now exists. Associate the tab with the path
+                    // before saving config so the config ownership guard accepts
+                    // a brand-new level's first save.
+                    currentFilePath = NormalizeEditorFilePath(dlg.FileName);
+                    if (currentTab != null)
                     {
-                        if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
-                        {
-                            openFiles[currentFileIndex].FilePath = currentFilePath;
-                            openFiles[currentFileIndex].HasUnsavedChanges = false;
-                            try { openFiles[currentFileIndex].CreatedAsUntitled = false; } catch { }
-                            try { UpdateTabHeaderForIndex(currentFileIndex); } catch { }
-                        }
+                        currentTab.FilePath = currentFilePath;
+                        currentTab.CreatedAsUntitled = false;
                     }
-                    catch { }
+                    SaveCurrentTabState();
+
+                    if (ext == ".tmx" &&
+                        !SaveTmxConfig(currentFilePath))
+                    {
+                        throw new IOException(
+                            "The level was written, but its sprite-shift " +
+                            "configuration could not be saved.");
+                    }
+
+                    SetHasUnsavedChanges(false);
+                    lastSaveSucceeded = true;
+                    try { UpdateTabHeaderForIndex(currentFileIndex); } catch { }
                     // Add to recent files
                     try { AddToRecentFiles(dlg.FileName); } catch { }
                     if (StatusText != null) StatusText.Text = "Saved " + dlg.FileName;
                 }
                 catch (Exception ex)
                 {
+                    currentFilePath = previousFilePath;
+                    if (currentTab != null)
+                    {
+                        currentTab.FilePath = previousTabPath;
+                        currentTab.CreatedAsUntitled =
+                            previousCreatedAsUntitled;
+                    }
+                    SetHasUnsavedChanges(previousDirty);
+                    try { UpdateTabHeaderForIndex(currentFileIndex); } catch { }
                     if (StatusText != null) StatusText.Text = "Save failed: " + ex.Message;
                 }
             }
@@ -21984,6 +23228,7 @@ namespace FamidashEditor
                 // with a later vertical-only path (or vice versa).
                 precomputedPathfinderInputs = null;
                 precomputedPathfinderDirections = null;
+                precomputedPathfinderReplayFrames = null;
                 precomputedCollectedCoins = null;
                 RefreshReplayButtonVisibility();
 
@@ -22030,6 +23275,26 @@ namespace FamidashEditor
                 PathfinderProgressBar.Visibility = System.Windows.Visibility.Visible;
                 PathfinderJumpToButton.Visibility = System.Windows.Visibility.Visible;
 
+                // The search owns an immutable document snapshot. Editing the
+                // active level while it runs must not mutate arrays or sprite
+                // dictionaries being read on the worker thread.
+                int[] pathfinderTiles = (int[])tiles.Clone();
+                int[] pathfinderSprites = (int[])sprites.Clone();
+                var pathfinderAnchors =
+                    new Dictionary<int, (int anchorTileX,
+                        int anchorTileY)>(spriteAnchors);
+                var pathfinderOffsets =
+                    new Dictionary<int, (int offsetX,
+                        int offsetY)>(spritePixelOffsets);
+                int pathfinderMapWidth = mapWidth;
+                int pathfinderMapHeight = mapHeight;
+                int pathfinderMaxFallSpeed = loadedMaxFallSpeed;
+                string pathfinderLevelName = currentFilePath ?? "";
+                int? pathfinderSpawnYLow = loadedSpawnYPositionLow;
+                bool pathfinderUsesDefaultSpawn =
+                    !(startPosMarkerX.HasValue &&
+                      startPosMarkerY.HasValue);
+
                 // Progress callback that updates the UI from the background thread
                 var progress = new Progress<int>(pct =>
                 {
@@ -22038,19 +23303,21 @@ namespace FamidashEditor
                 });
 
                 // Run asynchronously to avoid blocking the UI
+                pathfinderRunInProgress = true;
                 System.Threading.Tasks.Task.Run(() =>
                 {
                     try
                     {
                         var engine = new PathfinderEngine(
-                            tiles, sprites, spriteAnchors,
-                            mapWidth, mapHeight,
+                            pathfinderTiles, pathfinderSprites,
+                            pathfinderAnchors,
+                            pathfinderMapWidth, pathfinderMapHeight,
                             hasGround, groundTileRows,
-                            loadedMaxFallSpeed,
-                            spritePixelOffsets,
+                            pathfinderMaxFallSpeed,
+                            pathfinderOffsets,
                             nesSpriteLayerForRuntime,
                             nesSpriteRecordsForRuntime);
-                        engine.LevelName = currentFilePath ?? "";
+                        engine.LevelName = pathfinderLevelName;
                         engine.EnableLogging = enablePathfinderLogging;
                         engine.JumpTimingBias = jumpTimingBias;
                         engine.PreferCoins = preferCoins;
@@ -22059,8 +23326,9 @@ namespace FamidashEditor
                         engine.Progress = progress;
                         engine.ConfigScrollYHi = effectiveScrollYHi;
                         engine.ConfigScrollYLo = effectiveScrollYLo;
-                        engine.ConfigSpawnYLo = loadedSpawnYPositionLow;
-                        engine.UseNesSpawnScrollDefaults = !(startPosMarkerX.HasValue && startPosMarkerY.HasValue);
+                        engine.ConfigSpawnYLo = pathfinderSpawnYLow;
+                        engine.UseNesSpawnScrollDefaults =
+                            pathfinderUsesDefaultSpawn;
                         _activePathfinderEngine = engine;
 
                         // Real-time speculative path visualization callback.
@@ -22296,6 +23564,9 @@ namespace FamidashEditor
                                 {
                                     precomputedPathfinderInputs = engine.Inputs;
 									precomputedPathfinderDirections = engine.HorizontalInputs;
+                                    precomputedPathfinderReplayFrames =
+                                        new System.Collections.Generic.List<PathfinderReplayFrame>(
+                                            engine.ReplayFrames);
                                     precomputedCollectedCoins = engine.FinalCollectedCoinIndices;
                                     // Persist replay CSV + Lua for the "Replay in Mesen" button.
                                     try { TryWritePathfinderReplayCsv(engine); } catch { }
@@ -22318,6 +23589,9 @@ namespace FamidashEditor
                                     // Partial path — still write replay so it can be used in Mesen.
                                     precomputedPathfinderInputs = engine.Inputs;
 									precomputedPathfinderDirections = engine.HorizontalInputs;
+                                    precomputedPathfinderReplayFrames =
+                                        new System.Collections.Generic.List<PathfinderReplayFrame>(
+                                            engine.ReplayFrames);
                                     precomputedCollectedCoins = engine.FinalCollectedCoinIndices;
                                     try { TryWritePathfinderReplayCsv(engine); } catch { }
                                     // Auto-save .pfdat alongside the replay artifacts (even for
@@ -22368,6 +23642,7 @@ namespace FamidashEditor
                                 catch { }
 #endif
                                 _activePathfinderEngine = null;
+                                pathfinderRunInProgress = false;
                                 StopPathfinderFollow();
                                 // Clean up all speculative path polylines
                                 foreach (var sp in _speculativePolylines)
@@ -22389,6 +23664,7 @@ namespace FamidashEditor
                             PathfinderJumpToButton.Visibility = System.Windows.Visibility.Collapsed;
                             StopPathfinderFollow();
                             _activePathfinderEngine = null;
+                            pathfinderRunInProgress = false;
                         }));
                     }
                 });
@@ -22400,6 +23676,7 @@ namespace FamidashEditor
                 StopPathfinderButton.Visibility = System.Windows.Visibility.Collapsed;
                 try { PathfinderProgressBar.Visibility = System.Windows.Visibility.Collapsed; } catch { }
                 try { StopPathfinderFollow(); } catch { }
+                pathfinderRunInProgress = false;
             }
         }
 
@@ -22526,14 +23803,10 @@ namespace FamidashEditor
         {
             try
             {
-                // If a tab switch is in progress, wait briefly for it to complete so
-                // the Set Options dialog initializes from fully-loaded tab values.
-                int waited = 0;
-                while (isSwitchingTab && waited < 2000)
-                {
-                    await System.Threading.Tasks.Task.Delay(10);
-                    waited += 10;
-                }
+                // Wait for the serialized tab-switch queue so the dialog never
+                // initializes from a half-restored document.
+                await tabSwitchGate.WaitAsync();
+                tabSwitchGate.Release();
 
                 // Get the current tab's values if available, otherwise use globals
                 string currentDeco = loadedDecoSet;
@@ -22581,12 +23854,12 @@ namespace FamidashEditor
                         if (changed)
                         {
                             // Save to per-level config without prompting
-                            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+                            try { SaveCurrentTmxConfig(); } catch { }
                             try { Redraw(); } catch { }
                         }
                         // Also persist lock sprites option if dialog changed it (dialog wires owner on toggle but ensure saved)
                         try {
-                            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+                            try { SaveCurrentTmxConfig(); } catch { }
                         } catch { }
                     }
             }
@@ -22684,7 +23957,7 @@ namespace FamidashEditor
                 }
                 
                 // Save offsets to TMX config after applying JSON offsets
-                try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+                try { SaveCurrentTmxConfig(); } catch { }
                 
                 // Trigger a redraw to apply the offsets
                 try
@@ -22751,7 +24024,7 @@ namespace FamidashEditor
             redoStack.Push(action);
             try 
             { 
-                double updateScale = useFastZoom ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
+                double updateScale = ShouldUseTransformOnlyZoom() ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
                 RebuildAllTilesBitmap(updateScale, mapViewportPadding);
                 RebuildAllSpritesBitmap(updateScale, mapViewportPadding);
             } 
@@ -22780,7 +24053,7 @@ namespace FamidashEditor
             undoStack.Push(action);
             try 
             { 
-                double updateScale = useFastZoom ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
+                double updateScale = ShouldUseTransformOnlyZoom() ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
                 RebuildAllTilesBitmap(updateScale, mapViewportPadding);
                 RebuildAllSpritesBitmap(updateScale, mapViewportPadding);
             } 
@@ -22801,8 +24074,21 @@ namespace FamidashEditor
             else if (StatusText != null) StatusText.Text = "Invalid width/height";
         }
 
-        private void NewMenuItem_Click(object sender, RoutedEventArgs e)
+        private async void NewMenuItem_Click(object sender, RoutedEventArgs e)
         {
+            if (pathfinderRunInProgress)
+            {
+                if (StatusText != null)
+                    StatusText.Text =
+                        "Finish or stop the active pathfinder before creating another level.";
+                if (currentFileIndex >= 0 &&
+                    currentFileIndex < openFiles.Count)
+                {
+                    await SelectTabItemForDataAsync(
+                        openFiles[currentFileIndex]);
+                }
+                return;
+            }
             // In multi-tab mode, just create a new tab without prompting
             // The old tab keeps its state and unsaved changes
             if (openFiles.Count > 0)
@@ -22837,10 +24123,12 @@ namespace FamidashEditor
                         }
 
                         // Overwrite the single untitled tab with a fresh map
-                        _ = SwitchToTab(existingUntitled);
+                        ClearReplayStateForFreshDocument();
                         currentFilePath = "";
                         mapWidth = 200; mapHeight = 27;
                         InitDefaultMap();
+                        spritePixelOffsets.Clear();
+                        spriteAnchors.Clear();
                         try { spriteFrameOffsets.Clear(); } catch { }
                         try { scaledTileCaches.Clear(); } catch { }
                         noParallaxBg = false;
@@ -22860,6 +24148,7 @@ namespace FamidashEditor
                         try { loadedStartingGameMode = null; } catch { }
                         try { loadedStartingLowerText = null; } catch { }
                         try { loadedStartingUpperText = null; } catch { }
+                        ResetLoadedMetadataForNewDocument();
                         SaveCurrentTabState();
                         try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
                         try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
@@ -22879,23 +24168,35 @@ namespace FamidashEditor
                                 isHandlingNewTab = true; // prevent SelectionChanged from creating a new tab
                                 lastProgrammaticSelectedTab = ti;
                                 FileTabControl.SelectedItem = ti;
-                                try { Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
+                                try { _ = Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
                             }
                             finally
                             {
                                 isHandlingNewTab = false;
                             }
-                            // Load the tab contents (don't block UI thread)
-                            try { _ = SwitchToTab(existingUntitled); } catch { }
+                            try { await SwitchToTab(existingUntitled); } catch { }
                             if (StatusText != null) StatusText.Text = "Switched to existing Untitled tab.";
                             return;
                         }
                     }
                 }
+                // Capture the outgoing document before replacing any live editor
+                // globals with the fresh-map defaults.
+                if (currentFileIndex >= 0 &&
+                    currentFileIndex < openFiles.Count)
+                {
+                    SaveCurrentTabState();
+                }
+
                 // Switch to a fresh state for the new tab
+                ClearReplayStateForFreshDocument();
+                mapWidth = 200;
+                mapHeight = 27;
                 InitDefaultMap();
+                spritePixelOffsets.Clear();
+                spriteAnchors.Clear();
                 currentFilePath = null;
-                SetHasUnsavedChanges(false);
+                hasUnsavedChanges = false;
                 
                 // Load default tints
                 try
@@ -22929,18 +24230,24 @@ namespace FamidashEditor
                 backgroundDirty = true;
                 try { scaledTileCaches.Clear(); } catch { }
                 
-                undoStack.Clear();
-                redoStack.Clear();
-                
-                // Save current tab state before creating new tab
-                if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
-                {
-                    SaveCurrentTabState();
-                }
+                undoStack = new Stack<IUndoAction>();
+                redoStack = new Stack<IUndoAction>();
                 
                 // Create the new tab
                 CreateNewTab(null);
-                
+                SetHasUnsavedChanges(false);
+                try
+                {
+                    RebuildAllTilesBitmap(
+                        ZoomSlider?.Value ?? 1.0,
+                        mapViewportPadding);
+                    RebuildAllSpritesBitmap(
+                        ZoomSlider?.Value ?? 1.0,
+                        mapViewportPadding);
+                    Redraw();
+                }
+                catch { }
+
                 if (StatusText != null) StatusText.Text = "New map created (200x27)";
                 return;
             }
@@ -22970,12 +24277,15 @@ namespace FamidashEditor
             // CRITICAL: Clear file path FIRST before changing any settings
             // Otherwise event handlers will save changed settings to the old file!
             currentFilePath = "";
+            ClearReplayStateForFreshDocument();
             
             // Create a new 200x27 map
             mapWidth = 200;
             mapHeight = 27;
             // Initialize tiles and sprites to -1 (empty) using shared initializer
             InitDefaultMap();
+            spritePixelOffsets.Clear();
+            spriteAnchors.Clear();
             // Reset any per-position animation offsets so new empty map starts fresh
             try { spriteFrameOffsets.Clear(); } catch { }
             
@@ -23015,8 +24325,7 @@ namespace FamidashEditor
             try { scaledTileCaches.Clear(); } catch { }
             try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
             
-            // Refresh tile and sprite palettes
-            try { PopulateTilesPanel(); } catch { }
+            // Refresh sprite palette restrictions for the reset state.
             try { PopulateSpritesPanel(); } catch { }
             
             // Set default song to Stereo Madness
@@ -23038,8 +24347,8 @@ namespace FamidashEditor
             catch { }
             
             // Clear undo/redo stacks
-            undoStack.Clear();
-            redoStack.Clear();
+            undoStack = new Stack<IUndoAction>();
+            redoStack = new Stack<IUndoAction>();
             
             // File path already cleared at the start
             SetHasUnsavedChanges(false);
@@ -23073,37 +24382,111 @@ namespace FamidashEditor
 
         
 
-        private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+        private async void Window_Closing(object? sender,
+            System.ComponentModel.CancelEventArgs e)
         {
-            // Prompt to save if there are unsaved changes
-            if (hasUnsavedChanges)
+            if (shutdownCloseApproved)
             {
-                var result = MessageBox.Show(
-                    "You have unsaved changes. Do you want to save before closing?",
+                PrepareWindowShutdown();
+                return;
+            }
+
+            if (pathfinderRunInProgress)
+            {
+                e.Cancel = true;
+                try
+                {
+                    if (_activePathfinderEngine != null)
+                        _activePathfinderEngine.CancelRequested = true;
+                }
+                catch { }
+                if (StatusText != null)
+                {
+                    StatusText.Text =
+                        "Pathfinder is cancelling. Close the editor again when it finishes.";
+                }
+                return;
+            }
+
+            try { SaveCurrentTabState(); } catch { }
+            if (!openFiles.Any(tab => tab.HasUnsavedChanges))
+            {
+                shutdownCloseApproved = true;
+                PrepareWindowShutdown();
+                return;
+            }
+
+            e.Cancel = true;
+            if (shutdownPromptInProgress) return;
+            shutdownPromptInProgress = true;
+            try
+            {
+                if (!await ConfirmAllDirtyTabsBeforeShutdownAsync())
+                    return;
+
+                shutdownCloseApproved = true;
+                Close();
+            }
+            finally
+            {
+                shutdownPromptInProgress = false;
+            }
+        }
+
+        private async Task<bool> ConfirmAllDirtyTabsBeforeShutdownAsync()
+        {
+            // Snapshot object identities. Save As may change a path, but it
+            // must not change which document the prompt is handling.
+            var dirtyTabs = openFiles
+                .Where(tab => tab.HasUnsavedChanges)
+                .ToList();
+
+            foreach (FileTabData tabData in dirtyTabs)
+            {
+                if (!openFiles.Contains(tabData) ||
+                    !tabData.HasUnsavedChanges)
+                {
+                    continue;
+                }
+
+                string fileName = string.IsNullOrEmpty(tabData.FilePath)
+                    ? "Untitled"
+                    : System.IO.Path.GetFileName(tabData.FilePath);
+                var result = MessageBox.Show(this,
+                    $"Save changes to {fileName} before closing?",
                     "Unsaved Changes",
                     MessageBoxButton.YesNoCancel,
                     MessageBoxImage.Question);
-                
-                if (result == MessageBoxResult.Yes)
+
+                if (result == MessageBoxResult.Cancel) return false;
+                if (result == MessageBoxResult.No) continue;
+
+                int index = openFiles.IndexOf(tabData);
+                if (index < 0) continue;
+                await SwitchToTab(index);
+                SaveButton_Click(this, new RoutedEventArgs());
+                SaveCurrentTabState();
+                if (!lastSaveSucceeded ||
+                    tabData.HasUnsavedChanges)
                 {
-                    SaveButton_Click(this, new RoutedEventArgs());
-                    // If user cancelled the save dialog, cancel the close
-                    if (hasUnsavedChanges)
-                    {
-                        e.Cancel = true;
-                    }
+                    return false;
                 }
-                else if (result == MessageBoxResult.Cancel)
-                {
-                    e.Cancel = true; // User cancelled the close operation
-                }
-                // If No, continue with close without saving
             }
 
-            if (e.Cancel) return;
+            return true;
+        }
 
+        private void PrepareWindowShutdown()
+        {
             // Dispatcher timers and in-flight async rebuilds otherwise retain the
             // window and can continue touching bitmaps after it has begun closing.
+            try
+            {
+                if (_activePathfinderEngine != null)
+                    _activePathfinderEngine.CancelRequested = true;
+            }
+            catch { }
+            pathfinderRunInProgress = false;
             try { previewModeTransitionCts?.Cancel(); } catch { }
             Interlocked.Increment(ref previewModeTransitionVersion);
             Interlocked.Increment(ref spriteRenderGeneration);
@@ -23131,34 +24514,53 @@ namespace FamidashEditor
             var dlg = new Microsoft.Win32.SaveFileDialog { Filter = "Tiled Map (TMX)|*.tmx|JSON level|*.json|All files|*.*", DefaultExt = "tmx" };
             if (dlg.ShowDialog(this) == true)
             {
-                try
+                string target = NormalizeEditorFilePath(dlg.FileName);
+                int conflictingTab = FindOpenFileTabIndex(target);
+                if (conflictingTab >= 0 &&
+                    conflictingTab != currentFileIndex)
                 {
-                    // Reuse Save logic by setting currentFilePath then calling SaveButton_Click
-                    var prev = currentFilePath;
-                    currentFilePath = dlg.FileName;
-                    SaveButton_Click(this, e);
-                    currentFilePath = dlg.FileName; // keep new path
+                    MessageBox.Show(this,
+                        "That file is already open in another tab.",
+                        "Save As", MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    return;
+                }
 
-                    // Ensure the current tab metadata is updated when SaveButton_Click executed
-                    try
+                string? previousFilePath = currentFilePath;
+                FileTabData? currentTab =
+                    currentFileIndex >= 0 &&
+                    currentFileIndex < openFiles.Count
+                        ? openFiles[currentFileIndex]
+                        : null;
+                string? previousTabPath = currentTab?.FilePath;
+                bool previousCreatedAsUntitled =
+                    currentTab?.CreatedAsUntitled ?? false;
+                bool previousDirty = hasUnsavedChanges;
+
+                currentFilePath = target;
+                if (currentTab != null)
+                {
+                    currentTab.FilePath = target;
+                    currentTab.CreatedAsUntitled = false;
+                }
+                SaveCurrentTabState();
+                SaveButton_Click(this, e);
+
+                if (!lastSaveSucceeded)
+                {
+                    currentFilePath = previousFilePath;
+                    if (currentTab != null)
                     {
-                        if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
-                        {
-                            openFiles[currentFileIndex].FilePath = currentFilePath;
-                            openFiles[currentFileIndex].HasUnsavedChanges = false;
-                            try { openFiles[currentFileIndex].CreatedAsUntitled = false; } catch { }
-                            try { UpdateTabHeaderForIndex(currentFileIndex); } catch { }
-                        }
+                        currentTab.FilePath = previousTabPath;
+                        currentTab.CreatedAsUntitled =
+                            previousCreatedAsUntitled;
                     }
-                    catch { }
+                    SetHasUnsavedChanges(previousDirty);
+                    try { UpdateTabHeaderForIndex(currentFileIndex); } catch { }
+                    return;
+                }
 
-                    // Add to recent files list for untitled -> saved transitions
-                    try { AddToRecentFiles(currentFilePath); } catch { }
-                }
-                catch (Exception ex)
-                {
-                    if (StatusText != null) StatusText.Text = "Save failed: " + ex.Message;
-                }
+                try { AddToRecentFiles(target); } catch { }
             }
         }
 
@@ -23167,8 +24569,6 @@ namespace FamidashEditor
             var dlg = new OpenFileDialog { Filter = "Tiled Map (TMX)|*.tmx|JSON level|*.json|All files|*.*" };
             if (dlg.ShowDialog(this) == true)
             {
-                // Reset zoom to 1.0x before loading to improve performance
-                if (ZoomSlider != null) ZoomSlider.Value = 1.0;
                 LoadTMXFile(dlg.FileName);
                 return;
 
@@ -23424,9 +24824,10 @@ namespace FamidashEditor
                                                 if (pBackBuffer != IntPtr.Zero)
                                                 {
                                                     int stride = portalsWb.BackBufferStride;
-                                                    int bytesTotal = stride * cachedPixelHeight;
-                                                    byte* ptr = (byte*)pBackBuffer.ToPointer();
-                                                    for (int i = 0; i < bytesTotal; i++) ptr[i] = 0;
+                                                    nuint bytesTotal = checked((nuint)(
+                                                        (long)stride * cachedPixelHeight));
+                                                    System.Runtime.InteropServices.NativeMemory.Clear(
+                                                        pBackBuffer.ToPointer(), bytesTotal);
                                                 }
                                             }
                                             portalsWb.AddDirtyRect(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight));
@@ -23480,7 +24881,6 @@ namespace FamidashEditor
                             if (!string.IsNullOrEmpty(loadedTilesetSource) && File.Exists(loadedTilesetSource))
                             {
                                 LoadTileset(loadedTilesetSource);
-                                SliceTileset(); PopulateTilesPanel();
                             }
                             else if (showAccurateTileset)
                             {
@@ -23535,7 +24935,7 @@ namespace FamidashEditor
             if (string.IsNullOrEmpty(deco)) return;
             if (deco == loadedDecoSet) return;
             loadedDecoSet = deco;
-            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+            try { SaveCurrentTmxConfig(); } catch { }
             try { RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { }
             try { if (lockSpritesToSet) ApplyLockSpritesToSet(); } catch { }
             try { Redraw(); } catch { }
@@ -23551,7 +24951,7 @@ namespace FamidashEditor
             if (string.IsNullOrEmpty(block)) return;
             if (block == loadedBlockSet) return;
             loadedBlockSet = block;
-            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+            try { SaveCurrentTmxConfig(); } catch { }
             // If accurate tileset swapping is enabled, reapply to pick the matching tileset
             try { if (showAccurateTileset) SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
             try { Redraw(); } catch { }
@@ -23567,7 +24967,7 @@ namespace FamidashEditor
             if (string.IsNullOrEmpty(spike)) return;
             if (spike == loadedSpikeSet) return;
             loadedSpikeSet = spike;
-            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+            try { SaveCurrentTmxConfig(); } catch { }
             // If accurate tileset swapping is enabled, reapply to pick the matching tileset
             try { if (showAccurateTileset) SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
             try { Redraw(); } catch { }
@@ -23587,7 +24987,13 @@ namespace FamidashEditor
         {
             if (!string.IsNullOrEmpty(currentFilePath))
             {
-                SaveTmxConfig(currentFilePath);
+                SaveCurrentTabState();
+                if (!SaveTmxConfig(currentFilePath) &&
+                    StatusText != null)
+                {
+                    StatusText.Text =
+                        "Failed to save level configuration.";
+                }
             }
         }
         catch { }
@@ -23766,10 +25172,11 @@ namespace FamidashEditor
     /// <summary>Serialization DTO for pathfinder data files (.pfdat)</summary>
     private class PathfinderSaveData
     {
-        public int Version { get; set; } = 2;
+        public int Version { get; set; } = 4;
         public List<bool> Inputs { get; set; } = new();
         public List<sbyte>? Directions { get; set; }
         public List<int>? CollectedCoins { get; set; }
+        public string? ReplayFramesGZipBase64 { get; set; }
         public PathfinderValidation Validation { get; set; } = new();
     }
 
@@ -23800,6 +25207,134 @@ namespace FamidashEditor
         }
     }
 
+    private static string? CompressPathfinderReplayFrames(
+        List<PathfinderReplayFrame>? frames)
+    {
+        if (frames == null || frames.Count == 0)
+            return null;
+
+        byte[] jsonBytes = JsonSerializer.SerializeToUtf8Bytes(frames);
+        using var output = new MemoryStream();
+        using (var gzip = new GZipStream(output, CompressionLevel.Fastest,
+            leaveOpen: true))
+        {
+            gzip.Write(jsonBytes, 0, jsonBytes.Length);
+        }
+        return Convert.ToBase64String(output.ToArray());
+    }
+
+    private static List<PathfinderReplayFrame>? DecompressPathfinderReplayFrames(
+        string? encoded)
+    {
+        if (string.IsNullOrWhiteSpace(encoded))
+            return null;
+
+        byte[] compressed = Convert.FromBase64String(encoded);
+        using var input = new MemoryStream(compressed, writable: false);
+        using var gzip = new GZipStream(input, CompressionMode.Decompress);
+        return JsonSerializer.Deserialize<List<PathfinderReplayFrame>>(gzip);
+    }
+
+    /// <summary>
+    /// Ensures an inputs-only replay has an authoritative PF state stream before
+    /// it is handed to the simulator. This performs a deterministic replay only;
+    /// it does not run BFS or alter the chosen inputs.
+    /// </summary>
+    public bool EnsurePrecomputedPathfinderReplayFrames()
+    {
+        if (precomputedPathfinderReplayFrames != null &&
+            precomputedPathfinderReplayFrames.Count > 0)
+        {
+            return true;
+        }
+        if (precomputedPathfinderInputs == null ||
+            precomputedPathfinderInputs.Count == 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            bool forcePlatformer = loadedForcePlatformer == true;
+            bool hasGround = groundBitmap != null && groundTileRows > 0;
+            int groundRowsToReserve = hasGround
+                ? Math.Min(3, groundTileRows)
+                : 0;
+            (int scrollYHi, int scrollYLo) =
+                SharedPhysics.ResolveNesInitialScroll(
+                    loadedScrollYPositionHi, loadedScrollYPositionLow);
+
+            int startX_px = 0;
+            int startY_px;
+            if (startPosMarkerX.HasValue && startPosMarkerY.HasValue)
+            {
+                startX_px = startPosMarkerX.Value;
+                startY_px = startPosMarkerY.Value;
+            }
+            else
+            {
+                if (forcePlatformer)
+                    startX_px = 0x11;
+                int nesYOffset =
+                    (57 - mapHeight + groundRowsToReserve) * 16;
+                int nesSpawnHi =
+                    (loadedSpawnYPositionHi ?? 0xB0) & 0xFF;
+                int nesScrollLinear = scrollYHi * 240 + scrollYLo;
+                startY_px = nesSpawnHi + nesScrollLinear - nesYOffset;
+                int maxY = Math.Max(0, mapHeight * 16 - 16);
+                startY_px = Math.Max(0, Math.Min(maxY, startY_px));
+            }
+
+            var nesSpriteLayerForRuntime =
+                GetNesSpriteLayerForRuntime(sprites);
+            var nesSpriteRecordsForRuntime =
+                GetNesSpriteRecordsForRuntime(nesSpriteLayerForRuntime);
+            var engine = new PathfinderEngine(
+                tiles, sprites, spriteAnchors,
+                mapWidth, mapHeight,
+                hasGround, groundTileRows,
+                loadedMaxFallSpeed,
+                spritePixelOffsets,
+                nesSpriteLayerForRuntime,
+                nesSpriteRecordsForRuntime)
+            {
+                EnableLogging = false,
+                ForcePlatformer = forcePlatformer,
+                ConfigScrollYHi = scrollYHi,
+                ConfigScrollYLo = scrollYLo,
+                ConfigSpawnYLo = loadedSpawnYPositionLow,
+                UseNesSpawnScrollDefaults =
+                    !(startPosMarkerX.HasValue && startPosMarkerY.HasValue)
+            };
+
+            engine.ReplayKnownPath(
+                precomputedPathfinderInputs,
+                precomputedPathfinderDirections,
+                startX_px,
+                startY_px,
+                loadedStartingSpeedUiIndex,
+                loadedStartingGameMode ?? 0,
+                startGravFlipped: false,
+                startMini: false);
+
+            if (engine.ReplayFrames.Count !=
+                precomputedPathfinderInputs.Count)
+            {
+                precomputedPathfinderReplayFrames = null;
+                return false;
+            }
+
+            precomputedPathfinderReplayFrames =
+                new List<PathfinderReplayFrame>(engine.ReplayFrames);
+            return true;
+        }
+        catch
+        {
+            precomputedPathfinderReplayFrames = null;
+            return false;
+        }
+    }
+
     /// <summary>
     /// Build a PathfinderSaveData snapshot from current pathfinder/level state.
     /// Returns null if there's nothing to save.
@@ -23810,7 +25345,7 @@ namespace FamidashEditor
             return null;
         return new PathfinderSaveData
         {
-            Version = 2,
+            Version = 4,
             Inputs = new List<bool>(precomputedPathfinderInputs),
             Directions = precomputedPathfinderDirections != null
                 ? new List<sbyte>(precomputedPathfinderDirections)
@@ -23818,6 +25353,8 @@ namespace FamidashEditor
             CollectedCoins = precomputedCollectedCoins != null
                 ? new List<int>(precomputedCollectedCoins)
                 : null,
+            ReplayFramesGZipBase64 =
+                CompressPathfinderReplayFrames(precomputedPathfinderReplayFrames),
             Validation = new PathfinderValidation
             {
                 MapWidth = mapWidth,
@@ -23949,6 +25486,24 @@ namespace FamidashEditor
                 saveData.Directions.Count == saveData.Inputs.Count
                 ? new List<sbyte>(saveData.Directions)
                 : Enumerable.Repeat((sbyte)0, saveData.Inputs.Count).ToList();
+            precomputedPathfinderReplayFrames =
+                DecompressPathfinderReplayFrames(saveData.ReplayFramesGZipBase64);
+            if (saveData.Version < 4)
+            {
+                // v3 canonical frames predate NES-slot color/outline events.
+                // Keep the proven inputs, but deterministically reconstruct the
+                // state stream so simulator playback also receives visual side
+                // effects. This is a replay only; it does not rerun BFS.
+                precomputedPathfinderReplayFrames = null;
+            }
+            else if (precomputedPathfinderReplayFrames != null &&
+                     precomputedPathfinderReplayFrames.Count != saveData.Inputs.Count)
+            {
+                // A truncated/corrupt state stream must never be paired with a
+                // complete input stream. Reconstruction is attempted when the
+                // simulator loads the route.
+                precomputedPathfinderReplayFrames = null;
+            }
             precomputedCollectedCoins = saveData.CollectedCoins != null
                 ? new HashSet<int>(saveData.CollectedCoins)
                 : null;

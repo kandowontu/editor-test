@@ -384,6 +384,48 @@ internal static class SharedPhysics
 		31, 16, 16, 3, 3, 0
 	};
 
+	internal static bool IsColorTriggerSprite(int spriteId)
+	{
+		if (spriteId < 0)
+			return false;
+
+		bool inRanges =
+			(spriteId >= 0x80 && spriteId <= 0x8C) || spriteId == 0x8F ||
+			(spriteId >= 0x90 && spriteId <= 0x9C) || spriteId == 0x9F ||
+			(spriteId >= 0xA0 && spriteId <= 0xAC) ||
+			(spriteId >= 0xAE && spriteId <= 0xAF) ||
+			(spriteId >= 0xB0 && spriteId <= 0xBF) ||
+			(spriteId >= 0xC0 && spriteId <= 0xCC) || spriteId == 0xCF ||
+			(spriteId >= 0xD0 && spriteId <= 0xDC) ||
+			(spriteId >= 0xE0 && spriteId <= 0xEC);
+		if (!inRanges)
+			return false;
+
+		int low = spriteId & 0x0F;
+		int high = spriteId & 0xF0;
+		if (low >= 0x0D &&
+			(high == 0x80 || high == 0x90 || high == 0xA0 ||
+			 high == 0xC0 || high == 0xD0 || high == 0xE0) &&
+			spriteId != 0x8F && spriteId != 0xCF)
+		{
+			return false;
+		}
+
+		return true;
+	}
+
+	internal static bool IsBackgroundColorTrigger(int spriteId) =>
+		((spriteId >= 0x80 && spriteId <= 0xAC) || spriteId == 0x8F) &&
+		IsColorTriggerSprite(spriteId);
+
+	internal static bool IsObjectColorTrigger(int spriteId) =>
+		spriteId >= 0xB0 && spriteId <= 0xBF &&
+		IsColorTriggerSprite(spriteId);
+
+	internal static bool IsGroundColorTrigger(int spriteId) =>
+		((spriteId >= 0xC0 && spriteId <= 0xEC) || spriteId == 0xCF) &&
+		IsColorTriggerSprite(spriteId);
+
 	internal static readonly int[] sprite_x_offset = new int[256]
 	{
 		0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
