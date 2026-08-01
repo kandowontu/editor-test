@@ -209,6 +209,11 @@ namespace FamidashEditor
         private bool _levelNameLogged;
         public string LevelName { get => _levelName; set { _levelName = value ?? ""; } }
 
+        // DISABLE_DEBUG_LOGGING removes the method body, but without Conditional
+        // the interpolated arguments at every call site are still constructed.
+        // Remove the calls themselves from normal builds so diagnostics have
+        // zero cost in the simulator's physics/render hot paths.
+        [System.Diagnostics.Conditional("ENABLE_SIMULATOR_INTERNAL_DIAGNOSTICS")]
         private void AppendSimDebug(string msg)
         {
 #if !DISABLE_DEBUG_LOGGING
@@ -699,11 +704,16 @@ namespace FamidashEditor
                     frameIndex = 0;
                 // Get tile index (0-6) from sprite table
                 int tileIdx = drawcube_sprite_table[frameIndex] & 0x07;
-                // Map 7 tiles to 5 mini frames: 0->0, 1->1, 2->1, 3->2, 4->2, 5->3, 6->3
+                // NES MINI_CUBE table:
+                //   Mini_Cube_0, Mini_Cube_1, Mini_Cube_1, Mini_Cube_2,
+                //   Mini_Cube_2, Mini_Cube_3, Mini_Cube_4, Mini_Cube_4
+                // drawcube_sprite_table supplies indices 0..6 here.  In
+                // particular, index 6 is the flat 90-degree landing frame.
                 if (tileIdx == 0) return 0;
                 if (tileIdx <= 2) return 1;
                 if (tileIdx <= 4) return 2;
-                return 3;
+                if (tileIdx == 5) return 3;
+                return 4;
             }
             catch { return 0; }
         }
@@ -4774,7 +4784,16 @@ namespace FamidashEditor
 
             if (sid == 0x0F)
             {
-                TriggerSimulatorLevelComplete(idx);
+                // An active end record may be visible well before the player
+                // reaches it. Keep the slot resident and complete only once
+                // the player's X crosses the record's exported X threshold.
+                // Both sides use their sprite/player left edge, which is
+                // equivalent to the center-vs-center threshold used by the
+                // simulator's non-physics trigger path.
+                int endThresholdX_fixed =
+                    simulatorNesSpriteWorldX[idx] << 8;
+                if (playerX_fixed >= endThresholdX_fixed)
+                    TriggerSimulatorLevelComplete(idx);
                 return false;
             }
 
@@ -5283,7 +5302,8 @@ namespace FamidashEditor
                     {
                         // Other modes flip based on gravity
                         playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
-                        playerImage.RenderTransform = new ScaleTransform(1, -1);
+                        playerImage.RenderTransform =
+                            GetCachedFlipTransform(false, true);
                     }
                     else
                     {
@@ -5560,7 +5580,7 @@ namespace FamidashEditor
         private System.Collections.Generic.Dictionary<int, int> spriteFrameOffsets = new System.Collections.Generic.Dictionary<int, int>();
         private Random spriteAnimationRandom = new Random();
 
-        // Tile-layer cache and sprite pooling for performance
+        // Tile/sprite-layer caches for performance
         private RenderTargetBitmap? tileLayerCache = null;
         private int cachedStartTileX = int.MinValue;
         private int cachedStartTileY = int.MinValue;
@@ -5582,8 +5602,11 @@ namespace FamidashEditor
         // Cached background tint brush — reuse when color hasn't changed
         private SolidColorBrush? _cachedBgTintBrush = null;
         private System.Windows.Media.Color _cachedBgTintColor;
-        private System.Collections.Generic.List<System.Windows.Controls.Image> spritePool = new System.Collections.Generic.List<System.Windows.Controls.Image>();
-        private int spritesInUse = 0;
+        // Reuse the retained drawing command containers. RenderTargetBitmap
+        // captures their current contents, so reopening them safely replaces
+        // the previous frame without allocating a new DrawingVisual.
+        private readonly DrawingVisual tileLayerDrawingVisual = new DrawingVisual();
+        private readonly DrawingVisual spriteLayerDrawingVisual = new DrawingVisual();
         private bool lastCacheHadAnimatedTiles = false;
         private int lastCacheAnimationPhase = int.MinValue;
         private int lastCacheEditorAnimationPhase = int.MinValue;
@@ -5929,6 +5952,10 @@ namespace FamidashEditor
         // (removed unused field to silence build warning)
         // Pause state controlled by ESC. Start paused so simulator opens paused.
         private bool paused = true;
+        // A paused simulator has no changing scene state. Remember the last
+        // paused state rendered so CompositionTarget does not rebuild identical
+        // tile/sprite bitmaps 60 times per second.
+        private int lastPausedRenderedSimTick = int.MinValue;
         // If a death has been triggered by collision, suppress further triggers until reset
         private bool deathTriggered = false;
         // If the end-level trigger (sprite 0x0F) has been reached
@@ -7140,25 +7167,22 @@ namespace FamidashEditor
                 // Don't allow ESC toggle when level is complete — only restart can clear it
                 if (levelCompleteTriggered) return;
 
-                // toggle pause. When unpausing, request the owner to start music so music
-                // and gameplay begin on the same frame.
+                // Toggle pause. A paused track must be resumed in place; only a
+                // genuinely stopped track should be started/seeking afresh.
                 bool wasPaused = paused;
                 bool willBePaused = !paused;
 
                 if (wasPaused && !willBePaused)
                 {
-                    // Unpausing: request the owner to start playback and wait briefly for audio
-                    // to begin so audio and gameplay are (more) in sync, then advance one
-                    // numeric step and render a frame so the simulator visibly starts.
                     if (!playbackStartPending)
                     {
                         playbackStartPending = true;
                         try
                         {
-                            try { if (this.Owner is MainWindow mw) { var t = mw.StartSimulatorPlaybackAsync(); if (t != null) await t; } } catch { }
-                            try { SimulateNumericStep(); } catch { }
+                            try { await ResumeOrStartMusicForUnpauseAsync(); } catch { }
                             try { RenderFrame(); } catch { }
-                            // Reset time accumulator so the timer loop doesn't double-step
+                            // Reset the accumulator so elapsed pause time cannot
+                            // turn into catch-up simulation steps.
                             simAccumulatedMs = 0;
                             simLastMs = simStopwatch.Elapsed.TotalMilliseconds;
                         }
@@ -7176,6 +7200,7 @@ namespace FamidashEditor
                 }
 
                 paused = willBePaused;
+                lastPausedRenderedSimTick = int.MinValue;
 
                 // Update overlay visibility
                 try { PauseOverlay.Visibility = paused ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed; } catch { }
@@ -7319,6 +7344,35 @@ namespace FamidashEditor
             }
         }
 
+        private async System.Threading.Tasks.Task ResumeOrStartMusicForUnpauseAsync()
+        {
+            if (this.Owner is not MainWindow mw)
+                return;
+
+            bool isPaused = mw.IsMusicPaused();
+            bool isPlaying = mw.IsMusicPlaying();
+            AppendSimDebug($"[UNPAUSE] Music state: playing={isPlaying}, paused={isPaused}, hasAppliedStartPos={hasAppliedStartPos}");
+
+            // Paused playback already has the correct decoder/song position.
+            // Resuming it is the only operation that preserves that position.
+            if (isPaused)
+            {
+                await mw.ResumeSimulatorPlaybackAsync();
+                return;
+            }
+
+            if (isPlaying)
+                return;
+
+            // This is the initial click on a simulator that opened paused, or
+            // playback was externally stopped. Start at the run's proper origin.
+            double musicTime = hasAppliedStartPos
+                ? CalculateMusicTimeToPosition(
+                    startPosX_forMusicSeek + (playerVisualWidth / 2))
+                : 0.0;
+            await mw.ForceStartAndSeekSimulatorPlaybackAsync(musicTime);
+        }
+
         private async void PauseOverlay_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
             try
@@ -7333,42 +7387,10 @@ namespace FamidashEditor
                     playbackStartPending = true;
                     try
                     {
-                        // Start/resume music at correct position
-                        if (this.Owner is MainWindow mw)
-                        {
-                            bool isPlaying = mw.IsMusicPlaying();
-                            bool isPaused = mw.IsMusicPaused();
-                            AppendSimDebug($"[UNPAUSE] Music state: playing={isPlaying}, paused={isPaused}, hasAppliedStartPos={hasAppliedStartPos}");
-                            
-                            // If music is not playing (either paused or stopped), start it with proper seeking
-                            if (!isPlaying)
-                            {
-                                double musicTime = 0.0;
-                                if (hasAppliedStartPos)
-                                {
-                                    musicTime = CalculateMusicTimeToPosition(startPosX_forMusicSeek + (playerVisualWidth / 2));
-                                    AppendSimDebug($"[UNPAUSE] Starting music with seek to START POS musicTime={musicTime:F3}s");
-                                }
-                                else
-                                {
-                                    AppendSimDebug($"[UNPAUSE] Starting music with seek to beginning");
-                                }
-                                
-                                // Stop any existing playback first
-                                await mw.StopSimulatorPlaybackAsync();
-                                
-                                // Start fresh with proper seeking
-                                var startTask = mw.ForceStartAndSeekSimulatorPlaybackAsync(musicTime);
-                                if (startTask != null) await startTask;
-                            }
-                            else
-                            {
-                                AppendSimDebug($"[UNPAUSE] Music already playing, no action needed");
-                            }
-                        }
-                        try { SimulateNumericStep(); } catch { }
+                        await ResumeOrStartMusicForUnpauseAsync();
                         try { RenderFrame(); } catch { }
-                        // Reset time accumulator so the timer loop doesn't double-step
+                        // Reset the accumulator so elapsed pause time cannot
+                        // turn into catch-up simulation steps.
                         simAccumulatedMs = 0;
                         simLastMs = simStopwatch.Elapsed.TotalMilliseconds;
                     }
@@ -7379,6 +7401,7 @@ namespace FamidashEditor
                 }
 
                 paused = false;
+                lastPausedRenderedSimTick = int.MinValue;
                 try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
                 
                 // Grab focus to enable keyboard input (W, up/down) after unpausing
@@ -7477,6 +7500,9 @@ namespace FamidashEditor
             // Persist as render offsets relative to live simulation camera.
             twoDPanX_fixed = newCameraX_fixed - cameraX_fixed;
             twoDPanY_fixed = newCameraY_fixed - cameraY_fixed;
+            // A paused simulator normally suppresses duplicate scene builds;
+            // panning is an explicit visual change and needs one fresh frame.
+            lastPausedRenderedSimTick = int.MinValue;
         }
 
         private void GameModeComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -8089,23 +8115,93 @@ namespace FamidashEditor
             catch { }
         }
 
+        private static readonly Transform s_horizontalFlipTransform =
+            CreateFrozenScaleTransform(-1, 1);
+        private static readonly Transform s_verticalFlipTransform =
+            CreateFrozenScaleTransform(1, -1);
+        private static readonly Transform s_bothFlipTransform =
+            CreateFrozenScaleTransform(-1, -1);
+        private static readonly Transform s_leftOffsetTransform =
+            CreateFrozenLeftOffsetTransform(false);
+        private static readonly Transform s_leftOffsetVerticalFlipTransform =
+            CreateFrozenLeftOffsetTransform(true);
+        private static readonly System.Collections.Generic.Dictionary<
+            (int angleMilliDegrees, bool verticalFlip), Transform>
+            s_velocitySpriteTransformCache = new();
+        private static readonly object s_velocitySpriteTransformCacheLock = new();
+
+        private static Transform CreateFrozenScaleTransform(
+            double scaleX, double scaleY)
+        {
+            var transform = new ScaleTransform(scaleX, scaleY);
+            transform.Freeze();
+            return transform;
+        }
+
+        private static Transform CreateFrozenLeftOffsetTransform(
+            bool verticalFlip)
+        {
+            var transforms = new TransformGroup();
+            transforms.Children.Add(new TranslateTransform(-8, 0));
+            if (verticalFlip)
+                transforms.Children.Add(new ScaleTransform(1, -1));
+            transforms.Freeze();
+            return transforms;
+        }
+
+        private static Transform GetCachedFlipTransform(
+            bool horizontalFlip, bool verticalFlip)
+        {
+            if (horizontalFlip)
+                return verticalFlip
+                    ? s_bothFlipTransform
+                    : s_horizontalFlipTransform;
+            return verticalFlip
+                ? s_verticalFlipTransform
+                : Transform.Identity;
+        }
+
+        private static Transform GetCachedLeftOffsetTransform(
+            bool verticalFlip) =>
+            verticalFlip
+                ? s_leftOffsetVerticalFlipTransform
+                : s_leftOffsetTransform;
+
+        private static Transform GetCachedVelocitySpriteTransform(
+            double angle, bool verticalFlip)
+        {
+            if (!double.IsFinite(angle))
+                angle = 0.0;
+            int angleKey = (int)Math.Round(angle * 1000.0);
+            if (angleKey == 0 && !verticalFlip)
+                return Transform.Identity;
+
+            var key = (angleKey, verticalFlip);
+            lock (s_velocitySpriteTransformCacheLock)
+            {
+                if (s_velocitySpriteTransformCache.TryGetValue(
+                    key, out Transform? cached))
+                    return cached;
+
+                var transforms = new TransformGroup();
+                if (angleKey != 0)
+                    transforms.Children.Add(
+                        new RotateTransform(angleKey / 1000.0));
+                if (verticalFlip)
+                    transforms.Children.Add(new ScaleTransform(1, -1));
+                transforms.Freeze();
+                s_velocitySpriteTransformCache[key] = transforms;
+                return transforms;
+            }
+        }
+
         private static void ApplyVelocitySpriteTransform(
             System.Windows.Controls.Image image, double angle,
             bool verticalFlip)
         {
             image.RenderTransformOrigin = new Point(0.5, 0.5);
-            if (Math.Abs(angle) < 0.001 && !verticalFlip)
-            {
-                image.RenderTransform = Transform.Identity;
-                return;
-            }
-
-            var transforms = new TransformGroup();
-            if (Math.Abs(angle) >= 0.001)
-                transforms.Children.Add(new RotateTransform(angle));
-            if (verticalFlip)
-                transforms.Children.Add(new ScaleTransform(1, -1));
-            image.RenderTransform = transforms;
+            image.RenderTransform =
+                GetCachedVelocitySpriteTransform(angle, verticalFlip);
         }
 
         private void UpdatePlayer2VelocityModeVisual()
@@ -9781,7 +9877,13 @@ namespace FamidashEditor
             // Prevent rendering if window is closed
             if (windowClosed) return;
 
-            try { UpdateFirstPerson3D(); } catch { }
+            // 3-D and 2-D are mutually exclusive views. Previously every 3-D
+            // frame also rebuilt the hidden 2-D tile and sprite bitmaps.
+            if (firstPerson3DEnabled)
+            {
+                try { UpdateFirstPerson3D(); } catch { }
+                return;
+            }
             
             // Update wave icon based on velocity (every frame)
             if (currentGameMode == 6)
@@ -9927,10 +10029,8 @@ namespace FamidashEditor
                         // But we also need to visually flip when gravity is reversed.
                         if (gravityReversed) vFlip = !vFlip;
                         playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
-                        playerImage.RenderTransform = new ScaleTransform(
-                            hFlip ? -1 : 1,
-                            vFlip ? -1 : 1
-                        );
+                        playerImage.RenderTransform =
+                            GetCachedFlipTransform(hFlip, vFlip);
                     }
                 }
                 catch { }
@@ -10019,7 +10119,9 @@ namespace FamidashEditor
                             if (cubeHFlip || cubeVFlip)
                             {
                                 playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
-                                playerImage.RenderTransform = new ScaleTransform(cubeHFlip ? -1 : 1, cubeVFlip ? -1 : 1);
+                                playerImage.RenderTransform =
+                                    GetCachedFlipTransform(
+                                        cubeHFlip, cubeVFlip);
                             }
                             else
                             {
@@ -10100,7 +10202,9 @@ namespace FamidashEditor
                             if (miniHFlip || miniVFlip)
                             {
                                 playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
-                                playerImage.RenderTransform = new ScaleTransform(miniHFlip ? -1 : 1, miniVFlip ? -1 : 1);
+                                playerImage.RenderTransform =
+                                    GetCachedFlipTransform(
+                                        miniHFlip, miniVFlip);
                             }
                             else
                             {
@@ -10384,13 +10488,10 @@ namespace FamidashEditor
                                 // 24 pixels wide image, but hitbox is still 16x16
                                 // Shift left by 8 pixels so right edge aligns, extra comes out left
                                 // Do NOT change playerVisualWidth/Height - those are used for collision detection
-                                var translateTransform = new System.Windows.Media.TransformGroup();
-                                var translate = new System.Windows.Media.TranslateTransform(-8, 0);
-                                var scaleTransform = gravityReversed ? new System.Windows.Media.ScaleTransform(1, -1) : new System.Windows.Media.ScaleTransform(1, 1);
-                                translateTransform.Children.Add(translate);
-                                translateTransform.Children.Add(scaleTransform);
                                 playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
-                                playerImage.RenderTransform = translateTransform;
+                                playerImage.RenderTransform =
+                                    GetCachedLeftOffsetTransform(
+                                        gravityReversed);
                             }
                             else if (playerImage != null)
                             {
@@ -10399,7 +10500,8 @@ namespace FamidashEditor
                                 if (gravityReversed)
                                 {
                                     playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
-                                    playerImage.RenderTransform = new System.Windows.Media.ScaleTransform(1, -1);
+                                    playerImage.RenderTransform =
+                                        GetCachedFlipTransform(false, true);
                                 }
                                 else
                                 {
@@ -10499,19 +10601,15 @@ namespace FamidashEditor
                     {
                         // These are 24x16 images, offset -8px to right-align them to 16x16 hitbox
                         playerImage.RenderTransformOrigin = new Point(0, 0.5);
-                        var transform = new System.Windows.Media.TransformGroup();
-                        transform.Children.Add(new System.Windows.Media.TranslateTransform(-8, 0));
-                        if (gravityFlipped)
-                        {
-                            transform.Children.Add(new System.Windows.Media.ScaleTransform(1, -1));
-                        }
-                        playerImage.RenderTransform = transform;
+                        playerImage.RenderTransform =
+                            GetCachedLeftOffsetTransform(gravityFlipped);
                     }
                     else if (playerImage != null && gravityFlipped)
                     {
                         // Standard images with gravity flip only
                         playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
-                        playerImage.RenderTransform = new System.Windows.Media.ScaleTransform(1, -1);
+                        playerImage.RenderTransform =
+                            GetCachedFlipTransform(false, true);
                     }
                     else if (playerImage != null)
                     {
@@ -10532,7 +10630,7 @@ namespace FamidashEditor
             // One-time first-frame diagnostic snapshot (Option A)
             try
             {
-                if (!simDebugLoggedFirstFrame)
+                if (enableSimulatorDebugLogging && !simDebugLoggedFirstFrame)
                 {
                     simDebugLoggedFirstFrame = true;
                     // Determine which ImageSource would be used as the brush source
@@ -10793,7 +10891,7 @@ namespace FamidashEditor
                     int pxW = cacheTilesX * TILE;
                     int pxH = cacheTilesY * TILE;
 
-                    var dv = new DrawingVisual();
+                    var dv = tileLayerDrawingVisual;
                     bool hadAnimated = false;
                     using (var dc = dv.RenderOpen())
                     {
@@ -11235,7 +11333,8 @@ namespace FamidashEditor
                                 {
                                     try
                                     {
-                                        if (tileSelectionLogCount < TILE_SELECTION_LOG_LIMIT)
+                                        if (enableSimulatorDebugLogging &&
+                                            tileSelectionLogCount < TILE_SELECTION_LOG_LIMIT)
                                         {
                                             string src = "unknown";
                                             try
@@ -11640,8 +11739,7 @@ namespace FamidashEditor
 
             // Render sprites into a single RenderTargetBitmap instead of individual Image
             // controls. This avoids WPF compositor issues with many Image children.
-            spritesInUse = 0;
-            var spriteDv = new DrawingVisual();
+            var spriteDv = spriteLayerDrawingVisual;
             var spriteDc = spriteDv.RenderOpen();
             for (int vx = 0; vx < _currentCacheTilesX; vx++)
             {
@@ -11946,8 +12044,6 @@ namespace FamidashEditor
                     {
                         spriteDc.DrawImage(finalSprite, new Rect(px, py, fbs.PixelWidth, fbs.PixelHeight));
                     }
-                    spritesInUse++;
-
                     // Cache the world-space hitbox rect derived from the same values the renderer
                     // used so collisions can match the visible sprite even when overlays are off.
                     try
@@ -12096,9 +12192,6 @@ namespace FamidashEditor
                 }
             }
             catch { }
-
-            // Hide all old pooled sprite images (no longer used — sprites rendered via RTB)
-            for (int i = 0; i < spritePool.Count; i++) spritePool[i].Visibility = Visibility.Collapsed;
 
             // Hide remaining hitboxes
             for (int i = hitboxesInUse; i < hitboxPool.Count; i++) hitboxPool[i].Visibility = Visibility.Collapsed;
@@ -12452,13 +12545,25 @@ namespace FamidashEditor
                 if (!IsCompositionRenderDue(compositionNowMs))
                     return;
 
-                // If paused, still render the current frame and show the pause overlay.
+                // A paused frame is immutable. Render it once (or again when
+                // pending tints/state changed) instead of rebuilding identical
+                // RenderTargetBitmaps on every monitor refresh.
                 if (paused)
                 {
                     // Skip rendering player during pathfinder precompute to avoid showing
                     // speculative positions from the background beam search.
-                    if (!pfSimulating)
+                    if (!pfSimulating &&
+                        (lastPausedRenderedSimTick != simTickCount ||
+                         tileLayerCache == null ||
+                         pendingTintChange || pendingTintChangeIsStartup))
+                    {
+                        if (pendingTintChange || pendingTintChangeIsStartup)
+                        {
+                            try { ApplyPendingTints(); } catch { }
+                        }
                         RenderFrame();
+                        lastPausedRenderedSimTick = simTickCount;
+                    }
                     try
                     {
                         if (levelCompleteTriggered)
@@ -14327,7 +14432,10 @@ namespace FamidashEditor
                                                             if (p2HFlip || p2VFlip)
                                                             {
                                                                 playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
-                                                                playerImage.RenderTransform = new ScaleTransform(p2HFlip ? -1 : 1, p2VFlip ? -1 : 1);
+                                                                playerImage.RenderTransform =
+                                                                    GetCachedFlipTransform(
+                                                                        p2HFlip,
+                                                                        p2VFlip);
                                                             }
                                                             else
                                                             {
@@ -14359,7 +14467,10 @@ namespace FamidashEditor
                                                             if (p2MiniHFlip || p2MiniVFlip)
                                                             {
                                                                 playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
-                                                                playerImage.RenderTransform = new ScaleTransform(p2MiniHFlip ? -1 : 1, p2MiniVFlip ? -1 : 1);
+                                                                playerImage.RenderTransform =
+                                                                    GetCachedFlipTransform(
+                                                                        p2MiniHFlip,
+                                                                        p2MiniVFlip);
                                                             }
                                                             else
                                                             {

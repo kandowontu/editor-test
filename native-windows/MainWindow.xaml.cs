@@ -8817,7 +8817,9 @@ namespace FamidashEditor
             try
             {
                 if (famiIntegration == null) return;
-                try { _ = System.Threading.Tasks.Task.Run(() => famiIntegration.Pause()); } catch { }
+                // Pause synchronously so a quick unpause cannot race a queued
+                // background Pause call and leave the track paused afterward.
+                try { famiIntegration.Pause(); } catch { }
             }
             catch { }
         }
@@ -8976,17 +8978,27 @@ namespace FamidashEditor
             try
             {
                 if (famiIntegration == null) return;
-                if (famiIntegration.IsPlaying) return;
+                // Some backends briefly report playing while the paused flag is
+                // still set. Honor paused first so this can never become a no-op.
                 if (famiIntegration.IsPaused)
                 {
-                    try { _ = System.Threading.Tasks.Task.Run(() => famiIntegration.Resume()); } catch { }
+                    try
+                    {
+                        await System.Threading.Tasks.Task.Run(
+                            () => famiIntegration.Resume()).ConfigureAwait(false);
+                    }
+                    catch { }
                     // Wait for playback to actually start before returning
                     var sw = System.Diagnostics.Stopwatch.StartNew();
-                    while (!famiIntegration.IsPlaying && sw.ElapsedMilliseconds < 1500)
+                    while ((famiIntegration.IsPaused ||
+                            !famiIntegration.IsPlaying) &&
+                           sw.ElapsedMilliseconds < 1500)
                     {
                         await System.Threading.Tasks.Task.Delay(8).ConfigureAwait(false);
                     }
+                    return;
                 }
+                if (famiIntegration.IsPlaying) return;
             }
             catch { }
         }
