@@ -82,28 +82,46 @@ internal static class SharedPhysics
 
 	internal const int TILE = 16;
 
-	internal const int NES_DEFAULT_SCROLL_Y_HI = 0x02;
+	// PR #360 stores scroll_y as a normal linear pixel coordinate.  $02CF is
+	// 719 decimal; conversion to the PPU's 240-line nametable format now happens
+	// only at the rendering boundary inside the ROM.
+	internal const int NES_DEFAULT_SCROLL_Y_LINEAR = 0x02CF;
 
-	internal const int NES_DEFAULT_SCROLL_Y_LO = 0xEF;
+	internal const int NES_MAX_SCROLL_Y_LINEAR = 0x02CF;
 
-	internal const int NES_MAX_SCROLL_Y_LINEAR = 719;
+	// The compact level header still stores only the low byte and init_rld fixes
+	// the high byte to $02. Values through $02FF are representable at startup;
+	// process_y_scroll then applies the normal $02CF gameplay cap.
+	internal const int NES_MAX_INITIAL_SCROLL_Y_LINEAR = 0x02FF;
 
-	internal static (int Hi, int Lo) ResolveNesInitialScroll(int? configuredHi, int? configuredLo)
+	internal static int ResolveNesInitialScroll(int? configuredLinear)
 	{
-		// The current init_rld hard-codes spawn_scroll_y_pos+1 to $02; the
-		// compact level header contains only the low byte.
-		int hi = NES_DEFAULT_SCROLL_Y_HI;
-		int lo = (configuredLo ?? NES_DEFAULT_SCROLL_Y_LO) & 0xFF;
+		int linear = configuredLinear ?? NES_DEFAULT_SCROLL_Y_LINEAR;
+		return linear is >= 0 and <= NES_MAX_INITIAL_SCROLL_Y_LINEAR
+			? linear
+			: NES_DEFAULT_SCROLL_Y_LINEAR;
+	}
+
+	internal static int DecodeNesScrollYPosition(int? metadataValue)
+	{
+		if (!metadataValue.HasValue || metadataValue.Value < 0)
+			return NES_DEFAULT_SCROLL_Y_LINEAR;
+		return 0x0200 | (metadataValue.Value & 0xFF);
+	}
+
+	// Old editor configs/JSON5 used a PPU-format high/low pair. Convert that
+	// physical position, then pass it through the compact header representation
+	// the current ROM can actually load.
+	internal static int ResolveLegacyNesInitialScroll(int? configuredHi, int? configuredLo)
+	{
+		if (!configuredHi.HasValue && !configuredLo.HasValue)
+			return NES_DEFAULT_SCROLL_Y_LINEAR;
+		int hi = (configuredHi ?? 0x02) & 0xFF;
+		int lo = (configuredLo ?? 0xEF) & 0xFF;
 		int linear = hi * 240 + lo;
-		// Famidash's three-screen vertical nametable range ends at $02EF.
-		// Treat values beyond it as invalid metadata instead of clamping the
-		// player/camera to the bottom of the TMX, which can kill BFS at frame 0.
-		if (linear > NES_MAX_SCROLL_Y_LINEAR)
-		{
-			hi = NES_DEFAULT_SCROLL_Y_HI;
-			lo = NES_DEFAULT_SCROLL_Y_LO;
-		}
-		return (hi, lo);
+		return linear is >= 0 and <= NES_MAX_SCROLL_Y_LINEAR
+			? DecodeNesScrollYPosition(linear)
+			: NES_DEFAULT_SCROLL_Y_LINEAR;
 	}
 
 	// NES collision code reads high_byte(currplayer_y) directly.  PF/SIM store
@@ -3631,16 +3649,6 @@ internal static class SharedPhysics
 		return (int)(acceleration * gravityMod);
 	}
 
-	// Collision helpers receive add_scroll_y's first argument through
-	// storeByteToSreg, so the complete Generic.y + probe-offset expression is
-	// truncated to one byte before it is added to scroll_y.  This matters in the
-	// normally-unused $F0-$FF screen gap: for example $F9 + $0F becomes $08.
-	private static int NesByteWrappedCollisionY(int worldProbeY, int camY_fixed)
-	{
-		int camY = camY_fixed >> 8;
-		return camY + ((worldProbeY - camY) & 0xFF);
-	}
-
 	// NES cube_eject executes bg_coll_D and then bg_coll_U whenever an H/F
 	// block is active, regardless of gravity.  Generic.y is captured before
 	// either pass, so both probes use the original Y even when the first pass
@@ -3831,7 +3839,7 @@ internal static class SharedPhysics
 			int num10 = num2 + num3 + num9 + (mini ? 1 : 2) + ((gameMode == 1) ? 1 : 0);
 			int savedSlopeFramesGU = result.SlopeFrames;
 			int savedSlopeWasOnGU = result.SlopeWasOnCounter;
-			int slopeUpProbeY = NesByteWrappedCollisionY(num10, camY_fixed);
+			int slopeUpProbeY = num10;
 			var (flag2, num11, num12, processedSlopeUp) = CheckSlopesUp(in map, num, num, slopeUpProbeY, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, result.SlopeType, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
 			if (flag2)
 			{
@@ -3855,7 +3863,7 @@ internal static class SharedPhysics
 			if (!flag2 && result.NewVelY_fixed < 0)
 			{
 				int num15 = num4 + 1;
-				int ceilingProbeY = NesByteWrappedCollisionY(num15, camY_fixed);
+				int ceilingProbeY = num15;
 				var (flag3, num16, flag4, metatileCollision) = CheckCeilingReturnU(in map, num, num, ceilingProbeY, cubeHitboxW);
 				ballEjectDiagLog?.Invoke($"[BE_CEIL] probeX={num} probeY={num4} hbW={cubeHitboxW} hbH={cubeHitboxH} -> hit={flag3} spike={flag4} coll={metatileCollision}");
 				if (flag4)
@@ -3886,7 +3894,7 @@ internal static class SharedPhysics
 			int num33 = num2 + num3 + num32 + cubeHitboxH - 2;
 			int savedSlopeFramesGD = result.SlopeFrames;
 			int savedSlopeWasOnGD = result.SlopeWasOnCounter;
-			int slopeDownProbeY = NesByteWrappedCollisionY(num33, camY_fixed);
+			int slopeDownProbeY = num33;
 			var (flag7, num34, num35, _) = CheckSlopesDown(in map, num, num, slopeDownProbeY, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, result.SlopeType, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
 			if (flag7)
 			{
@@ -3903,7 +3911,7 @@ internal static class SharedPhysics
 			else if (result.NewVelY_fixed >= 0)
 			{
 				// NES bg_coll_D tile check: runs when slope check fails and vel >= 0
-				int floorProbeBaseY = NesByteWrappedCollisionY(num4 + cubeHitboxH, camY_fixed) - cubeHitboxH;
+				int floorProbeBaseY = num4;
 				var (flag12, _, flag13, ejectD, _) = CheckFloorDetailed(in map, num,
 					floorProbeBaseY, cubeHitboxW, cubeHitboxH, result.NewVelY_fixed);
 				if (flag13)
@@ -3936,7 +3944,7 @@ internal static class SharedPhysics
 			int num40 = playerX_fixed >> 8;
 			int savedSlopeFramesU = result.SlopeFrames;
 			int savedSlopeWasOnU = result.SlopeWasOnCounter;
-			int slopeUpProbeY = NesByteWrappedCollisionY(num39, camY_fixed);
+			int slopeUpProbeY = num39;
 			var (flag8, num41, num42, processedSlopeUp) = CheckSlopesUp(in map, num, num40, slopeUpProbeY, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, result.SlopeType, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
 			if (flag8)
 			{
@@ -3959,8 +3967,7 @@ internal static class SharedPhysics
 			if (!flag8 && result.NewVelY_fixed < 0)
 			{
 				int ceilTileProbeY = num2 + num3 + (mini ? (16 - cubeHitboxH >> 1) : 0) + ((gameMode == 6 || gameMode == 10) ? 0 : 1);
-				int wrappedCeilTileProbeY = NesByteWrappedCollisionY(ceilTileProbeY, camY_fixed);
-				var (ceilHit, ceilEjectU, ceilSpike, ceilColl) = CheckCeilingReturnU(in map, num, num, wrappedCeilTileProbeY, cubeHitboxW);
+				var (ceilHit, ceilEjectU, ceilSpike, ceilColl) = CheckCeilingReturnU(in map, num, num, ceilTileProbeY, cubeHitboxW);
 				ballEjectDiagLog?.Invoke($"[BE_CEIL_TILE_N] probeX={num} probeY={ceilTileProbeY} -> hit={ceilHit} spike={ceilSpike} coll={ceilColl}");
 				if (ceilSpike)
 				{
@@ -3980,7 +3987,7 @@ internal static class SharedPhysics
 			}
 			int savedSlopeFramesD = result.SlopeFrames;
 			int savedSlopeWasOnD = result.SlopeWasOnCounter;
-			int slopeDownProbeY = NesByteWrappedCollisionY(checkBaseY, camY_fixed);
+			int slopeDownProbeY = checkBaseY;
 			var (flag9, num45, slopeType2, _) = CheckSlopesDown(in map, num40, num40, slopeDownProbeY, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, result.SlopeType, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
 			if (flag9)
 			{
@@ -3997,7 +4004,7 @@ internal static class SharedPhysics
 			}
 			else if (result.NewVelY_fixed >= 0)
 			{
-				int floorProbeBaseY = NesByteWrappedCollisionY(num4 + cubeHitboxH, camY_fixed) - cubeHitboxH;
+				int floorProbeBaseY = num4;
 				var (flag10, num47, flag11, floorEjectD, _) = CheckFloorDetailed(in map,
 					num, floorProbeBaseY, cubeHitboxW, cubeHitboxH, result.NewVelY_fixed);
 				if (ballEjectDiagLog != null)
@@ -4076,7 +4083,7 @@ internal static class SharedPhysics
 			int centerOffsetY = 16 - cubeHitboxH >> 1;
 			int miniOffsetY = mini ? centerOffsetY : 0;
 			int checkBaseYUp = num2 + centerOffsetY + (mini ? 1 : 2) + ((gameMode == 1) ? 1 : 0);
-			int wrappedCheckBaseYUp = NesByteWrappedCollisionY(checkBaseYUp, camY_fixed);
+			int wrappedCheckBaseYUp = checkBaseYUp;
 			int savedSlopeFramesUp = result.SlopeFrames;
 			int savedSlopeWasOnUp = result.SlopeWasOnCounter;
 			var (upSlopeHit, upSlopeEject, upSlopeType, processedSlopeUp) = CheckSlopesUp(in map, num, num, wrappedCheckBaseYUp, genericWidth, inputHeld, gameMode, gravFlipped, velX_fixed, result.SlopeType, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
@@ -4121,7 +4128,7 @@ internal static class SharedPhysics
 				if (result.NewVelY_fixed < 0)
 				{
 					int ceilingProbeY = num2 + miniOffsetY + 1;
-					int wrappedCeilingProbeY = NesByteWrappedCollisionY(ceilingProbeY, camY_fixed);
+					int wrappedCeilingProbeY = ceilingProbeY;
 					var (hit2, ejectU2, spike2, hitCollision2) = CheckCeilingReturnU(in map, num, collX, wrappedCeilingProbeY, cubeHitboxW);
 					FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=ShipUfoEject_CeilingTileU.check hit={hit2} spike={spike2} coll={hitCollision2} probeY={ceilingProbeY} collX={collX} velY={result.NewVelY_fixed}");
 					if (spike2)
@@ -4146,7 +4153,7 @@ internal static class SharedPhysics
 				}
 			}
 			int checkBaseYDown = num2 + miniOffsetY + cubeHitboxH - 2;
-			int wrappedCheckBaseYDown = NesByteWrappedCollisionY(checkBaseYDown, camY_fixed);
+			int wrappedCheckBaseYDown = checkBaseYDown;
 			var (downSlopeHit, downSlopeEject, downSlopeType, downSlopeProcessed) = CheckSlopesDown(in map, num, num, wrappedCheckBaseYDown, genericWidth, inputHeld, gameMode, gravFlipped, velX_fixed, result.SlopeType, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
 			FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=ShipUfoEject_SlopeDown.check hit={downSlopeHit} eject={downSlopeEject} sT={downSlopeType} probeY={checkBaseYDown} wrappedY={wrappedCheckBaseYDown} num2={num2}");
 			// A processed slope probe can deliberately restore type zero. Ignoring
@@ -4175,7 +4182,7 @@ internal static class SharedPhysics
 			}
 			else
 			{
-				int wrappedFloorBaseY = NesByteWrappedCollisionY(collY + cubeHitboxH, camY_fixed) - cubeHitboxH;
+				int wrappedFloorBaseY = collY;
 				var (hit3, _, spike3, ejectD3, _) = CheckFloorDetailed(in map, collX, wrappedFloorBaseY, cubeHitboxW, cubeHitboxH, result.NewVelY_fixed);
 				if (spike3)
 				{

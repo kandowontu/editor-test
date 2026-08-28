@@ -1765,23 +1765,17 @@ namespace FamidashEditor
 
         // NES spawn/scroll Y config (set from MainWindow before use)
         private int? configSpawnYHi = null;
-        private int? configSpawnYLo = null;
-        private int? configScrollYHi = null;
-        private int? configScrollYLo = null;
+        private int? configScrollYPosition = null;
 
         /// <summary>
         /// Apply NES spawn Y / scroll Y config values.
         /// Call after construction and before ApplyStartPosMarker.
         /// These values are used when no START POS marker is set.
         /// </summary>
-        public void SetSpawnScrollConfig(int? spawnHi, int? spawnLo, int? scrollHi, int? scrollLo)
+        public void SetSpawnScrollConfig(int? spawnHi, int? scrollYPosition)
         {
             configSpawnYHi = spawnHi;
-            // Current compact NES headers no longer store either byte. Their
-            // runtime values are fixed to $00 and $02 respectively.
-            configSpawnYLo = null;
-            configScrollYHi = null;
-            configScrollYLo = scrollLo;
+            configScrollYPosition = scrollYPosition;
         }
 
         /// <summary>
@@ -1795,10 +1789,9 @@ namespace FamidashEditor
             int lo = 0;
             int nesSpawnY = (hi << 8) | lo; // NES 16-bit fixed-point (8 frac bits)
             // Match NES exactly: PF_top_px = nesSpawnHi + nesScrollLinear - nesYOffset.
-            // Use NES default scroll (0x02EF -> linear 719) when not provided, matching
+            // Use NES default linear scroll ($02CF = 719) when not provided, matching
             // export_levels.py defaults.
-            (int nesScrollHi, int nesScrollLo) = SharedPhysics.ResolveNesInitialScroll(configScrollYHi, configScrollYLo);
-            int nesScrollLinear = nesScrollHi * 240 + nesScrollLo;
+            int nesScrollLinear = SharedPhysics.ResolveNesInitialScroll(configScrollYPosition);
             int gRTR = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
             int nesYOffset = (57 - mapHeight + gRTR) * 16;
             return nesSpawnY + ((nesScrollLinear - nesYOffset) << 8);
@@ -1810,23 +1803,18 @@ namespace FamidashEditor
         /// </summary>
         private int? ComputeScrollYFixed()
         {
-            if (!configSpawnYHi.HasValue && !configSpawnYLo.HasValue &&
-                !configScrollYHi.HasValue && !configScrollYLo.HasValue)
+            if (!configSpawnYHi.HasValue && !configScrollYPosition.HasValue)
                 return null;
-            (int hi, int lo) = SharedPhysics.ResolveNesInitialScroll(configScrollYHi, configScrollYLo);
-            // Linearize NES nametable scroll (each 0x100 block = 240 valid pixels, F0-FF skipped)
-            int linearScroll = hi * 240 + lo;
-            int linearMax = 2 * 240 + 239; // 719 = linearize(0x02EF), the default bottom scroll
-            int pixelsFromBottom = linearMax - linearScroll;
-            int maxCameraY = SimulatorNesMaxCameraY_px();
-            int tmxCamY = Math.Max(0, maxCameraY - pixelsFromBottom);
-            return Math.Min(maxCameraY, tmxCamY) << 8;
+            int linearScroll = SharedPhysics.ResolveNesInitialScroll(configScrollYPosition);
+            // reset_level starts with the raw header value; the first gameplay
+            // process_y_scroll call applies top/bottom cap compensation.
+            return (linearScroll - _sim_nesCoordOffset) << 8;
         }
 
         private int SimulatorNesMaxCameraY_px()
         {
             int mapMax = Math.Max(0, (mapHeight - NES_H) * TILE);
-            int nesMax = 719 - _sim_nesCoordOffset;
+            int nesMax = SharedPhysics.NES_MAX_SCROLL_Y_LINEAR - _sim_nesCoordOffset;
             return Math.Max(0, Math.Min(mapMax, nesMax));
         }
 
@@ -4660,7 +4648,7 @@ namespace FamidashEditor
 
         private void ApplySimulatorNesCameraScroll()
         {
-            if (!physicsEnabled || paused || (!forcePlatformer && !jumpedOnce))
+            if (!physicsEnabled || paused)
                 return;
 
             if (forcePlatformer)
@@ -4673,6 +4661,7 @@ namespace FamidashEditor
                 currentGameMode == 4 ||
                 currentGameMode == 8 ||
                 currentGameMode == 9 ||
+                currentGameMode == 11 ||
                 nocamlockforced;
 
             if ((!dual || twoplayer) && camFollowsY)
@@ -4681,28 +4670,35 @@ namespace FamidashEditor
                 return;
             }
 
-            // Ship-style smooth scroll. NES performs two independent comparisons,
-            // so a +2 step may overshoot and immediately take the -3 branch.
+            // Ship-style smooth scroll. PR #360 preserves the complete $0266
+            // fixed-point step and performs two independent comparisons.
             int cameraY_px = cameraY_fixed >> 8;
             int targetCameraY_px = targetCameraY_fixed >> 8;
             int maxShipCameraY_fixed = SimulatorNesMaxCameraY_px() << 8;
             if (targetCameraY_px > cameraY_px)
             {
-                cameraY_fixed += SHIP_SCROLL_SPEED_UP_FIXED;
-                // Simulator stores world Y. NES screen currplayer_y moves -2px
-                // while scroll_y moves +2px, so world Y is unchanged.
+                int sub = _sim_scrollYSubpx + (SHIP_SCROLL_SPEED_FIXED & 0xFF);
+                int carry = sub > 0xFF ? 1 : 0;
+                _sim_scrollYSubpx = sub & 0xFF;
+                int cameraMove_fixed = ((SHIP_SCROLL_SPEED_FIXED >> 8) + carry) << 8;
+                cameraY_fixed += cameraMove_fixed;
+                int representedYMove_fixed = cameraMove_fixed - SHIP_SCROLL_SPEED_FIXED;
+                playerY_fixed += representedYMove_fixed;
+                if (dual && currplayer == 0)
+                    player_y_fixed[1] += representedYMove_fixed;
             }
 
-            if (cameraY_fixed <= maxShipCameraY_fixed &&
-                targetCameraY_px < (cameraY_fixed >> 8))
+            if (targetCameraY_px < (cameraY_fixed >> 8))
             {
-                cameraY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED;
-                // NES adds SHIP_SCROLL_SPEED to screen currplayer_y here, while
-                // scroll_y moves -3px on NTSC due the carry after subtracting 0.
-                // World Y therefore moves by -1px.
-                playerY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED - SHIP_SCROLL_SPEED_UP_FIXED;
-                if (dual && !twoplayer && currplayer == 0)
-                    player_y_fixed[1] -= SHIP_SCROLL_SPEED_DOWN_FIXED - SHIP_SCROLL_SPEED_UP_FIXED;
+                int sub = _sim_scrollYSubpx - (SHIP_SCROLL_SPEED_FIXED & 0xFF);
+                int borrow = sub < 0 ? 1 : 0;
+                _sim_scrollYSubpx = sub & 0xFF;
+                int cameraMove_fixed = -(((SHIP_SCROLL_SPEED_FIXED >> 8) + borrow) << 8);
+                cameraY_fixed += cameraMove_fixed;
+                int representedYMove_fixed = SHIP_SCROLL_SPEED_FIXED + cameraMove_fixed;
+                playerY_fixed += representedYMove_fixed;
+                if (dual && currplayer == 0)
+                    player_y_fixed[1] += representedYMove_fixed;
             }
 
             int minShipCameraY_fixed =
@@ -4711,19 +4707,19 @@ namespace FamidashEditor
             {
                 // NES moves screen Y and scroll by the same integer clamp
                 // amount; simulator Y is world-space, so only fold subpixels.
-                playerY_fixed -= _sim_scrollYSubpx;
-                if (dual && !twoplayer && currplayer == 0)
-                    player_y_fixed[1] -= _sim_scrollYSubpx;
+                playerY_fixed += _sim_scrollYSubpx;
+                if (dual && currplayer == 0)
+                    player_y_fixed[1] += _sim_scrollYSubpx;
                 _sim_scrollYSubpx = 0;
                 cameraY_fixed = minShipCameraY_fixed;
             }
-            if (cameraY_fixed > maxShipCameraY_fixed || (cameraY_fixed == maxShipCameraY_fixed && _sim_scrollYSubpx != 0))
+            if (cameraY_fixed >= maxShipCameraY_fixed)
             {
                 // The integer bottom-cap delta is already represented by
                 // clamping cameraY_fixed; only fold in the NES fractional
                 // scroll byte before clearing it.
                 playerY_fixed += _sim_scrollYSubpx;
-                if (dual && !twoplayer && currplayer == 0)
+                if (dual && currplayer == 0)
                     player_y_fixed[1] += _sim_scrollYSubpx;
                 _sim_scrollYSubpx = 0;
                 cameraY_fixed = maxShipCameraY_fixed;
@@ -4859,47 +4855,48 @@ namespace FamidashEditor
             if (_sim_exitPortalTimer != 0)
                 _sim_exitPortalTimer--;
 
-            int screenY_fixed = playerY_fixed - cameraY_fixed;
-            int scrollYLinear = (cameraY_fixed >> 8) + _sim_nesCoordOffset;
             int minCameraY_fixed = (_sim_minScrollYLin - _sim_nesCoordOffset) << 8;
             int maxCameraY_fixed = SimulatorNesMaxCameraY_px() << 8;
+            int screenY_fixed = playerY_fixed - cameraY_fixed;
+            int scrollYLinear = (cameraY_fixed >> 8) + _sim_nesCoordOffset;
 
-            if (screenY_fixed < 0x4000)
+            if (screenY_fixed < 0x4000 &&
+                (scrollYLinear > _sim_minScrollYLin ||
+                 (scrollYLinear == _sim_minScrollYLin && _sim_scrollYSubpx != 0)))
             {
-                if (scrollYLinear > _sim_minScrollYLin ||
-                    (scrollYLinear == _sim_minScrollYLin && _sim_scrollYSubpx != 0))
+                int needed_fixed = 0x4000 - screenY_fixed;
+                if (_sim_exitPortalTimer != 0)
                 {
-                    int needed_fixed = 0x4000 - screenY_fixed;
-                    if (_sim_exitPortalTimer != 0)
-                    {
-                        int maxStepPx = 11 - _sim_exitPortalTimer;
-                        if ((needed_fixed >> 8) >= maxStepPx)
-                            needed_fixed = maxStepPx << 8;
-                    }
-                    int low = needed_fixed & 0xFF;
-                    int high = (needed_fixed >> 8) & 0xFF;
-                    int sub = _sim_scrollYSubpx - low;
-                    int borrow = 0;
-                    if (sub < 0)
-                    {
-                        sub += 256;
-                        borrow = 1;
-                    }
-                    _sim_scrollYSubpx = sub;
-                    int cameraMove_fixed = -((high + borrow) << 8);
-                    int playerMove_fixed = needed_fixed + cameraMove_fixed;
-                    cameraY_fixed += cameraMove_fixed;
-                    playerY_fixed += playerMove_fixed;
-                    if (cameraY_fixed < minCameraY_fixed)
-                    {
-                        // The integer top-cap compensation preserves world Y.
-                        playerY_fixed -= _sim_scrollYSubpx;
-                        _sim_scrollYSubpx = 0;
-                        cameraY_fixed = minCameraY_fixed;
-                    }
+                    int maxStepPx = 11 - _sim_exitPortalTimer;
+                    if ((needed_fixed >> 8) >= maxStepPx)
+                        needed_fixed = maxStepPx << 8;
                 }
+                int sub = _sim_scrollYSubpx - (needed_fixed & 0xFF);
+                int borrow = sub < 0 ? 1 : 0;
+                _sim_scrollYSubpx = sub & 0xFF;
+                int cameraMove_fixed = -(((needed_fixed >> 8) + borrow) << 8);
+                int representedYMove_fixed = needed_fixed + cameraMove_fixed;
+                cameraY_fixed += cameraMove_fixed;
+                playerY_fixed += representedYMove_fixed;
+                if (dual && currplayer == 0)
+                    player_y_fixed[1] += representedYMove_fixed;
             }
-            else if ((screenY_fixed >> 8) >= 0xA0 && scrollYLinear < 719)
+
+            // Both cap calls and both anchor comparisons retain their exact
+            // source order; downward following is not an else-if of upward.
+            if (cameraY_fixed < minCameraY_fixed)
+            {
+                playerY_fixed += _sim_scrollYSubpx;
+                if (dual && currplayer == 0)
+                    player_y_fixed[1] += _sim_scrollYSubpx;
+                _sim_scrollYSubpx = 0;
+                cameraY_fixed = minCameraY_fixed;
+            }
+
+            screenY_fixed = playerY_fixed - cameraY_fixed;
+            scrollYLinear = (cameraY_fixed >> 8) + _sim_nesCoordOffset;
+            if (scrollYLinear < SharedPhysics.NES_MAX_SCROLL_Y_LINEAR &&
+                (screenY_fixed >> 8) >= 0xA0)
             {
                 int needed_fixed = screenY_fixed - 0xA000;
                 if (_sim_exitPortalTimer != 0)
@@ -4908,29 +4905,24 @@ namespace FamidashEditor
                     if ((needed_fixed >> 8) >= maxStepPx)
                         needed_fixed = maxStepPx << 8;
                 }
-                int low = needed_fixed & 0xFF;
-                int high = (needed_fixed >> 8) & 0xFF;
-                int sub = _sim_scrollYSubpx + low;
-                int carry = 0;
-                if (sub > 255)
-                {
-                    sub -= 256;
-                    carry = 1;
-                }
-                _sim_scrollYSubpx = sub;
-                int cameraMove_fixed = (high + carry) << 8;
-                int playerMove_fixed = -needed_fixed + cameraMove_fixed;
+                int sub = _sim_scrollYSubpx + (needed_fixed & 0xFF);
+                int carry = sub > 0xFF ? 1 : 0;
+                _sim_scrollYSubpx = sub & 0xFF;
+                int cameraMove_fixed = ((needed_fixed >> 8) + carry) << 8;
+                int representedYMove_fixed = -needed_fixed + cameraMove_fixed;
                 cameraY_fixed += cameraMove_fixed;
-                playerY_fixed += playerMove_fixed;
-                if (cameraY_fixed > maxCameraY_fixed || (cameraY_fixed == maxCameraY_fixed && _sim_scrollYSubpx != 0))
-                {
-                    // NES cap_scroll_y_at_bottom() folds the fractional scroll
-                    // byte into currplayer_y even when PF/sim's integer linear
-                    // camera value lands exactly on the bottom cap.
-                    playerY_fixed += _sim_scrollYSubpx;
-                    _sim_scrollYSubpx = 0;
-                    cameraY_fixed = maxCameraY_fixed;
-                }
+                playerY_fixed += representedYMove_fixed;
+                if (dual && currplayer == 0)
+                    player_y_fixed[1] += representedYMove_fixed;
+            }
+
+            if (cameraY_fixed >= maxCameraY_fixed)
+            {
+                playerY_fixed += _sim_scrollYSubpx;
+                if (dual && currplayer == 0)
+                    player_y_fixed[1] += _sim_scrollYSubpx;
+                _sim_scrollYSubpx = 0;
+                cameraY_fixed = maxCameraY_fixed;
             }
         }
 
@@ -5114,11 +5106,8 @@ namespace FamidashEditor
         // Smooth camera Y target for non-cube modes (ship/ball/UFO/spider/wave/swing)
         // Matches Famidash target_scroll_y: camera scrolls smoothly toward this value
         private int targetCameraY_fixed = 0;
-        private const int PORTAL_TO_TOP_DIFF_PX = 0x3A; // 58px offset from portal Y to screen top
-        // NES NTSC ship-scroll speeds. See PathfinderEngine.cs for the cc65
-        // do_if_carry asymmetry that makes these unequal (down=3, up=2 px/frame).
-        private const int SHIP_SCROLL_SPEED_DOWN_FIXED = 0x0300; // 3 px/frame (NES down branch, NTSC)
-        private const int SHIP_SCROLL_SPEED_UP_FIXED   = 0x0200; // 2 px/frame (NES up branch,   NTSC)
+        private const int PORTAL_TO_TOP_DIFF_PX = 0x5A; // PR #360: 90px from portal Y to screen top
+        private const int SHIP_SCROLL_SPEED_FIXED = 0x0266;
         private int _sim_nesCoordOffset; // PF→NES linear-Y offset for nametable distortion
         private int _sim_minScrollYLin;
         private int _sim_scrollYSubpx;
@@ -5126,19 +5115,7 @@ namespace FamidashEditor
 
         private int NesNtCameraTarget_fixed(int portalWorldY_px)
         {
-            int rawTarget = portalWorldY_px - PORTAL_TO_TOP_DIFF_PX;
-            int nesLinear = rawTarget + _sim_nesCoordOffset;
-            if (nesLinear < 0x100)
-                return rawTarget << 8;
-            if ((nesLinear & 0xFF) >= 0xF0) nesLinear += 0x10;
-            int hi = nesLinear >> 8;
-            int lo = nesLinear & 0xFF;
-            int physicalNES = hi * 240 + lo;
-            int effectivePF = physicalNES - _sim_nesCoordOffset;
-            // NES nametable-space targets may legitimately map above editor
-            // world Y=0.  Keep the signed PF-space target so ship-style camera
-            // motion and min_scroll_y capping follow the ROM exactly.
-            return effectivePF << 8;
+            return (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8;
         }
         private bool _suppressDebugBarEvents = false;
         // Track orbs that have been activated so they only fire once
@@ -6303,17 +6280,8 @@ namespace FamidashEditor
             {
                 int gRTR = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                 _sim_nesCoordOffset = (57 - mapHeight + gRTR) * 16;
-                int emptyTopRows = 57 - mapHeight;
-                if (emptyTopRows < 0)
-                    emptyTopRows = 0;
-                int minScrollHi = 0;
-                int minScrollRow = emptyTopRows;
-                while (minScrollRow >= 15)
-                {
-                    minScrollRow -= 15;
-                    minScrollHi++;
-                }
-                _sim_minScrollYLin = minScrollHi * 240 + ((minScrollRow * 16) | 8);
+                int emptyTopRows = Math.Max(0, 57 - mapHeight);
+                _sim_minScrollYLin = (emptyTopRows * 16) | 8;
             }
             this.tileImages = tileImages;
             this.tileTonedImages = tileTonedImages;
@@ -7152,6 +7120,9 @@ namespace FamidashEditor
                             AppendSimDebug($"[KEYDOWN_X] Key={e.Key} IsRepeat={e.IsRepeat} CamMode={MainWindow.Option_CamMode} currentGameMode={currentGameMode}");
                             lock (simLock)
                             {
+                                // Set held state synchronously. Wave/snake movement is
+                                // hold-driven and must not wait for the next UI polling tick.
+                                keyXHeld = true;
                                 // Increment press counter atomically for cube physics
                                 // Physics will be ignored if physicsEnabled is false (cam mode)
                                 int newCount = Interlocked.Increment(ref keyXPressedCount);
@@ -7552,6 +7523,7 @@ namespace FamidashEditor
                         lock (simLock)
                         {
                             try { Interlocked.Exchange(ref keyXPressedCount, 0); } catch { }
+                            keyXHeld = false;
                         }
                     }
                 }
@@ -9017,62 +8989,12 @@ namespace FamidashEditor
                 // Match Famidash process_y_scroll: cam follows Y for cube(0)/robot(4)/ninja(8)/pogo(9)/football(11), or when nocamlockforced
                 try
                 {
-                    // NES scroll.h cube branch (see camFollowsY above).
-                    bool camFollowsY_2 = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || nocamlockforced);
                     // This UI-tick camera follow is fallback-only. When the numeric timer
                     // is active, running this in parallel races simulation state and can
                     // desync PF replay.
-                    if (physicsEnabled && jumpedOnce && !paused && simTimer == null)
+                    if (physicsEnabled && !paused && simTimer == null)
                     {
-                        if ((!dual || twoplayer) && camFollowsY_2)
-                        {
-                            ApplySimulatorNesCubeRobotYScroll();
-                        }
-                        else
-                        {
-                            // Ship-style smooth scroll: see other site for derivation.
-                            // INTEGER-PIXEL comparison (NES `scroll_y` byte-only).
-                            int _camPx2 = cameraY_fixed >> 8;
-                            int _tgtPx2 = targetCameraY_fixed >> 8;
-                            int maxCamY_2 = SimulatorNesMaxCameraY_px() << 8;
-                            if (_tgtPx2 > _camPx2)
-                            {
-                                cameraY_fixed += SHIP_SCROLL_SPEED_UP_FIXED;
-                                // Simulator stores world Y. NES screen currplayer_y moves -2px
-                                // while scroll_y moves +2px, so world Y is unchanged.
-                            }
-                            if (cameraY_fixed <= maxCamY_2 && _tgtPx2 < (cameraY_fixed >> 8))
-                            {
-                                cameraY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED;
-                                // NES adds SHIP_SCROLL_SPEED to screen currplayer_y here;
-                                // camera still takes the 3px NTSC carry path, so world
-                                // Y moves by -1px.
-                                playerY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED - SHIP_SCROLL_SPEED_UP_FIXED;
-                                if (dual && !twoplayer && currplayer == 0)
-                                    player_y_fixed[1] -= SHIP_SCROLL_SPEED_DOWN_FIXED - SHIP_SCROLL_SPEED_UP_FIXED;
-                            }
-                            int minCamY_2 = (_sim_minScrollYLin - _sim_nesCoordOffset) << 8;
-                            if (cameraY_fixed < minCamY_2)
-                            {
-                                // The integer top-cap compensation preserves world Y.
-                                playerY_fixed -= _sim_scrollYSubpx;
-                                if (dual && !twoplayer && currplayer == 0)
-                                    player_y_fixed[1] -= _sim_scrollYSubpx;
-                                _sim_scrollYSubpx = 0;
-                                cameraY_fixed = minCamY_2;
-                            }
-                            if (cameraY_fixed > maxCamY_2 || (cameraY_fixed == maxCamY_2 && _sim_scrollYSubpx != 0))
-                            {
-                                // The integer bottom-cap delta is already represented
-                                // by clamping cameraY_fixed; only fold in the NES
-                                // fractional scroll byte before clearing it.
-                                playerY_fixed += _sim_scrollYSubpx;
-                                if (dual && !twoplayer && currplayer == 0)
-                                    player_y_fixed[1] += _sim_scrollYSubpx;
-                                _sim_scrollYSubpx = 0;
-                                cameraY_fixed = maxCamY_2;
-                            }
-                        }
+                        ApplySimulatorNesCameraScroll();
                     }
                 }
                 catch { }

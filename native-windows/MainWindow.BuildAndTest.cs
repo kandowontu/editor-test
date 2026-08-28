@@ -268,9 +268,7 @@ namespace FamidashEditor
 
             // Optional Y positions
             int? spawnHi   = GetNullableInt("LoadedSpawnYPositionHi");
-            int? spawnLow  = GetNullableInt("LoadedSpawnYPositionLow");
-            int? scrollHi  = GetNullableInt("LoadedScrollYPositionHi");
-            int? scrollLow = GetNullableInt("LoadedScrollYPositionLow");
+            int? scrollYPosition = GetNullableInt("LoadedScrollYPositionLow");
 
             // Parallax / force-platformer
             bool noParallax = GetBool("NoParallaxBg");
@@ -318,9 +316,7 @@ namespace FamidashEditor
             sb.AppendLine($"\t\t\tstartingBackgroundColor: 0x{(bgColor ?? 0x12):X2},");
             sb.AppendLine($"\t\t\tstartingGroundColor: 0x{(groundColor ?? 0x02):X2},");
             if (spawnHi.HasValue)  sb.AppendLine($"\t\t\tspawnYPositionHi: 0x{spawnHi.Value:X2},");
-            if (spawnLow.HasValue) sb.AppendLine($"\t\t\tspawnYPositionLow: 0x{spawnLow.Value:X2},");
-            if (scrollHi.HasValue) sb.AppendLine($"\t\t\tscrollYPositionHi: 0x{scrollHi.Value:X2},");
-            if (scrollLow.HasValue) sb.AppendLine($"\t\t\tscrollYPositionLow: 0x{scrollLow.Value:X2},");
+            if (scrollYPosition.HasValue) sb.AppendLine($"\t\t\tscrollYPosition: 0x{scrollYPosition.Value:X4},");
             if (forcePlatformer) sb.AppendLine("\t\t\tforcePlatformer: true,");
             if (noParallax)      sb.AppendLine("\t\t\tparallaxDisable: true,");
 

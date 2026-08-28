@@ -1314,11 +1314,13 @@ namespace FamidashEditor
         public string? LowerText { get; set; } = null;
         // Simulator scale multiplier (1..4)
         public int? SimulatorScale { get; set; } = null;
-        // Optional spawn/scroll Y position metadata (one-byte hex values when written)
+        // Optional spawn/scroll Y metadata. ScrollYPosition is the PR #360
+        // linear coordinate; Hi/Low remain load-only for old editor configs.
         public int? SpawnYPositionHi { get; set; } = null;
         public int? SpawnYPositionLow { get; set; } = null;
         public int? ScrollYPositionHi { get; set; } = null;
         public int? ScrollYPositionLow { get; set; } = null;
+        public int? ScrollYPosition { get; set; } = null;
         // Optional force platformer flag
         public bool? ForcePlatformer { get; set; } = null;
     }
@@ -2030,11 +2032,12 @@ namespace FamidashEditor
             try { var v = fd.LoadedStartingBackgroundColor; if (v.HasValue) config.StartingBackgroundColor = v.Value; } catch { }
             try { var v2 = fd.LoadedStartingGameMode; if (v2.HasValue) config.StartingGameMode = v2.Value; } catch { }
             try { var v3 = fd.LoadedStartingGroundColor; if (v3.HasValue) config.StartingGroundColor = v3.Value; } catch { }
-            // Save optional spawn/scroll Y positions if set (one-byte values)
+            // Save only metadata fields understood by the current Famidash source.
             try { var sv1 = fd.LoadedSpawnYPositionHi; if (sv1.HasValue) config.SpawnYPositionHi = sv1.Value; } catch { }
-            try { var sv2 = fd.LoadedSpawnYPositionLow; if (sv2.HasValue) config.SpawnYPositionLow = sv2.Value; } catch { }
-            try { var sv3 = fd.LoadedScrollYPositionHi; if (sv3.HasValue) config.ScrollYPositionHi = sv3.Value; } catch { }
-            try { var sv4 = fd.LoadedScrollYPositionLow; if (sv4.HasValue) config.ScrollYPositionLow = sv4.Value; } catch { }
+            config.SpawnYPositionLow = null;
+            config.ScrollYPositionHi = null;
+            config.ScrollYPositionLow = null;
+            try { var sv4 = fd.LoadedScrollYPositionLow; if (sv4.HasValue) config.ScrollYPosition = sv4.Value; } catch { }
             // Save optional difficulty and stars if set
             try { var v4 = fd.LoadedStartingDifficulty; if (v4.HasValue) config.Difficulty = v4.Value; } catch { }
             try { var v5 = fd.LoadedStartingStars; if (v5.HasValue) config.Stars = v5.Value; } catch { }
@@ -2120,9 +2123,10 @@ namespace FamidashEditor
                 try { if (config.StartingGroundColor.HasValue) merged.StartingGroundColor = config.StartingGroundColor; } catch { }
                 // Spawn/Scroll Y positions: always overwrite (including null to clear)
                 try { merged.SpawnYPositionHi = config.SpawnYPositionHi; } catch { }
-                try { merged.SpawnYPositionLow = config.SpawnYPositionLow; } catch { }
-                try { merged.ScrollYPositionHi = config.ScrollYPositionHi; } catch { }
-                try { merged.ScrollYPositionLow = config.ScrollYPositionLow; } catch { }
+                try { merged.SpawnYPositionLow = null; } catch { }
+                try { merged.ScrollYPositionHi = null; } catch { }
+                try { merged.ScrollYPositionLow = null; } catch { }
+                try { merged.ScrollYPosition = config.ScrollYPosition; } catch { }
                 try { if (config.Difficulty.HasValue) merged.Difficulty = config.Difficulty; } catch { }
                 try { if (config.Stars.HasValue) merged.Stars = config.Stars; } catch { }
                 try { if (!string.IsNullOrEmpty(config.LowerText)) merged.LowerText = config.LowerText; } catch { }
@@ -2303,11 +2307,20 @@ namespace FamidashEditor
                     try { loadedStartingStars = config.Stars.HasValue ? config.Stars.Value : (int?)null; } catch { loadedStartingStars = null; }
                     try { loadedStartingLowerText = !string.IsNullOrEmpty(config.LowerText) ? config.LowerText : null; } catch { loadedStartingLowerText = null; }
                     try { loadedStartingUpperText = !string.IsNullOrEmpty(config.UpperText) ? config.UpperText : null; } catch { loadedStartingUpperText = null; }
-                    // Load optional spawn/scroll Y positions
+                    // Load current linear scroll metadata, with a one-way migration
+                    // from the editor's former PPU-format high/low pair.
                     try { loadedSpawnYPositionHi = config.SpawnYPositionHi.HasValue ? config.SpawnYPositionHi.Value : (int?)null; } catch { loadedSpawnYPositionHi = null; }
-                    try { loadedSpawnYPositionLow = config.SpawnYPositionLow.HasValue ? config.SpawnYPositionLow.Value : (int?)null; } catch { loadedSpawnYPositionLow = null; }
-                    try { loadedScrollYPositionHi = config.ScrollYPositionHi.HasValue ? config.ScrollYPositionHi.Value : (int?)null; } catch { loadedScrollYPositionHi = null; }
-                    try { loadedScrollYPositionLow = config.ScrollYPositionLow.HasValue ? config.ScrollYPositionLow.Value : (int?)null; } catch { loadedScrollYPositionLow = null; }
+                    loadedSpawnYPositionLow = null;
+                    loadedScrollYPositionHi = null;
+                    try
+                    {
+                        loadedScrollYPositionLow = config.ScrollYPosition.HasValue
+                            ? SharedPhysics.DecodeNesScrollYPosition(config.ScrollYPosition)
+                            : (config.ScrollYPositionHi.HasValue || config.ScrollYPositionLow.HasValue)
+                                ? SharedPhysics.ResolveLegacyNesInitialScroll(config.ScrollYPositionHi, config.ScrollYPositionLow)
+                                : null;
+                    }
+                    catch { loadedScrollYPositionLow = null; }
 
                     // Load max fall speed from config (default 0x06 when absent)
                     try { loadedMaxFallSpeed = config.MaxFallSpeed.HasValue ? config.MaxFallSpeed.Value : 0x06; } catch { loadedMaxFallSpeed = 0x06; }
@@ -8784,7 +8797,7 @@ namespace FamidashEditor
                     // Set starting speed before ApplyStartPosMarker so it's available during initialization
                     try { sim.SetStartingSpeedUiIndex(loadedStartingSpeedUiIndex); } catch { }
                     // Pass NES spawn/scroll Y config to the simulator
-                    try { sim.SetSpawnScrollConfig(loadedSpawnYPositionHi, loadedSpawnYPositionLow, loadedScrollYPositionHi, loadedScrollYPositionLow); } catch { }
+                    try { sim.SetSpawnScrollConfig(loadedSpawnYPositionHi, loadedScrollYPositionLow); } catch { }
                     // Apply START POS marker position now that Owner is set
                     try { sim.ApplyStartPosMarker(); } catch { }
                     // Apply spawn/scroll Y from level config if no START POS marker was used
@@ -13656,12 +13669,8 @@ namespace FamidashEditor
                 const int NES_H_TILES = 15;
                 const int TILE_PX = 16;
 
-                // Resolve startup scroll exactly as the NES/PF/simulator do. The current
-                // compact level header stores only the low byte; the NES fixes the high
-                // byte to $02. NES scroll pages are 240 pixels, not 256 pixels.
-                (int effectiveScrollHi, int effectiveScrollLo) = SharedPhysics.ResolveNesInitialScroll(
-                    loadedScrollYPositionHi, loadedScrollYPositionLow);
-                int linearScroll = effectiveScrollHi * 240 + effectiveScrollLo;
+                // PR #360 stores startup scroll as a linear 16-bit pixel coordinate.
+                int linearScroll = SharedPhysics.ResolveNesInitialScroll(loadedScrollYPositionLow);
                 int groundRowsToReserve = (groundBitmap != null && groundTileRows > 0)
                     ? Math.Min(3, groundTileRows)
                     : 0;
@@ -13693,7 +13702,7 @@ namespace FamidashEditor
                         IsHitTestVisible = true
                     };
                     rect.ToolTip = $"Spawn Y: Hi=0x{hi:X2} Lo=0x00\n" +
-                        $"Scroll Y: Hi=0x{effectiveScrollHi:X2} Lo=0x{effectiveScrollLo:X2}\n" +
+                        $"Scroll Y: 0x{linearScroll:X4}\n" +
                         $"TMX pixel Y={spawnY_px}";
                     Canvas.SetLeft(rect, x);
                     Canvas.SetTop(rect, y);
@@ -13703,14 +13712,11 @@ namespace FamidashEditor
                 }
 
                 // Camera viewport marker: semi-transparent rectangle showing the configured camera view
-                if (loadedScrollYPositionHi.HasValue || loadedScrollYPositionLow.HasValue)
+                if (loadedScrollYPositionLow.HasValue)
                 {
-                    int linearMax = 2 * 240 + 239;
-                    int pixelsFromBottom = linearMax - linearScroll;
-                    int mapMaxCamY = Math.Max(0, (mapHeight - NES_H_TILES) * TILE_PX);
-                    int nesMaxCamY = Math.Max(0, linearMax - nesYOffset);
-                    int maxCamY = Math.Min(mapMaxCamY, nesMaxCamY);
-                    int camY_px = Math.Max(0, Math.Min(maxCamY, maxCamY - pixelsFromBottom));
+                    // Show reset_level's actual initial camera. The first gameplay
+                    // scroll tick, not initialization, applies NES top/bottom caps.
+                    int camY_px = linearScroll - nesYOffset;
 
                     double x = pad + 0 * scale;
                     double y = pad + (camY_px + (3 * TileSize)) * scale + gridRenderShiftY;
@@ -13727,7 +13733,7 @@ namespace FamidashEditor
                         StrokeDashArray = new DoubleCollection { 4, 2 },
                         IsHitTestVisible = true
                     };
-                    rect.ToolTip = $"Camera Scroll Y: Hi=0x{effectiveScrollHi:X2} Lo=0x{effectiveScrollLo:X2}\n" +
+                    rect.ToolTip = $"Camera Scroll Y: 0x{linearScroll:X4}\n" +
                         $"TMX camera top={camY_px}px";
                     Canvas.SetLeft(rect, x);
                     Canvas.SetTop(rect, y);
@@ -23272,8 +23278,8 @@ namespace FamidashEditor
                 int startY_px;
                 int groundRowsToReserve = (groundBitmap != null && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                 bool hasGround = (groundBitmap != null && groundTileRows > 0);
-                (int effectiveScrollYHi, int effectiveScrollYLo) = SharedPhysics.ResolveNesInitialScroll(
-                    loadedScrollYPositionHi, loadedScrollYPositionLow);
+                int effectiveScrollY = SharedPhysics.ResolveNesInitialScroll(
+                    loadedScrollYPositionLow);
 
                 if (startPosMarkerX.HasValue && startPosMarkerY.HasValue)
                 {
@@ -23287,11 +23293,10 @@ namespace FamidashEditor
                     // Match NES exactly. NES initializes currplayer_y = spawn_y_pos (screen-relative
                     // 8.8 fixed) and scroll_y from spawn_scroll_y_pos. In PF coords:
                     //   PF_startY_top = NES_screen_Y_top + NES_scroll_y_linear - nesYOffset
-                    // Defaults match LEVELS/export_levels.py: spawnHi=0xB0 scrollHi=0x02 scrollLo=0xEF.
+                    // Defaults match LEVELS/export_levels.py: spawnHi=$B0, scrollY=$02CF.
                     int nesYOffset = (57 - mapHeight + groundRowsToReserve) * 16;
                     int nesSpawnHi = (loadedSpawnYPositionHi ?? 0xB0) & 0xFF;
-                    int nesScrollLinear = effectiveScrollYHi * 240 + effectiveScrollYLo;
-                    startY_px = nesSpawnHi + nesScrollLinear - nesYOffset;
+                    startY_px = nesSpawnHi + effectiveScrollY - nesYOffset;
                     int maxY = Math.Max(0, (mapHeight * 16 - 16));
                     if (startY_px < 0) startY_px = 0;
                     if (startY_px > maxY) startY_px = maxY;
@@ -23325,7 +23330,6 @@ namespace FamidashEditor
                 int pathfinderMapHeight = mapHeight;
                 int pathfinderMaxFallSpeed = loadedMaxFallSpeed;
                 string pathfinderLevelName = currentFilePath ?? "";
-                int? pathfinderSpawnYLow = loadedSpawnYPositionLow;
                 bool pathfinderUsesDefaultSpawn =
                     !(startPosMarkerX.HasValue &&
                       startPosMarkerY.HasValue);
@@ -23360,9 +23364,7 @@ namespace FamidashEditor
                         engine.ForcePlatformer = forcePlatformer;
                         engine.UseBFS = preferCoins || forcePlatformer; // platformer requires directional BFS
                         engine.Progress = progress;
-                        engine.ConfigScrollYHi = effectiveScrollYHi;
-                        engine.ConfigScrollYLo = effectiveScrollYLo;
-                        engine.ConfigSpawnYLo = pathfinderSpawnYLow;
+                        engine.ConfigScrollYPosition = effectiveScrollY;
                         engine.UseNesSpawnScrollDefaults =
                             pathfinderUsesDefaultSpawn;
                         _activePathfinderEngine = engine;
@@ -25296,9 +25298,8 @@ namespace FamidashEditor
             int groundRowsToReserve = hasGround
                 ? Math.Min(3, groundTileRows)
                 : 0;
-            (int scrollYHi, int scrollYLo) =
-                SharedPhysics.ResolveNesInitialScroll(
-                    loadedScrollYPositionHi, loadedScrollYPositionLow);
+            int scrollY = SharedPhysics.ResolveNesInitialScroll(
+                loadedScrollYPositionLow);
 
             int startX_px = 0;
             int startY_px;
@@ -25315,8 +25316,7 @@ namespace FamidashEditor
                     (57 - mapHeight + groundRowsToReserve) * 16;
                 int nesSpawnHi =
                     (loadedSpawnYPositionHi ?? 0xB0) & 0xFF;
-                int nesScrollLinear = scrollYHi * 240 + scrollYLo;
-                startY_px = nesSpawnHi + nesScrollLinear - nesYOffset;
+                startY_px = nesSpawnHi + scrollY - nesYOffset;
                 int maxY = Math.Max(0, mapHeight * 16 - 16);
                 startY_px = Math.Max(0, Math.Min(maxY, startY_px));
             }
@@ -25336,9 +25336,7 @@ namespace FamidashEditor
             {
                 EnableLogging = false,
                 ForcePlatformer = forcePlatformer,
-                ConfigScrollYHi = scrollYHi,
-                ConfigScrollYLo = scrollYLo,
-                ConfigSpawnYLo = loadedSpawnYPositionLow,
+                ConfigScrollYPosition = scrollY,
                 UseNesSpawnScrollDefaults =
                     !(startPosMarkerX.HasValue && startPosMarkerY.HasValue)
             };

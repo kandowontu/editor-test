@@ -46,18 +46,10 @@ if (!verbose)
 // Filter out named flags before positional parsing
 var positionalArgs = args.Where(a => !a.StartsWith("--") && !a.Equals("-v", StringComparison.OrdinalIgnoreCase)).ToArray();
 int? cliStartMode = null;
-int? cliSpawnYLo = null;
 foreach (var a in args)
 {
     if (a.StartsWith("--mode=", StringComparison.OrdinalIgnoreCase))
         cliStartMode = int.Parse(a.Substring(7));
-    else if (a.StartsWith("--spawn-y-lo=", StringComparison.OrdinalIgnoreCase))
-    {
-        string value = a.Substring(13);
-        cliSpawnYLo = value.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-            ? Convert.ToInt32(value.Substring(2), 16)
-            : int.Parse(value);
-    }
 }
 
 string tmxPath = positionalArgs.Length > 0 ? positionalArgs[0] : @"..\famidash\LEVELS\LEVEL DATA\lvlset_HUGE\everyend.tmx";
@@ -69,7 +61,7 @@ int startSpeedUiIndex = 1;  // default: 1 = 1x speed (index 0 = 0.5x)
 int startGameMode = 0; // default: cube mode
 bool forcePlatformer = false;
 int? metaSpawnYHi = null, metaSpawnYLo = null;
-int? metaScrollYHi = null, metaScrollYLo = null;
+int? metaScrollYPosition = null;
 {
     string lvlName = Path.GetFileNameWithoutExtension(tmxPath).ToLowerInvariant();
     string? metaFile = FindMetadataFile(tmxPath);
@@ -78,7 +70,7 @@ int? metaScrollYHi = null, metaScrollYLo = null;
     {
         try
         {
-        var (metaSpeed, metaMaxFall, metaGameMode, mSpawnHi, mSpawnLo, mScrollHi, mScrollLo, mPlatformer) = ParseMetadataLevelProperties(metaFile, lvlName);
+        var (metaSpeed, metaMaxFall, metaGameMode, mSpawnHi, mSpawnLo, mScrollPosition, mScrollHi, mScrollLo, mPlatformer) = ParseMetadataLevelProperties(metaFile, lvlName);
         if (metaSpeed.HasValue)
         {
             // NES/metadata convention: 0=1x, 1=0.5x, 2+=same
@@ -99,8 +91,11 @@ int? metaScrollYHi = null, metaScrollYLo = null;
         }
         metaSpawnYHi = mSpawnHi;
         metaSpawnYLo = mSpawnLo;
-        metaScrollYHi = mScrollHi;
-        metaScrollYLo = mScrollLo;
+        metaScrollYPosition = mScrollPosition.HasValue
+            ? SharedPhysics.DecodeNesScrollYPosition(mScrollPosition)
+            : (mScrollHi.HasValue || mScrollLo.HasValue)
+                ? SharedPhysics.ResolveLegacyNesInitialScroll(mScrollHi, mScrollLo)
+                : null;
 		forcePlatformer = mPlatformer;
         if (mSpawnHi.HasValue)
             Console.WriteLine($"Metadata: spawnY=0x{mSpawnHi.Value:X2}{(mSpawnLo ?? 0):X2} for '{lvlName}'");
@@ -253,10 +248,17 @@ if (File.Exists(cfgPath))
             metaSpawnYHi = spawnHiProp.GetInt32();
         if (root.TryGetProperty("SpawnYPositionLow", out var spawnLoProp) && spawnLoProp.ValueKind == JsonValueKind.Number)
             metaSpawnYLo = spawnLoProp.GetInt32();
-        if (root.TryGetProperty("ScrollYPositionHi", out var scrollHiProp) && scrollHiProp.ValueKind == JsonValueKind.Number)
-            metaScrollYHi = scrollHiProp.GetInt32();
-        if (root.TryGetProperty("ScrollYPositionLow", out var scrollLoProp) && scrollLoProp.ValueKind == JsonValueKind.Number)
-            metaScrollYLo = scrollLoProp.GetInt32();
+        if (root.TryGetProperty("ScrollYPosition", out var scrollProp) && scrollProp.ValueKind == JsonValueKind.Number)
+            metaScrollYPosition = SharedPhysics.DecodeNesScrollYPosition(scrollProp.GetInt32());
+        else
+        {
+            int? legacyHi = root.TryGetProperty("ScrollYPositionHi", out var scrollHiProp) && scrollHiProp.ValueKind == JsonValueKind.Number
+                ? scrollHiProp.GetInt32() : null;
+            int? legacyLo = root.TryGetProperty("ScrollYPositionLow", out var scrollLoProp) && scrollLoProp.ValueKind == JsonValueKind.Number
+                ? scrollLoProp.GetInt32() : null;
+            if (legacyHi.HasValue || legacyLo.HasValue)
+                metaScrollYPosition = SharedPhysics.ResolveLegacyNesInitialScroll(legacyHi, legacyLo);
+        }
 		if (root.TryGetProperty("ForcePlatformer", out var platformerProp) &&
 			(platformerProp.ValueKind == JsonValueKind.True || platformerProp.ValueKind == JsonValueKind.False))
 			forcePlatformer = platformerProp.GetBoolean();
@@ -314,20 +316,18 @@ int groundTileRows = 3;
 //   PF_startY_top = NES_screen_Y_top + NES_scroll_y_linear - nesYOffset
 // where:
 //   NES_screen_Y_top = spawnYPositionHi (defaults to 0xB0 in export_levels.py)
-//   NES_scroll_y_linear = scrollYPositionHi*240 + scrollYPositionLow
-//                          (defaults 0x02/0xEF -> 719 in export_levels.py)
+//   NES_scroll_y_linear = scrollYPosition (defaults $02CF = 719)
 //   nesYOffset = (57 - mapHeight + groundRowsToReserve) * 16  (PathfinderEngine convention)
 int groundRowsToReserve = (hasGround && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
 int nesYOffset = (57 - level.Height + groundRowsToReserve) * 16;
 int nesSpawnHi = (metaSpawnYHi ?? 0xB0) & 0xFF;
-(int nesScrollHi, int nesScrollLo) = SharedPhysics.ResolveNesInitialScroll(metaScrollYHi, metaScrollYLo);
-int nesScrollLinear = nesScrollHi * 240 + nesScrollLo;
+int nesScrollLinear = SharedPhysics.ResolveNesInitialScroll(metaScrollYPosition);
 int startX_px = forcePlatformer ? 0x11 : 0;
 int startY_px = nesSpawnHi + nesScrollLinear - nesYOffset;
 int maxY = Math.Max(0, level.Height * 16 - 16);
 if (startY_px < 0) startY_px = 0;
 if (startY_px > maxY) startY_px = maxY;
-Console.WriteLine($"Spawn: spawnHi=0x{nesSpawnHi:X2} scrollHi=0x{nesScrollHi:X2} scrollLo=0x{nesScrollLo:X2} scrollLin={nesScrollLinear} nesYOffset={nesYOffset} -> startY_px={startY_px}");
+Console.WriteLine($"Spawn: spawnHi=0x{nesSpawnHi:X2} scrollY=0x{nesScrollLinear:X4} nesYOffset={nesYOffset} -> startY_px={startY_px}");
 
 Console.WriteLine($"Start: ({startX_px}, {startY_px})  speed={startSpeedUiIndex}  maxFall=0x{maxFallSpeed:X}  bias={jumpTimingBias:F2}  mode={startGameMode}");
 
@@ -353,9 +353,7 @@ engine.PreferCoins = preferCoins;
 engine.ForcePlatformer = forcePlatformer;
 engine.UseBFS = useBfs || preferCoins || forcePlatformer;
 engine.Verbose = verbose;
-engine.ConfigScrollYHi = metaScrollYHi;
-engine.ConfigScrollYLo = metaScrollYLo;
-engine.ConfigSpawnYLo = cliSpawnYLo ?? metaSpawnYLo;
+engine.ConfigScrollYPosition = nesScrollLinear;
 engine.UseNesSpawnScrollDefaults = true;
 if (bfsPrefixTrace != null)
 {
@@ -575,7 +573,7 @@ static string Json5ToJson(string json5)
 // ══════════════════════════════════════════════════════════════
 // Helper: read startingSpeed and maxFallSpeed for a level from metadata
 // ══════════════════════════════════════════════════════════════
-static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode, int? spawnYHi, int? spawnYLo, int? scrollYHi, int? scrollYLo, bool forcePlatformer) ParseMetadataLevelProperties(string metaPath, string levelName)
+static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode, int? spawnYHi, int? spawnYLo, int? scrollYPosition, int? scrollYHi, int? scrollYLo, bool forcePlatformer) ParseMetadataLevelProperties(string metaPath, string levelName)
 {
     string raw = File.ReadAllText(metaPath);
     string json = Json5ToJson(raw);
@@ -597,7 +595,7 @@ static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode, int? spawn
                     string? lvl = lvlProp.GetString();
                     if (lvl?.Equals(levelName, StringComparison.OrdinalIgnoreCase) == true)
                     {
-                        int? speed = null, gameMode = null, spawnHi = null, spawnLo = null, scrollHi = null, scrollLo = null;
+                        int? speed = null, gameMode = null, spawnHi = null, spawnLo = null, scrollPosition = null, scrollHi = null, scrollLo = null;
                         int? maxFall = 0x06;
 						bool platformer = false;
                         if (entry.TryGetProperty("startingSpeed", out var sp) && sp.ValueKind == JsonValueKind.Number)
@@ -615,6 +613,8 @@ static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode, int? spawn
                             spawnHi = syh.GetInt32();
                         if (entry.TryGetProperty("spawnYPositionLow", out var syl) && syl.ValueKind == JsonValueKind.Number)
                             spawnLo = syl.GetInt32();
+                        if (entry.TryGetProperty("scrollYPosition", out var scroll) && scroll.ValueKind == JsonValueKind.Number)
+                            scrollPosition = scroll.GetInt32();
                         if (entry.TryGetProperty("scrollYPositionHi", out var schi) && schi.ValueKind == JsonValueKind.Number)
                             scrollHi = schi.GetInt32();
                         if (entry.TryGetProperty("scrollYPositionLow", out var sclo) && sclo.ValueKind == JsonValueKind.Number)
@@ -622,15 +622,15 @@ static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode, int? spawn
 						if (entry.TryGetProperty("forcePlatformer", out var fp) &&
 							(fp.ValueKind == JsonValueKind.True || fp.ValueKind == JsonValueKind.False))
 							platformer = fp.GetBoolean();
-                        Console.WriteLine($"  Found level '{lvl}' in {arrayName} at index {count}: speed={speed} maxFall={maxFall} gameMode={gameMode} spawnYHi={spawnHi} spawnYLo={spawnLo} scrollYHi={scrollHi} scrollYLo={scrollLo}");
-						return (speed, maxFall, gameMode, spawnHi, spawnLo, scrollHi, scrollLo, platformer);
+                        Console.WriteLine($"  Found level '{lvl}' in {arrayName} at index {count}: speed={speed} maxFall={maxFall} gameMode={gameMode} spawnYHi={spawnHi} scrollY={scrollPosition} legacyScrollHi={scrollHi} legacyScrollLo={scrollLo}");
+						return (speed, maxFall, gameMode, spawnHi, spawnLo, scrollPosition, scrollHi, scrollLo, platformer);
                     }
                 }
             }
             Console.WriteLine($"  Searched {count} levels in {arrayName}, '{levelName}' not found");
         }
     }
-	return (null, null, null, null, null, null, null, false);
+	return (null, null, null, null, null, null, null, null, false);
 }
 
 // ══════════════════════════════════════════════════════════════

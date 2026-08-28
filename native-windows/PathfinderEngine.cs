@@ -819,11 +819,9 @@ public class PathfinderEngine
 
 	private const int SCREEN_H_PX = 240;
 
-	private const int SHIP_SCROLL_SPEED_DOWN_FIXED = 768;
+	private const int SHIP_SCROLL_SPEED_FIXED = 0x0266;
 
-	private const int SHIP_SCROLL_SPEED_UP_FIXED = 512;
-
-	private const int PORTAL_TO_TOP_DIFF_PX = 58;
+	private const int PORTAL_TO_TOP_DIFF_PX = 0x5A;
 
 	private const int LOOKAHEAD_HORIZON = 90;
 
@@ -1293,15 +1291,12 @@ public class PathfinderEngine
 	public string LevelName { get; set; } = "";
 
 
-	public int? ConfigScrollYHi { get; set; }
-
-	public int? ConfigScrollYLo { get; set; }
-
-	public int? ConfigSpawnYLo { get; set; }
+	public int? ConfigScrollYPosition { get; set; }
 
 	public bool UseNesSpawnScrollDefaults { get; set; }
 
-	private int SpawnYSubpx => ConfigSpawnYLo.GetValueOrDefault() & 0xFF;
+	// The compact PR #360 header no longer has a spawn-Y fractional byte.
+	private int SpawnYSubpx => 0;
 
 	private int InitialXFixed(int startX_px)
 	{
@@ -2043,83 +2038,116 @@ public class PathfinderEngine
 
 	private void ApplyNesCubeRobotYScroll(ref SimState s)
 	{
-		int num28 = NesNoCamTrackingScreenY_fixed(in s);
-		int num29 = (s.CameraY_fixed >> 8) + _nesCoordOffset;
-		int num30 = _minScrollYLin - _nesCoordOffset << 8;
-		int num31 = NesMaxCamY_px() << 8;
-		if (num28 < 16384)
+		int minCameraY_fixed = (_minScrollYLin - _nesCoordOffset) << 8;
+		int maxCameraY_fixed = NesMaxCamY_px() << 8;
+		int screenY_fixed = NesNoCamTrackingScreenY_fixed(in s);
+		int scrollY = (s.CameraY_fixed >> 8) + _nesCoordOffset;
+
+		if (screenY_fixed < 0x4000 &&
+			(scrollY > _minScrollYLin ||
+			 (scrollY == _minScrollYLin && s.ScrollYSubpx != 0)))
 		{
-			if (num29 > _minScrollYLin || (num29 == _minScrollYLin && s.ScrollYSubpx != 0))
-			{
-				int num32 = 16384 - num28;
-				if (s.ExitPortalTimer != 0)
-				{
-					int num33 = 11 - s.ExitPortalTimer;
-					if (num32 >> 8 >= num33)
-					{
-						num32 = num33 << 8;
-					}
-				}
-				int num34 = num32 & 0xFF;
-				int num35 = (num32 >> 8) & 0xFF;
-				int num36 = s.ScrollYSubpx - num34;
-				int num37 = 0;
-				if (num36 < 0)
-				{
-					num36 += 256;
-					num37 = 1;
-				}
-				s.ScrollYSubpx = num36;
-				int num38 = -(num35 + num37 << 8);
-				int num39 = num32 + num38;
-				s.CameraY_fixed += num38;
-				s.Y_fixed += num39;
-				if (s.CameraY_fixed < num30)
-				{
-					// cap_scroll_y_at_top moves NES currplayer_y by the integer
-					// overshoot while moving scroll_y by the same amount. PF stores
-					// world Y, so only the separate scroll subpixel fold belongs in Y.
-					s.Y_fixed -= s.ScrollYSubpx;
-					s.ScrollYSubpx = 0;
-					s.CameraY_fixed = num30;
-				}
-			}
-		}
-		else if (num28 >> 8 >= 160 && num29 < 719)
-		{
-			int num41 = num28 - 40960;
+			int movement_fixed = 0x4000 - screenY_fixed;
 			if (s.ExitPortalTimer != 0)
 			{
-				int num42 = 11 - s.ExitPortalTimer;
-				if (num41 >> 8 >= num42)
-				{
-					num41 = num42 << 8;
-				}
+				int maxStepPx = 11 - s.ExitPortalTimer;
+				if ((movement_fixed >> 8) >= maxStepPx)
+					movement_fixed = maxStepPx << 8;
 			}
-			int num43 = num41 & 0xFF;
-			int num44 = (num41 >> 8) & 0xFF;
-			int num45 = s.ScrollYSubpx + num43;
-			int num46 = 0;
-			if (num45 > 255)
+			int sub = s.ScrollYSubpx - (movement_fixed & 0xFF);
+			int borrow = sub < 0 ? 1 : 0;
+			s.ScrollYSubpx = sub & 0xFF;
+			int cameraMove_fixed = -(((movement_fixed >> 8) + borrow) << 8);
+			s.CameraY_fixed += cameraMove_fixed;
+			s.Y_fixed += movement_fixed + cameraMove_fixed;
+		}
+
+		// scroll.h calls both cap routines unconditionally at their respective
+		// positions, even when the anchor movement branch did not run.
+		if (s.CameraY_fixed < minCameraY_fixed)
+		{
+			s.Y_fixed += s.ScrollYSubpx;
+			s.ScrollYSubpx = 0;
+			s.CameraY_fixed = minCameraY_fixed;
+		}
+
+		screenY_fixed = NesNoCamTrackingScreenY_fixed(in s);
+		scrollY = (s.CameraY_fixed >> 8) + _nesCoordOffset;
+		if (scrollY < SharedPhysics.NES_MAX_SCROLL_Y_LINEAR &&
+			(screenY_fixed >> 8) >= 0xA0)
+		{
+			int movement_fixed = screenY_fixed - 0xA000;
+			if (s.ExitPortalTimer != 0)
 			{
-				num45 -= 256;
-				num46 = 1;
+				int maxStepPx = 11 - s.ExitPortalTimer;
+				if ((movement_fixed >> 8) >= maxStepPx)
+					movement_fixed = maxStepPx << 8;
 			}
-			s.ScrollYSubpx = num45;
-			int num47 = num44 + num46 << 8;
-			int num48 = -num41 + num47;
-			s.CameraY_fixed += num47;
-			s.Y_fixed += num48;
-			if (s.CameraY_fixed > num31)
-			{
-				// NES cap_scroll_y_at_bottom() compares against $02F0; an exact
-				// $02EF scroll with a non-zero scroll_y_subpx does not cap. Only
-				// fold the pending fractional byte when the integer scroll really
-				// exceeded the bottom cap.
-				s.Y_fixed += s.ScrollYSubpx;
-				s.ScrollYSubpx = 0;
-				s.CameraY_fixed = num31;
-			}
+			int sub = s.ScrollYSubpx + (movement_fixed & 0xFF);
+			int carry = sub > 0xFF ? 1 : 0;
+			s.ScrollYSubpx = sub & 0xFF;
+			int cameraMove_fixed = ((movement_fixed >> 8) + carry) << 8;
+			s.CameraY_fixed += cameraMove_fixed;
+			s.Y_fixed += -movement_fixed + cameraMove_fixed;
+		}
+
+		if (s.CameraY_fixed >= maxCameraY_fixed)
+		{
+			s.Y_fixed += s.ScrollYSubpx;
+			s.ScrollYSubpx = 0;
+			s.CameraY_fixed = maxCameraY_fixed;
+		}
+	}
+
+	private void ApplyNesShipStyleYScroll(ref SimState s)
+	{
+		int cameraY_px = s.CameraY_fixed >> 8;
+		int targetY_px = s.TargetCameraY_fixed >> 8;
+		if (targetY_px > cameraY_px)
+		{
+			int sub = s.ScrollYSubpx + (SHIP_SCROLL_SPEED_FIXED & 0xFF);
+			int carry = sub > 0xFF ? 1 : 0;
+			s.ScrollYSubpx = sub & 0xFF;
+			int cameraMove_fixed = ((SHIP_SCROLL_SPEED_FIXED >> 8) + carry) << 8;
+			s.CameraY_fixed += cameraMove_fixed;
+			int representedYMove_fixed = cameraMove_fixed - SHIP_SCROLL_SPEED_FIXED;
+			s.Y_fixed += representedYMove_fixed;
+			if (s.DualActive)
+				s.P2_Y_fixed += representedYMove_fixed;
+		}
+
+		// These are deliberately independent comparisons in scroll.h. A fractional
+		// upward step can cross the target and take the reverse branch immediately.
+		if (targetY_px < (s.CameraY_fixed >> 8))
+		{
+			int sub = s.ScrollYSubpx - (SHIP_SCROLL_SPEED_FIXED & 0xFF);
+			int borrow = sub < 0 ? 1 : 0;
+			s.ScrollYSubpx = sub & 0xFF;
+			int cameraMove_fixed = -(((SHIP_SCROLL_SPEED_FIXED >> 8) + borrow) << 8);
+			s.CameraY_fixed += cameraMove_fixed;
+			int representedYMove_fixed = SHIP_SCROLL_SPEED_FIXED + cameraMove_fixed;
+			s.Y_fixed += representedYMove_fixed;
+			if (s.DualActive)
+				s.P2_Y_fixed += representedYMove_fixed;
+		}
+
+		int minCameraY_fixed = (_minScrollYLin - _nesCoordOffset) << 8;
+		int maxCameraY_fixed = NesMaxCamY_px() << 8;
+		if (s.CameraY_fixed < minCameraY_fixed)
+		{
+			s.Y_fixed += s.ScrollYSubpx;
+			if (s.DualActive)
+				s.P2_Y_fixed += s.ScrollYSubpx;
+			s.CameraY_fixed = minCameraY_fixed;
+			s.ScrollYSubpx = 0;
+		}
+		if (s.CameraY_fixed >= maxCameraY_fixed)
+		{
+			s.Y_fixed += s.ScrollYSubpx;
+			if (s.DualActive)
+				s.P2_Y_fixed += s.ScrollYSubpx;
+			s.CameraY_fixed = maxCameraY_fixed;
+			s.ScrollYSubpx = 0;
 		}
 	}
 
@@ -2134,7 +2162,7 @@ public class PathfinderEngine
 		{
 			return;
 		}
-		if (!s.DualActive && (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 9 || s.NoCamLockForced))
+		if (!s.DualActive && (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 9 || s.GameMode == 11 || s.NoCamLockForced))
 		{
 			if (s.ExitPortalTimer != 0)
 			{
@@ -2143,108 +2171,34 @@ public class PathfinderEngine
 			ApplyNesCubeRobotYScroll(ref s);
 			return;
 		}
-		int num = s.CameraY_fixed >> 8;
-		int num2 = s.TargetCameraY_fixed >> 8;
-		int num3 = NesMaxCamY_px() << 8;
-		if (num2 > num)
-		{
-			s.CameraY_fixed += SHIP_SCROLL_SPEED_UP_FIXED;
-			// PF stores world Y. NES screen currplayer_y moves -2px here while
-			// scroll_y moves +2px, so the world-space player Y is unchanged.
-		}
-		if (s.CameraY_fixed <= num3 && num2 < (s.CameraY_fixed >> 8))
-		{
-			s.CameraY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED;
-			// NES process_y_scroll target_scroll_y < scroll_y branch:
-			// currplayer_y += SHIP_SCROLL_SPEED($0200 at NTSC), while scroll_y
-			// moves -3px because subtracting a zero low byte leaves carry set.
-			// World Y therefore moves by -1px.
-			s.Y_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED - SHIP_SCROLL_SPEED_UP_FIXED;
-			if (s.DualActive)
-			{
-				s.P2_Y_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED - SHIP_SCROLL_SPEED_UP_FIXED;
-			}
-		}
-		// cap_scroll_y_at_top clamps to the NES min_scroll_y metadata, not to
-		// the number of editor ground rows.  Those differ in short maps (Demon
-		// Park is -40px versus the old -48px approximation).
-		int num4 = (_minScrollYLin - _nesCoordOffset) << 8;
-		if (s.CameraY_fixed < num4)
-		{
-			// The integer clamp changes screen Y and scroll equally on NES;
-			// it does not change PF's world-space Y.
-			s.Y_fixed -= s.ScrollYSubpx;
-			if (s.DualActive)
-			{
-				s.P2_Y_fixed -= s.ScrollYSubpx;
-			}
-			s.CameraY_fixed = num4;
-			s.ScrollYSubpx = 0;
-		}
-		if (s.CameraY_fixed > num3)
-		{
-			// NES cap_scroll_y_at_bottom() only fires once the integer scroll has
-			// reached/passed $02F0. $02EF with a non-zero subpixel byte is left
-			// alone, which matters for ship/spider screen-space low-byte parity.
-			s.Y_fixed += s.ScrollYSubpx;
-			if (s.DualActive)
-			{
-				s.P2_Y_fixed += s.ScrollYSubpx;
-			}
-			s.CameraY_fixed = num3;
-			s.ScrollYSubpx = 0;
-		}
+		ApplyNesShipStyleYScroll(ref s);
 	}
 
 	private int ComputeInitCameraY(int startY_px)
 	{
-		int val = NesMaxCamY_px() << 8;
 		int val2 = (_minScrollYLin - _nesCoordOffset) << 8;
-		if (UseNesSpawnScrollDefaults || ConfigScrollYHi.HasValue || ConfigScrollYLo.HasValue)
+		if (UseNesSpawnScrollDefaults || ConfigScrollYPosition.HasValue)
 		{
-			// NES export defaults missing scroll bytes to $02EF. Respect that
-			// even when only spawn metadata is present (for example Birdbrain).
-			(int num, int num2) = SharedPhysics.ResolveNesInitialScroll(ConfigScrollYHi, ConfigScrollYLo);
-			int num3 = num * 240 + num2;
-			int num4 = 719 - num3;
-			int num5 = (mapHeight - 15) * 16;
-			int num6 = Math.Max(0, num5 - num4);
-			return Math.Max(val2, Math.Min(val, num6 << 8));
+			int scrollY = SharedPhysics.ResolveNesInitialScroll(ConfigScrollYPosition);
+			// reset_level assigns the header value directly. Do not pre-cap it;
+			// process_y_scroll performs the source-ordered cap on the gameplay tick.
+			return (scrollY - _nesCoordOffset) << 8;
 		}
+		int val = NesMaxCamY_px() << 8;
 		return Math.Max(val2, Math.Min(val, (startY_px << 8) - 30720));
 	}
 
 	private int NesMaxCamY_px()
 	{
 		int val = (mapHeight - 15) * 16;
-		int val2 = 719 - _nesCoordOffset;
+		int val2 = SharedPhysics.NES_MAX_SCROLL_Y_LINEAR - _nesCoordOffset;
 		return Math.Max(0, Math.Min(val, val2));
 	}
 
 	private int NesNtCameraTarget_fixed(int portalWorldY_px)
 	{
-		int num = portalWorldY_px + _nesCoordOffset - 58;
-		if (num < 0)
-		{
-			return 0;
-		}
-		if ((num & 0xFF) >= 240)
-		{
-			num += 16;
-		}
-		int num2 = (num >> 8) & 0xFF;
-		int num3 = num & 0xFF;
-		int num4 = num2 * 240 + num3 - _nesCoordOffset;
-		// NES stores target_scroll_y in its encoded scroll space and does not clamp
-		// that target to the physical bottom cap.  process_y_scroll can therefore
-		// keep trying to scroll downward/upward past $02EF, then
-		// cap_scroll_y_at_bottom() folds scroll_y_subpx into currplayer_y and clears
-		// it.  Clamping the target here made PF skip that final cap/fraction fold.
-		// A perfectly valid NES target can be above editor-world Y=0 because
-		// target_scroll_y is stored in NES nametable space.  Preserve that
-		// negative PF-space value; clamping it to zero changes every subsequent
-		// ship-style camera step.
-		return num4 << 8;
+		// activeSpriteY and target_scroll_y are both linear after PR #360.
+		return (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8;
 	}
 
 #if !DISABLE_DEBUG_LOGGING
@@ -2632,20 +2586,8 @@ public class PathfinderEngine
 		this.mapHeight = mapHeight;
 		groundRowsToReserve = ((hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0);
 		_nesCoordOffset = (57 - this.mapHeight + groundRowsToReserve) * 16;
-		int num = 57 - this.mapHeight;
-		if (num < 0)
-		{
-			num = 0;
-		}
-		int num2 = 0;
-		int num3 = num;
-		while (num3 >= 15)
-		{
-			num3 -= 15;
-			num2++;
-		}
-		int num4 = (num3 * 16) | 8;
-		_minScrollYLin = num2 * 240 + num4;
+		int emptyTopRows = Math.Max(0, 57 - this.mapHeight);
+		_minScrollYLin = (emptyTopRows * 16) | 8;
 		_collisionMap = new SharedPhysics.CollisionMap(this.tiles, this.mapWidth, this.mapHeight, groundRowsToReserve);
 		if (maxFallSpeed >= 256)
 		{
@@ -13224,142 +13166,21 @@ public class PathfinderEngine
 				}
 			}
 		}
-		if (!_dualP2Guard && !s.DualActive && (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 9 || s.NoCamLockForced))
+		if (!_dualP2Guard)
 		{
-			if (s.ExitPortalTimer != 0)
+			if (!s.DualActive &&
+				(s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8 ||
+				 s.GameMode == 9 || s.GameMode == 11 || s.NoCamLockForced))
 			{
-				s.ExitPortalTimer--;
-			}
-			int num28 = NesNoCamTrackingScreenY_fixed(in s);
-			int num29 = (s.CameraY_fixed >> 8) + _nesCoordOffset;
-			int num30 = _minScrollYLin - _nesCoordOffset << 8;
-			int num31 = NesMaxCamY_px() << 8;
-			if (num28 < 16384)
-			{
-				if (num29 > _minScrollYLin || (num29 == _minScrollYLin && s.ScrollYSubpx != 0))
-				{
-					int num32 = 16384 - num28;
-					if (s.ExitPortalTimer != 0)
-					{
-						int num33 = 11 - s.ExitPortalTimer;
-						if (num32 >> 8 >= num33)
-						{
-							num32 = num33 << 8;
-						}
-					}
-					int num34 = num32 & 0xFF;
-					int num35 = (num32 >> 8) & 0xFF;
-					int num36 = s.ScrollYSubpx - num34;
-					int num37 = 0;
-					if (num36 < 0)
-					{
-						num36 += 256;
-						num37 = 1;
-					}
-					s.ScrollYSubpx = num36;
-					int num38 = -(num35 + num37 << 8);
-					int num39 = num32 + num38;
-					s.CameraY_fixed += num38;
-					s.Y_fixed += num39;
-					if (s.CameraY_fixed < num30)
-					{
-						// PF Y is world-space; NES's integer top-cap compensation
-						// changes screen Y and scroll by equal amounts.
-						s.Y_fixed -= s.ScrollYSubpx;
-						s.ScrollYSubpx = 0;
-						s.CameraY_fixed = num30;
-					}
-				}
-			}
-			else if (num28 >> 8 >= 160 && num29 < 719)
-			{
-				int num41 = num28 - 40960;
 				if (s.ExitPortalTimer != 0)
 				{
-					int num42 = 11 - s.ExitPortalTimer;
-					if (num41 >> 8 >= num42)
-					{
-						num41 = num42 << 8;
-					}
+					s.ExitPortalTimer--;
 				}
-				int num43 = num41 & 0xFF;
-				int num44 = (num41 >> 8) & 0xFF;
-				int num45 = s.ScrollYSubpx + num43;
-				int num46 = 0;
-				if (num45 > 255)
-				{
-					num45 -= 256;
-					num46 = 1;
-				}
-				s.ScrollYSubpx = num45;
-				int num47 = num44 + num46 << 8;
-				int num48 = -num41 + num47;
-				s.CameraY_fixed += num47;
-				s.Y_fixed += num48;
-				if (s.CameraY_fixed > num31)
-				{
-					// NES cap_scroll_y_at_bottom() compares against $02F0, so an
-					// exact bottom-cap integer scroll with non-zero subpx is not
-					// clamped/cleared.
-					s.Y_fixed += s.ScrollYSubpx;
-					s.ScrollYSubpx = 0;
-					s.CameraY_fixed = num31;
-				}
+				ApplyNesCubeRobotYScroll(ref s);
 			}
-		}
-		else if (!_dualP2Guard)
-		{
-			int num49 = s.CameraY_fixed >> 8;
-			int num50 = s.TargetCameraY_fixed >> 8;
-			int num51 = NesMaxCamY_px() << 8;
-			if (num50 > num49)
+			else
 			{
-				s.CameraY_fixed += SHIP_SCROLL_SPEED_UP_FIXED;
-				// PF stores world Y. NES screen currplayer_y moves -2px here while
-				// scroll_y moves +2px, so the world-space player Y is unchanged.
-			}
-			// NES process_y_scroll uses a second independent comparison after
-			// the upward step, so a +2 overshoot can immediately take the -3 path.
-			// Do not reverse a step past the physical bottom cap: the NES compares
-			// the still-higher encoded target_scroll_y before cap_scroll_y_at_bottom.
-			if (s.CameraY_fixed <= num51 && num50 < (s.CameraY_fixed >> 8))
-			{
-				s.CameraY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED;
-				// NES adds SHIP_SCROLL_SPEED to screen currplayer_y on this branch,
-				// while scroll_y moves -3px on NTSC due the carry after subtracting
-				// the zero low byte.  PF world Y therefore moves by -1px.
-				s.Y_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED - SHIP_SCROLL_SPEED_UP_FIXED;
-				if (s.DualActive)
-				{
-					s.P2_Y_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED - SHIP_SCROLL_SPEED_UP_FIXED;
-				}
-			}
-			int num52 = (_minScrollYLin - _nesCoordOffset) << 8;
-			if (s.CameraY_fixed < num52)
-			{
-				// PF Y is world-space; only the fractional scroll fold changes
-				// its decomposition at the NES top cap.
-				s.Y_fixed -= s.ScrollYSubpx;
-				if (s.DualActive)
-				{
-					s.P2_Y_fixed -= s.ScrollYSubpx;
-				}
-				s.CameraY_fixed = num52;
-				s.ScrollYSubpx = 0;
-			}
-			if (s.CameraY_fixed > num51)
-			{
-				// NES cap_scroll_y_at_bottom() does not fire for $02EF plus a
-				// fractional subpixel byte; it only caps/clears after integer
-				// scroll passes into $02F0.  Keeping the subbyte here preserves
-				// the NES low-byte behavior seen in ship mode.
-				s.Y_fixed += s.ScrollYSubpx;
-				if (s.DualActive)
-				{
-					s.P2_Y_fixed += s.ScrollYSubpx;
-				}
-				s.CameraY_fixed = num51;
-				s.ScrollYSubpx = 0;
+				ApplyNesShipStyleYScroll(ref s);
 			}
 		}
 		int num53 = s.Y_fixed - s.CameraY_fixed;

@@ -227,10 +227,10 @@
                 <TextBox x:Name="LowerTextBox" Width="150" CharacterCasing="Upper" MaxLength="15" />
             </StackPanel>
 
-            <!-- Remaining scroll Y position field -->
+            <!-- Linear scroll Y position introduced by Famidash PR #360 -->
             <StackPanel Grid.Row="12" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Left" Margin="8,8,0,0">
-                <TextBlock Text="scrollYPositionLow:" VerticalAlignment="Center" Margin="0,0,8,0" />
-                <TextBox x:Name="ScrollYPositionLowTextBox" Width="100" CharacterCasing="Upper" />
+                <TextBlock Text="scrollYPosition:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <TextBox x:Name="ScrollYPositionTextBox" Width="100" CharacterCasing="Upper" />
             </StackPanel>
 
             <!-- OK/Cancel buttons moved up slightly -->

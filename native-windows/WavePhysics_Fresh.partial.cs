@@ -81,10 +81,10 @@ if (currplayer_mini != 0)
                     
                     AppendSimDebug($"[WAVE_PHYS] postCalc velY=0x{playerVelY_fixed:X} hold={holding} slopeF={currplayer_slope_frames} slopeW={currplayer_was_on_slope_counter}");
                     
-                    // Apply movement
-                    // Wave/snake with dblocked: skip slope freeze so wave can traverse multi-tile slopes
-                    bool skipSlopeFreeze = dblocked;
-                    if (skipSlopeFreeze || (currplayer_slope_frames == 0 && currplayer_was_on_slope_counter == 0)) {
+                    // NES always freezes wave Y movement while either slope state
+                    // counter is active. D-block status affects collision response,
+                    // not this movement gate.
+                    if (currplayer_slope_frames == 0 && currplayer_was_on_slope_counter == 0) {
                         if (isFullSpeed)
                             playerY_fixed += playerVelY_fixed;
                         else
