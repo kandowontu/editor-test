@@ -1327,21 +1327,6 @@ namespace FamidashEditor
                 // dimensions (for example 24x48 portal art) makes SIM portal collisions fire
                 // earlier/later than PF and Famidash's table-driven check_collision logic.
 
-                // CRITICAL: Hitbox cache disabled for determinism (rendering is async and non-deterministic)
-                // The cache causes collision detection to vary between runs based on render timing
-                /*
-                try
-                {
-                    if (hitboxWorldCache != null && hitboxWorldCache.TryGetValue(idx, out var cached) && cached.frame == renderFrameCounter)
-    QA                    {
-                        int cLeft = cached.left; int cTop = cached.top; int cRight = cached.right; int cBottom = cached.bottom;
-                        bool cov = !(playerRight_px < cLeft || playerLeft_px > cRight || playerBottom_px < cTop || playerTop_px > cBottom);
-                        return cov;
-                    }
-                }
-                catch { }
-                */
-
                 // NES check_collision() uses exclusive bounds: collision when (x1+w1 >= x2) && (x2+w2 >= x1).
                 // Player bounds arrive as inclusive (x + w - 1), so playerRight_excl = playerRight_px + 1.
                 // Sprite bounds are now exclusive (x + w).
@@ -1360,13 +1345,257 @@ namespace FamidashEditor
         // Pool for hitbox rectangles
         private System.Collections.Generic.List<System.Windows.Shapes.Rectangle> hitboxPool = new System.Collections.Generic.List<System.Windows.Shapes.Rectangle>();
         private int hitboxesInUse = 0;
+        private static readonly Brush simulatorSpriteHitboxFill = CreateFrozenHitboxBrush(Color.FromArgb(72, 0xFF, 0xE0, 0x20));
+        private static readonly Brush simulatorSpriteHitboxStroke = CreateFrozenHitboxBrush(Color.FromArgb(220, 0xFF, 0xD0, 0x00));
+        private static readonly Brush simulatorPlayer1HitboxFill = CreateFrozenHitboxBrush(Color.FromArgb(40, 0x40, 0xFF, 0xFF));
+        private static readonly Brush simulatorPlayer1HitboxStroke = CreateFrozenHitboxBrush(Color.FromArgb(255, 0x40, 0xFF, 0xFF));
+        private static readonly Brush simulatorPlayer2HitboxFill = CreateFrozenHitboxBrush(Color.FromArgb(40, 0xFF, 0x90, 0x20));
+        private static readonly Brush simulatorPlayer2HitboxStroke = CreateFrozenHitboxBrush(Color.FromArgb(255, 0xFF, 0x90, 0x20));
+        private static readonly Brush simulatorEndTriggerHitboxFill = CreateFrozenHitboxBrush(Color.FromArgb(70, 0x40, 0xFF, 0x60));
+        private static readonly Brush simulatorEndTriggerHitboxStroke = CreateFrozenHitboxBrush(Color.FromArgb(255, 0x40, 0xFF, 0x60));
         // Pool of rectangle overlays used to draw per-tile hitboxes above the tile layer.
         private System.Collections.Generic.List<System.Windows.Shapes.Rectangle> tileHitboxPool = new System.Collections.Generic.List<System.Windows.Shapes.Rectangle>();
         private int tileHitboxesInUse = 0;
-        // Cache of world-space hitbox rectangles populated during rendering so collision
-        // can use the exact same geometry as the overlay (key = sprite storage idx).
-        private System.Collections.Generic.Dictionary<int, (int left, int top, int right, int bottom, int frame)> hitboxWorldCache = new System.Collections.Generic.Dictionary<int, (int, int, int, int, int)>();
-        private int renderFrameCounter = 0;
+        private static readonly Brush simulatorTileSolidHitboxFill = CreateFrozenHitboxBrush(Color.FromArgb(150, 0xFF, 0xD0, 0x00));
+        private static readonly Brush simulatorTileDeathHitboxFill = CreateFrozenHitboxBrush(Color.FromArgb(180, 0xFF, 0x30, 0x50));
+
+        private static Brush CreateFrozenHitboxBrush(Color color)
+        {
+            var brush = new SolidColorBrush(color);
+            try { brush.Freeze(); } catch { }
+            return brush;
+        }
+
+        private System.Windows.Shapes.Rectangle RentSimulatorHitbox(
+            Brush fill, Brush stroke, double strokeThickness,
+            double left, double top, double width, double height)
+        {
+            System.Windows.Shapes.Rectangle rect;
+            if (hitboxesInUse < hitboxPool.Count)
+            {
+                rect = hitboxPool[hitboxesInUse];
+                rect.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                rect = new System.Windows.Shapes.Rectangle
+                {
+                    IsHitTestVisible = false,
+                    SnapsToDevicePixels = true
+                };
+                hitboxPool.Add(rect);
+                RenderCanvas.Children.Add(rect);
+                try { System.Windows.Controls.Canvas.SetZIndex(rect, 1500); } catch { }
+            }
+
+            rect.Fill = fill;
+            rect.Stroke = stroke;
+            rect.StrokeThickness = strokeThickness;
+            rect.Width = Math.Max(1.0, width);
+            rect.Height = Math.Max(1.0, height);
+            System.Windows.Controls.Canvas.SetLeft(rect, left);
+            System.Windows.Controls.Canvas.SetTop(rect, top);
+            hitboxesInUse++;
+            return rect;
+        }
+
+        private void RentSimulatorTileHitbox(Brush fill, double left, double top, double width, double height)
+        {
+            System.Windows.Shapes.Rectangle rect;
+            if (tileHitboxesInUse < tileHitboxPool.Count)
+            {
+                rect = tileHitboxPool[tileHitboxesInUse];
+                rect.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                rect = new System.Windows.Shapes.Rectangle
+                {
+                    IsHitTestVisible = false,
+                    SnapsToDevicePixels = true
+                };
+                tileHitboxPool.Add(rect);
+                RenderCanvas.Children.Add(rect);
+                try { System.Windows.Controls.Canvas.SetZIndex(rect, 100); } catch { }
+            }
+
+            rect.Fill = fill;
+            rect.Stroke = null;
+            rect.Width = Math.Max(1.0, width);
+            rect.Height = Math.Max(1.0, height);
+            System.Windows.Controls.Canvas.SetLeft(rect, left);
+            System.Windows.Controls.Canvas.SetTop(rect, top);
+            tileHitboxesInUse++;
+        }
+
+        private static bool TryGetNesSpriteCollisionSize(int sid, out int width, out int height)
+        {
+            width = 0;
+            height = 0;
+            sid &= 0xFF;
+            if ((uint)sid >= (uint)sprite_heights.Length)
+                return false;
+
+            int rawHeight = sprite_heights[sid];
+            if (rawHeight == 0 || rawHeight == 0xFC || rawHeight == 0xFD || rawHeight == 0xFE)
+                return false;
+
+            width = sprite_widths[sid];
+            height = rawHeight;
+
+            // Port sprite_load_special_behavior() exactly for SPBH dimensions.
+            // Most SPBH records execute immediately and return zero; these are
+            // the complete set that continue into check_collision().
+            if (rawHeight == 0xFF)
+            {
+                height = sid switch
+                {
+                    0x07 or >= 0x1A and <= 0x1E => 0x10, // coins / collected-coin animation
+                    0x4F => 0x30,                         // tall teleport exit
+                    0x5A => 0x0F,                         // square teleport exit
+                    0x67 or 0x69 or 0x76 or 0x78 => 0x10, // directional teleport exits
+                    _ => 0
+                };
+            }
+
+            return width > 0 && height > 0;
+        }
+
+        private void DrawSimulatorSpriteHitboxes(
+            int snapPlayerX, int snapCameraX, int snapCameraY,
+            int renderCameraX, int renderCameraY, int gridShiftY)
+        {
+            int physicsScrollX = forcePlatformer
+                ? snapCameraX >> 8
+                : Math.Max(0, (snapPlayerX >> 8) - 0x50);
+            int physicsScrollY = snapCameraY >> 8;
+            int renderScrollX = renderCameraX >> 8;
+            int renderScrollY = renderCameraY >> 8;
+            bool drewActiveSlot = false;
+
+            if (simulatorNesSlotsPrimed)
+            {
+                for (int slot = 0; slot < simulatorNesSlots.Length; slot++)
+                {
+                    int idx = simulatorNesSlots[slot];
+                    if (idx < 0 || !simulatorNesSlotActive[slot] || simulatorNesSlotDead[slot] ||
+                        (uint)idx >= (uint)simulatorNesSpriteIds.Length)
+                        continue;
+
+                    int sid = simulatorNesSpriteIds[idx] & 0xFF;
+                    drewActiveSlot = true;
+
+                    if (sid == 0x0F)
+                    {
+                        double endX = simulatorNesSpriteWorldX[idx] - renderScrollX;
+                        RentSimulatorHitbox(simulatorEndTriggerHitboxFill, simulatorEndTriggerHitboxStroke,
+                            1.0, endX, 0, 1, _currentCacheTilesY * TILE);
+                        continue;
+                    }
+
+                    if (!TryGetNesSpriteCollisionSize(sid, out int width, out int height))
+                        continue;
+
+                    int xOffset = sprite_x_offset[sid];
+                    int yOffset = sprite_y_offset[sid];
+                    double left = SimulatorNesSaturatingOffset(simulatorNesSlotRealX[slot], xOffset) +
+                                  physicsScrollX - renderScrollX;
+                    double top = SimulatorNesSaturatingOffset(simulatorNesSlotRealY[slot], yOffset) +
+                                 physicsScrollY - renderScrollY + gridShiftY;
+
+                    if (left + width < 0 || left > _currentCacheTilesX * TILE ||
+                        top + height < 0 || top > _currentCacheTilesY * TILE)
+                        continue;
+
+                    RentSimulatorHitbox(simulatorSpriteHitboxFill, simulatorSpriteHitboxStroke,
+                        1.0, left, top, width, height);
+                }
+            }
+
+            // Before the first gameplay tick the NES slot ring has not been
+            // activated yet. Still show the same table-driven geometry so the
+            // paused simulator is a useful hitbox inspector.
+            if (drewActiveSlot || simulatorNesSlotsPrimed)
+                return;
+
+            for (int streamPos = 0; streamPos < simulatorNesSpriteStream.Length; streamPos++)
+            {
+                int idx = simulatorNesSpriteStream[streamPos];
+                if ((uint)idx >= (uint)simulatorNesSpriteIds.Length ||
+                    (uint)idx >= (uint)simulatorNesSpriteWorldX.Length ||
+                    (uint)idx >= (uint)simulatorNesSpriteWorldY.Length)
+                    continue;
+
+                int sid = simulatorNesSpriteIds[idx] & 0xFF;
+                if (sid == 0x0F)
+                {
+                    double endX = simulatorNesSpriteWorldX[idx] - renderScrollX;
+                    if (endX >= 0 && endX <= _currentCacheTilesX * TILE)
+                        RentSimulatorHitbox(simulatorEndTriggerHitboxFill, simulatorEndTriggerHitboxStroke,
+                            1.0, endX, 0, 1, _currentCacheTilesY * TILE);
+                    continue;
+                }
+                if (!TryGetNesSpriteCollisionSize(sid, out int width, out int height))
+                    continue;
+
+                double left = simulatorNesSpriteWorldX[idx] + sprite_x_offset[sid] - renderScrollX;
+                double top = simulatorNesSpriteWorldY[idx] - 1 + sprite_y_offset[sid] -
+                             renderScrollY + gridShiftY;
+                if (left + width < 0 || left > _currentCacheTilesX * TILE ||
+                    top + height < 0 || top > _currentCacheTilesY * TILE)
+                    continue;
+
+                RentSimulatorHitbox(simulatorSpriteHitboxFill, simulatorSpriteHitboxStroke,
+                    1.0, left, top, width, height);
+            }
+        }
+
+        private void DrawSimulatorPlayerHitbox(
+            int playerX, int playerY, bool mini, bool gravityUp, int gameMode,
+            int renderCameraX, int renderCameraY, int gridShiftY,
+            Brush fill, Brush stroke)
+        {
+            bool wave = gameMode == 6;
+            int width = wave ? 8 : SharedPhysics.GetCubeHitboxW(mini);
+            int height = wave ? 8 : SharedPhysics.GetCubeHitboxH(mini);
+            int yOffset = wave ? 4 : SharedPhysics.GetHitboxOffsetY(gameMode, mini, gravityUp);
+            double left = (playerX >> 8) + 1 - (renderCameraX >> 8);
+            double top = (playerY >> 8) + yOffset - (renderCameraY >> 8) + gridShiftY;
+
+            // FamiDash's check_collision treats width/height as inclusive edge
+            // offsets. The visible player box therefore spans width+1/height+1.
+            RentSimulatorHitbox(fill, stroke, 1.0, left, top, width + 1, height + 1);
+        }
+
+        private void DrawSimulatorHitboxOverlay(
+            int snapPlayerX, int snapPlayerY, bool snapMini, bool snapGravityUp,
+            int snapCameraX, int snapCameraY,
+            int renderCameraX, int renderCameraY, int gridShiftY)
+        {
+            hitboxesInUse = 0;
+            if (MainWindow.Option_ShowSimulatorSpriteHitboxes && ShowSpriteHitboxes)
+            {
+                DrawSimulatorSpriteHitboxes(snapPlayerX, snapCameraX, snapCameraY,
+                    renderCameraX, renderCameraY, gridShiftY);
+
+                if (!camModeActive)
+                {
+                    DrawSimulatorPlayerHitbox(snapPlayerX, snapPlayerY, snapMini, snapGravityUp,
+                        currentGameMode, renderCameraX, renderCameraY, gridShiftY,
+                        simulatorPlayer1HitboxFill, simulatorPlayer1HitboxStroke);
+                    if (dual)
+                    {
+                        DrawSimulatorPlayerHitbox(player_x_fixed[1], player_y_fixed[1],
+                            player_mini[1], player_gravity[1] != 0, currentGameMode,
+                            renderCameraX, renderCameraY, gridShiftY,
+                            simulatorPlayer2HitboxFill, simulatorPlayer2HitboxStroke);
+                    }
+                }
+            }
+
+            for (int i = hitboxesInUse; i < hitboxPool.Count; i++)
+                hitboxPool[i].Visibility = Visibility.Collapsed;
+        }
         
         // =====================================================================
         // CUBE ANIMATION SYSTEM - From nesdash.s drawcube_* tables
@@ -10626,7 +10855,6 @@ namespace FamidashEditor
             }
             
             // Advance per-frame counter used for caching overlay-computed hitboxes
-            try { renderFrameCounter++; } catch { renderFrameCounter = 1; }
             // One-time first-frame diagnostic snapshot (Option A)
             try
             {
@@ -10895,17 +11123,6 @@ namespace FamidashEditor
                     bool hadAnimated = false;
                     using (var dc = dv.RenderOpen())
                     {
-                        // Pre-create a semi-transparent red brush for tile hitbox overlay
-                        Brush? tileHitBrush = null;
-                        try
-                        {
-                            if (ShowTileHitboxes)
-                            {
-                                tileHitBrush = new SolidColorBrush(Color.FromArgb(160, 0xFF, 0x00, 0x00));
-                                try { tileHitBrush.Freeze(); } catch { }
-                            }
-                        }
-                        catch { tileHitBrush = null; }
                         int cacheTilesY_local = cacheTilesY;
                         int groundRowsToReserve_local = groundRowsToReserve;
                         int groundStartRow_local = cacheTilesY_local - groundRowsToReserve_local;
@@ -11549,18 +11766,7 @@ namespace FamidashEditor
                                 }
                                 col = MetatileCollisionTable.GetCollision((byte)collisionTid);
                                 if (col == MetatileCollision.COL_NONE) continue; // skip transparent/no-collision tiles
-                                
-                                // Check if this tile has death collision
-                                for (int ly = 0; ly < TILE && !hasDeath; ly++)
-                                {
-                                    for (int lx = 0; lx < TILE && !hasDeath; lx++)
-                                    {
-                                        if (MetatileCollisionTable.TileKillsAtPixel(col, lx, ly))
-                                        {
-                                            hasDeath = true;
-                                        }
-                                    }
-                                }
+                                hasDeath = SharedPhysics.IsDeathCollision(col);
                             }
                             catch { }
 
@@ -11618,47 +11824,40 @@ namespace FamidashEditor
                                                       col == MetatileCollision.COL_DEATH_LEFT_RIGHT ||
                                                       col == MetatileCollision.COL_DEATH_TOP_LEFT_BOTTOM;
 
-                                // For complex shapes, render individual pixels that have collision
+                                // Rasterize directly from the same predicates used by physics.
+                                // Merge equal horizontal pixels into runs; this preserves exact
+                                // geometry while avoiding hundreds of WPF controls per tile.
                                 for (int ly = 0; ly < TILE; ly++)
                                 {
-                                    for (int lx = 0; lx < TILE; lx++)
+                                    int runKind = 0; // 0=none, 1=solid, 2=death
+                                    int runStart = 0;
+                                    for (int lx = 0; lx <= TILE; lx++)
                                     {
-                                        bool hasCollision = TileOccupiesPixel(col, lx, ly);
-                                        bool isDeathPixel = MetatileCollisionTable.TileKillsAtPixel(col, lx, ly);
-                                        bool isSlopePixel = isSlope && IsSlopeSolidAtPixel(col, lx, ly);
-                                        
-                                        // Skip pixels that have neither collision, death, nor slope
-                                        if (!hasCollision && !isDeathPixel && !isSlopePixel) continue;
-                                        
-                                        // For pure death tiles, only render death pixels
-                                        // For mixed tiles, render both collision (red) and death (pink)
-                                        if (isPureDeathTile && !isDeathPixel) continue;
-
-                                        System.Windows.Shapes.Rectangle r;
-                                        if (tileHitboxesInUse < tileHitboxPool.Count)
+                                        int pixelKind = 0;
+                                        if (lx < TILE)
                                         {
-                                            r = tileHitboxPool[tileHitboxesInUse];
-                                            r.Visibility = Visibility.Visible;
-                                        }
-                                        else
-                                        {
-                                            r = new System.Windows.Shapes.Rectangle();
-                                            r.IsHitTestVisible = false;
-                                            r.Stroke = null;
-                                            tileHitboxPool.Add(r);
-                                            RenderCanvas.Children.Add(r);
-                                            try { System.Windows.Controls.Canvas.SetZIndex(r, 100); } catch { }
+                                            bool death = MetatileCollisionTable.TileKillsAtPixel(col, lx, ly);
+                                            bool solid = SharedPhysics.TileOccupiesPixel(col, lx, ly) ||
+                                                         (isSlope && IsSlopeSolidAtPixel(col, lx, ly));
+                                            if (death)
+                                                pixelKind = 2;
+                                            else if (solid && !isPureDeathTile)
+                                                pixelKind = 1;
                                         }
 
-                                        r.Fill = isDeathPixel
-                                                ? new SolidColorBrush(Color.FromArgb(160, 0xFF, 0x50, 0xC8)) // Magenta/pink for death
-                                                : new SolidColorBrush(Color.FromArgb(160, 0xFF, 0x00, 0x00)); // Red for collision/slope
+                                        if (pixelKind == runKind)
+                                            continue;
 
-                                        r.Width = 1;
-                                        r.Height = 1;
-                                        System.Windows.Controls.Canvas.SetLeft(r, vx * TILE + lx - offsetX);
-                                        System.Windows.Controls.Canvas.SetTop(r, vy * TILE + ly - offsetY + gridRenderShiftYPx);
-                                        tileHitboxesInUse++;
+                                        if (runKind != 0)
+                                        {
+                                            RentSimulatorTileHitbox(
+                                                runKind == 2 ? simulatorTileDeathHitboxFill : simulatorTileSolidHitboxFill,
+                                                vx * TILE + runStart - offsetX,
+                                                vy * TILE + ly - offsetY + gridRenderShiftYPx,
+                                                lx - runStart, 1);
+                                        }
+                                        runKind = pixelKind;
+                                        runStart = lx;
                                     }
                                 }
                             }
@@ -11671,32 +11870,11 @@ namespace FamidashEditor
                                 int rectWidth = colRight - colLeft;
                                 int rectHeight = colBottom - colTop;
 
-                                System.Windows.Shapes.Rectangle r;
-                                if (tileHitboxesInUse < tileHitboxPool.Count)
-                                {
-                                    r = tileHitboxPool[tileHitboxesInUse];
-                                    r.Visibility = Visibility.Visible;
-                                }
-                                else
-                                {
-                                    r = new System.Windows.Shapes.Rectangle();
-                                    r.IsHitTestVisible = false;
-                                    r.Stroke = null;
-                                    tileHitboxPool.Add(r);
-                                    RenderCanvas.Children.Add(r);
-                                    try { System.Windows.Controls.Canvas.SetZIndex(r, 100); } catch { }
-                                }
-
-                                // Set color based on whether it has death collision
-                                r.Fill = hasDeath
-                                    ? new SolidColorBrush(Color.FromArgb(160, 0x80, 0x00, 0x80)) // Purple for death
-                                    : new SolidColorBrush(Color.FromArgb(160, 0xFF, 0x00, 0x00)); // Red for collision
-
-                                r.Width = rectWidth;
-                                r.Height = rectHeight;
-                                System.Windows.Controls.Canvas.SetLeft(r, vx * TILE + colLeft - offsetX);
-                                System.Windows.Controls.Canvas.SetTop(r, vy * TILE + colTop - offsetY + gridRenderShiftYPx);
-                                tileHitboxesInUse++;
+                                RentSimulatorTileHitbox(
+                                    hasDeath ? simulatorTileDeathHitboxFill : simulatorTileSolidHitboxFill,
+                                    vx * TILE + colLeft - offsetX,
+                                    vy * TILE + colTop - offsetY + gridRenderShiftYPx,
+                                    rectWidth, rectHeight);
                             }
                         }
                     }
@@ -12044,132 +12222,6 @@ namespace FamidashEditor
                     {
                         spriteDc.DrawImage(finalSprite, new Rect(px, py, fbs.PixelWidth, fbs.PixelHeight));
                     }
-                    // Cache the world-space hitbox rect derived from the same values the renderer
-                    // used so collisions can match the visible sprite even when overlays are off.
-                    try
-                    {
-                        int id_for_overlay = s & 0xFF;
-                        if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anch2))
-                        {
-                            int anchorKey2 = anch2.anchorTileY * mapWidth + anch2.anchorTileX;
-                            if (anchorKey2 >= 0 && anchorKey2 < sprites.Length)
-                            {
-                                int anchoredId2 = sprites[anchorKey2];
-                                if (anchoredId2 >= 0 && anchoredId2 < 256) id_for_overlay = anchoredId2 & 0xFF;
-                            }
-                        }
-
-                        int hw_o = 0x10; int hh_o = 0x10; int hxoff_o = 0; int hyoff_o = 0;
-                        if (id_for_overlay >= 0 && id_for_overlay < sprite_widths.Length) hw_o = sprite_widths[id_for_overlay];
-                        if (id_for_overlay >= 0 && id_for_overlay < sprite_heights.Length) hh_o = sprite_heights[id_for_overlay];
-                        // Skip hitbox overlay for DECO/COLR/OUTL/SPBH sentinel sprites
-                        if (hh_o >= 0xFC) continue;
-                        if (id_for_overlay >= 0 && id_for_overlay < sprite_x_offset.Length) hxoff_o = sprite_x_offset[id_for_overlay];
-                        if (id_for_overlay >= 0 && id_for_overlay < sprite_y_offset.Length) hyoff_o = sprite_y_offset[id_for_overlay];
-
-                        try
-                        {
-                            if (hw_o == TILE && hh_o == TILE && finalSprite is BitmapSource fbs3)
-                            {
-                                hw_o = Math.Max(1, fbs3.PixelWidth);
-                                hh_o = Math.Max(1, fbs3.PixelHeight);
-                            }
-                        }
-                        catch { }
-
-                        // Convert RTB-local px/py to canvas-space for world coordinate computation
-                        double hx_screen = (int)Math.Round(px - offsetX) + hxoff_o;
-                        double hy_screen = (int)Math.Round(py - offsetY) + hyoff_o;
-
-                        int pixelX_now2 = renderCameraX_fixed >> 8;
-                        int pixelY_now2 = renderCameraY_fixed >> 8;
-                        int worldLeft2 = (int)Math.Round(hx_screen) + pixelX_now2;
-                        int worldTop2 = (int)Math.Round(hy_screen) + pixelY_now2 - gridRenderShiftYPx;
-                        int worldRight2 = worldLeft2 + Math.Max(1, hw_o) - 1;
-                        int worldBottom2 = worldTop2 + Math.Max(1, hh_o) - 1;
-                        try { hitboxWorldCache[idx] = (worldLeft2, worldTop2, worldRight2, worldBottom2, renderFrameCounter); } catch { }
-                    }
-                    catch { }
-
-                    // Draw hitbox overlay if requested and this is not a color-trigger sprite
-                    try
-                    {
-                        // Only render overlays when the main editor option is enabled and
-                        // this simulator's instance toggle is set.
-                        if (MainWindow.Option_ShowSimulatorSpriteHitboxes && ShowSpriteHitboxes && !IsColorTriggerSprite(s) && !decorationSpriteIds.Contains(s))
-                        {
-                            System.Windows.Shapes.Rectangle hrect;
-                            if (hitboxesInUse < hitboxPool.Count)
-                            {
-                                hrect = hitboxPool[hitboxesInUse];
-                                hrect.Visibility = Visibility.Visible;
-                            }
-                            else
-                            {
-                                hrect = new System.Windows.Shapes.Rectangle();
-                                hrect.Fill = new SolidColorBrush(Color.FromArgb(96, 255, 255, 0)); // translucent yellow
-                                hrect.Stroke = new SolidColorBrush(Color.FromArgb(160, 255, 200, 0));
-                                hrect.StrokeThickness = 1;
-                                hrect.IsHitTestVisible = false;
-                                hitboxPool.Add(hrect);
-                                RenderCanvas.Children.Add(hrect);
-                            }
-
-                            // Determine hitbox from sprite tables; prefer anchor's sprite id for geometry when anchored
-                            int id = s & 0xFF;
-                            // Use the rendered `px`/`py` converted to canvas-space
-                            // as the hitbox base so the overlay aligns with the visible sprite instance.
-                            int hitbase_px_x = (int)Math.Round(px - offsetX);
-                            int hitbase_px_y = (int)Math.Round(py - offsetY);
-                            if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anch))
-                            {
-                                int anchorKey = anch.anchorTileY * mapWidth + anch.anchorTileX;
-                                if (anchorKey >= 0 && anchorKey < sprites.Length)
-                                {
-                                    int anchoredId = sprites[anchorKey];
-                                    if (anchoredId >= 0 && anchoredId < 256) id = anchoredId & 0xFF;
-                                }
-
-                                // Do not re-apply anchor pixel offsets here: `px`/`py` already include
-                                // any per-position or anchor pixel offsets earlier in the renderer.
-                            }
-
-                            int hw = 0x10; int hh = 0x10; int hxoff = 0; int hyoff = 0;
-                            if (id >= 0 && id < sprite_widths.Length) hw = sprite_widths[id];
-                            if (id >= 0 && id < sprite_heights.Length) hh = sprite_heights[id];
-                            // Skip hitbox overlay for DECO/COLR/OUTL/SPBH sentinel sprites
-                            if (hh >= 0xFC) continue;
-                            if (id >= 0 && id < sprite_x_offset.Length) hxoff = sprite_x_offset[id];
-                            if (id >= 0 && id < sprite_y_offset.Length) hyoff = sprite_y_offset[id];
-
-                            // If the hitbox table entry is the default TILE size but the final sprite
-                            // image used for rendering is larger, prefer the image size for the overlay
-                            // so the drawn rectangle reflects the actual graphic.
-                            try
-                            {
-                                if (hw == TILE && hh == TILE && finalSprite is BitmapSource fbs2)
-                                {
-                                    hw = Math.Max(1, fbs2.PixelWidth);
-                                    hh = Math.Max(1, fbs2.PixelHeight);
-                                }
-                            }
-                            catch { }
-
-                            double hx = hitbase_px_x + hxoff; // screen-space base + offsets
-                            double hy = hitbase_px_y + hyoff;
-                            // The generated record position already includes exporter offsets;
-                            // sprite_y_offset must remain the exact NES runtime table.
-                            hrect.Width = Math.Max(1, hw);
-                            hrect.Height = Math.Max(1, hh);
-                            System.Windows.Controls.Canvas.SetLeft(hrect, hx);
-                            System.Windows.Controls.Canvas.SetTop(hrect, hy);
-                            
-                            hitboxesInUse++;
-                        }
-                    }
-                    catch { }
-
-                    
                 }
             }
 
@@ -12192,11 +12244,6 @@ namespace FamidashEditor
                 }
             }
             catch { }
-
-            // Hide remaining hitboxes
-            for (int i = hitboxesInUse; i < hitboxPool.Count; i++) hitboxPool[i].Visibility = Visibility.Collapsed;
-            // reset hitbox counter for next frame
-            hitboxesInUse = 0;
 
             // Position the player visual based on the snapshotted state so
             // tiles and player are always rendered from the same physics frame.
@@ -12353,6 +12400,19 @@ namespace FamidashEditor
                 }
             }
             catch { }
+
+            try
+            {
+                DrawSimulatorHitboxOverlay(
+                    snapPlayerX, snapPlayerY, snapMiniMode, snapGravFlipped,
+                    snapCameraX, snapCameraY,
+                    renderCameraX_fixed, renderCameraY_fixed, gridRenderShiftYPx);
+            }
+            catch
+            {
+                for (int i = 0; i < hitboxPool.Count; i++)
+                    hitboxPool[i].Visibility = Visibility.Collapsed;
+            }
 
             // Apply sub-pixel smoothing with a translate transform for X and Y
             // Stabilize X fractional translation when the player is anchored at the interaction line

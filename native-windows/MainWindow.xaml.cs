@@ -200,8 +200,12 @@ namespace FamidashEditor
                     var wb = new WriteableBitmap(w, h, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32, null);
                     wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
                     var img = new System.Windows.Controls.Image { Source = wb, IsHitTestVisible = false };
-                    double imgW = (double)w * TileSize * scale;
-                    double imgH = (double)h * TileSize * scale;
+                    int tilePixelW = Math.Max(1,
+                        (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+                    int tilePixelH = Math.Max(1,
+                        (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+                    double imgW = (double)w * tilePixelW / dpi.DpiScaleX;
+                    double imgH = (double)h * tilePixelH / dpi.DpiScaleY;
                     img.Width = imgW; img.Height = imgH;
                     Canvas.SetLeft(img, mapViewportPadding);
                     Canvas.SetTop(img, mapViewportPadding + (double)gridRenderShiftYPx / dpi.DpiScaleY);
@@ -229,7 +233,7 @@ namespace FamidashEditor
                 if (info != null && info.Indices != null && info.Indices.Length > 0)
                 {
                     var dpi = VisualTreeHelper.GetDpi(this);
-                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    double scale = GetMapRasterScale();
                     RenderIndicesToOverlayAsync(info.Indices, scale, dpi);
                 }
             }
@@ -296,7 +300,7 @@ namespace FamidashEditor
                 UpdateSelectionVisuals(selX, selY, selW, selH, previewMode: false);
 
                 // Render selection mask
-                try { var dpi = VisualTreeHelper.GetDpi(this); double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0; _ = RenderMaskToCanvasAsync(SelectionOverlay!, info.Indices, scale, dpi); } catch { }
+                try { var dpi = VisualTreeHelper.GetDpi(this); double scale = GetMapRasterScale(); _ = RenderMaskToCanvasAsync(SelectionOverlay!, info.Indices, scale, dpi); } catch { }
             }
             catch { }
         }
@@ -732,7 +736,7 @@ namespace FamidashEditor
                     try
                     {
                         var dpi = VisualTreeHelper.GetDpi(this);
-                        double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                        double scale = GetMapRasterScale();
                         // Use mask renderer directly for immediate visual
                         _ = RenderMaskToCanvasAsync(SelectionOverlay!, indices, scale, dpi);
                     }
@@ -1503,9 +1507,51 @@ namespace FamidashEditor
                         }
                     }
 
-                    if (!string.IsNullOrEmpty(found))
+                    BitmapSource? embeddedTileset = null;
+                    string? embeddedTilesetName = null;
+                    if (string.IsNullOrEmpty(found))
                     {
-                        bool tilesetChanged = LoadTileset(found);
+                        // Installed/single-file builds do not require a neighboring
+                        // tilesets folder. External files remain the preferred user
+                        // override; otherwise load the authoritative bundled image.
+                        foreach (string fileName in exactCandidates.Distinct(
+                            StringComparer.OrdinalIgnoreCase))
+                        {
+                            embeddedTileset = LoadEmbeddedImage(
+                                "Tilesets." + fileName);
+                            if (embeddedTileset != null)
+                            {
+                                embeddedTilesetName = fileName;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(found) || embeddedTileset != null)
+                    {
+                        bool tilesetChanged;
+                        if (!string.IsNullOrEmpty(found))
+                        {
+                            tilesetChanged = LoadTileset(found);
+                        }
+                        else
+                        {
+                            tilesetChanged = !ReferenceEquals(tilesetBitmap,
+                                embeddedTileset);
+                            if (tilesetChanged)
+                            {
+                                tilesetBitmap = embeddedTileset;
+                                cachedTilesetPath = null;
+                                cachedTilesetWriteTimeUtc = default;
+                                cachedTilesetLength = 0;
+                                cachedTilesetBitmap = null;
+                                SliceTileset();
+                                PopulateTilesPanel();
+                                if (StatusText != null)
+                                    StatusText.Text = "Loaded embedded tileset: " +
+                                        embeddedTilesetName;
+                            }
+                        }
                         if (tilesetChanged)
                         {
                             backgroundDirty = true;
@@ -1524,7 +1570,7 @@ namespace FamidashEditor
                         return;
                     }
 
-                    // Nothing found � keep current tileset
+                    // Nothing found - keep the current tileset.
                 }
                 else
                 {
@@ -1685,7 +1731,7 @@ namespace FamidashEditor
         try
         {
             var dpi = VisualTreeHelper.GetDpi(this);
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double scale = GetMapRasterScale();
             int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
             int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
             int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
@@ -2538,21 +2584,24 @@ namespace FamidashEditor
     // groundTileRows will be set when a ground bitmap is loaded (equals groundBitmap.PixelHeight / TileSize)
     private int groundTileRows = 0; // actual rows available in ground bitmap
 
-    // Rendering caches for performance: background (parallax+ground), tiles (incremental), sprites, grid overlay
-    private RenderTargetBitmap? backgroundRtb = null;
-    private RenderTargetBitmap? parallaxRtb = null;
-    private RenderTargetBitmap? groundRtb = null;
-    private RenderTargetBitmap? gridRtb = null;
+    // Static layers are retained drawings rather than map-sized render targets.
+    // WPF keeps several native surfaces behind each RenderTargetBitmap, which
+    // made even an empty editor retain an excessive amount of native memory.
+    private ImageSource? backgroundRtb = null;
+    private ImageSource? parallaxRtb = null;
+    private ImageSource? groundRtb = null;
+    private ImageSource? gridRtb = null;
     private WriteableBitmap? tilesWb = null;
     // Invalidates async tile rebuilds when a tab/map/tileset is replaced or a
     // newer synchronous rebuild has already produced the authoritative image.
     private int tileRenderGeneration;
     private WriteableBitmap? portalsWb = null; // new portal background layer (incremental updates)
     private WriteableBitmap? spritesWb = null;
+    private int nativeLayerCleanupVersion;
     // Pre-scaled tile pixel caches keyed by integer scale key (scale*100)
     private class ScaledTileCache { public byte[][] Pixels; public int TileW; public int TileH; public int Stride; public double Scale; public DpiScale Dpi; public ScaledTileCache(byte[][] pixels, int w, int h, int stride, double scale, DpiScale dpi) { Pixels = pixels; TileW = w; TileH = h; Stride = stride; Scale = scale; Dpi = dpi; } }
     private readonly Dictionary<int, ScaledTileCache> scaledTileCaches = new Dictionary<int, ScaledTileCache>();
-    // Caches for single-tinted parallax/ground bitmaps keyed by (scaleKey<<32)|ARGB
+    // Caches for single-tinted parallax/ground source bitmaps.
     private readonly Dictionary<long, BitmapSource> parallaxTintCache = new Dictionary<long, BitmapSource>();
     private readonly Dictionary<long, BitmapSource> groundTintCache = new Dictionary<long, BitmapSource>();
     private int cachedPixelWidth = 0;
@@ -3338,8 +3387,9 @@ namespace FamidashEditor
             try { if (StopFamiButton != null) StopFamiButton.Click += StopFamiButton_Click; } catch { }
             // Wire configure FamiStudio menu
             try { if (MenuConfigureFamiStudio != null) MenuConfigureFamiStudio.Click += MenuConfigureFamiStudio_Click; } catch { }
-            // Wire scan FamiStudio tracks menu
-            try { if (MenuScanFamiStudioTracks != null) MenuScanFamiStudioTracks.Click += MenuScanFamiStudioTracks_Click; } catch { }
+            // Wire custom FamiStudio music library menu
+            try { if (MenuScanFamiStudioTracks != null) MenuScanFamiStudioTracks.Click += MenuMusicLibrary_Click; } catch { }
+            try { if (MenuMesenMusicLibrary != null) MenuMesenMusicLibrary.Click += MenuMusicLibrary_Click; } catch { }
 
             // Simulator menu click handler added above in constructor wiring
 
@@ -3443,12 +3493,12 @@ namespace FamidashEditor
                         {
                             var mp = Mouse.GetPosition(MapScrollViewer);
                             zoomAnchorViewportX = mp.X; zoomAnchorViewportY = mp.Y;
-                            double hp = MapScrollViewer?.HorizontalOffset ?? 0; double vp = MapScrollViewer?.VerticalOffset ?? 0;
-                            double contentX = hp + mp.X; double contentY = vp + mp.Y;
-                            double oldScale = (ZoomSlider!=null?ZoomSlider.Value:1.0);
-                            double pad = mapViewportPadding;
-                            zoomAnchorMapX = (contentX - pad) / (TileSize * oldScale);
-                            zoomAnchorMapY = (contentY - pad) / (TileSize * oldScale);
+                            Point local = CanvasHost != null
+                                ? Mouse.GetPosition(CanvasHost)
+                                : new Point(mapViewportPadding, mapViewportPadding);
+                            double rasterScale = GetMapRasterScale();
+                            zoomAnchorMapX = (local.X - mapViewportPadding) / (TileSize * rasterScale);
+                            zoomAnchorMapY = (local.Y - mapViewportPadding - gridRenderShiftY) / (TileSize * rasterScale);
                             hasZoomAnchor = true;
                         }
                     } catch { hasZoomAnchor = false; }
@@ -3499,64 +3549,30 @@ namespace FamidashEditor
                     // performs one authoritative bulk render itself.
                     if (isRestoringTabViewport) return;
                     
-                    // If dragging selection, update ghost size and drag offset for new zoom level
+                    // Provide immediate visual feedback by scaling existing images
+                    UpdateQuickZoomTransform();
+
+                    // GhostImage is a child of the transformed content root, so it
+                    // must remain in raster coordinates. Only refresh the local
+                    // pointer offset after WPF has changed the common transform.
                     if (isDraggingSelection && GhostImage != null && GhostImage.Source != null)
                     {
                         try
                         {
-                            double oldScale = lastDragScale;
-                            double newScale = ZoomSlider?.Value ?? 1.0;
-                            var dpi = VisualTreeHelper.GetDpi(this);
                             var mousePos = Mouse.GetPosition(CanvasHost);
-                            
-                            // Use same calculation as tile rendering
-                            int oldTilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * oldScale * dpi.DpiScaleX));
-                            int oldTilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * oldScale * dpi.DpiScaleY));
-                            int newTilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * newScale * dpi.DpiScaleX));
-                            int newTilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * newScale * dpi.DpiScaleY));
-                            int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
-                            int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
-                            
-                            // Get current ghost position in logical pixels
-                            double oldLeft = Canvas.GetLeft(GhostImage);
-                            double oldTop = Canvas.GetTop(GhostImage);
-                            
-                            // Update ghost display size for new scale
-                            GhostImage.Width = (ghostLogicalWidth * newScale * dpi.DpiScaleX) / dpi.DpiScaleX;
-                            GhostImage.Height = (ghostLogicalHeight * newScale * dpi.DpiScaleY) / dpi.DpiScaleY;
-                            
-                            // Convert to physical pixels, then to tile coordinates
-                            int oldLeftPx = (int)Math.Round(oldLeft * dpi.DpiScaleX);
-                            int oldTopPx = (int)Math.Round(oldTop * dpi.DpiScaleY);
-                            double logicalTileX = (double)(oldLeftPx - padPxX) / oldTilePixelW;
-                            double logicalTileY = (double)(oldTopPx - padPxY) / oldTilePixelH;
-                            
-                            // Reposition at new scale using integer pixel math, then convert to logical
-                            int newLeftPx = padPxX + (int)Math.Round(logicalTileX * newTilePixelW);
-                            int newTopPx = padPxY + (int)Math.Round(logicalTileY * newTilePixelH);
-                            double newLeft = newLeftPx / dpi.DpiScaleX;
-                            double newTop = newTopPx / dpi.DpiScaleY;
-                            
-                            Canvas.SetLeft(GhostImage, newLeft);
-                            Canvas.SetTop(GhostImage, newTop);
-                            
-                            // Update stored scale for next zoom
-                            lastDragScale = newScale;
-                            
-                            // Recalculate drag offset for new scale
-                            dragOffset = new Point(mousePos.X - newLeft, mousePos.Y - newTop);
+                            double left = Canvas.GetLeft(GhostImage);
+                            double top = Canvas.GetTop(GhostImage);
+                            dragOffset = new Point(mousePos.X - left, mousePos.Y - top);
+                            lastDragScale = GetMapRasterScale();
                         }
                         catch { }
                     }
-                    
-                    // Provide immediate visual feedback by scaling existing images
-                    UpdateQuickZoomTransform();
 
                     // During interaction, defer full rebuild
                     deferZoomRebuild = true;
 
                     // If the slider is not actively being dragged, start the 1s commit timer
-                    if (!isZoomSliderPressed)
+                    if (!isZoomSliderPressed && !isSnappingZoom)
                     {
                         // capture current mouse position as an anchor for non-drag wheel/keyboard changes
                         try
@@ -3565,12 +3581,12 @@ namespace FamidashEditor
                             {
                                 var mp = Mouse.GetPosition(MapScrollViewer);
                                 zoomAnchorViewportX = mp.X; zoomAnchorViewportY = mp.Y;
-                                double hp = MapScrollViewer?.HorizontalOffset ?? 0; double vp = MapScrollViewer?.VerticalOffset ?? 0;
-                                double contentX = hp + mp.X; double contentY = vp + mp.Y;
-                                double oldScale = (ZoomSlider!=null?ZoomSlider.Value:1.0);
-                                double pad = mapViewportPadding;
-                                zoomAnchorMapX = (contentX - pad) / (TileSize * oldScale);
-                                zoomAnchorMapY = (contentY - pad) / (TileSize * oldScale);
+                                Point local = CanvasHost != null
+                                    ? Mouse.GetPosition(CanvasHost)
+                                    : new Point(mapViewportPadding, mapViewportPadding);
+                                double rasterScale = GetMapRasterScale();
+                                zoomAnchorMapX = (local.X - mapViewportPadding) / (TileSize * rasterScale);
+                                zoomAnchorMapY = (local.Y - mapViewportPadding - gridRenderShiftY) / (TileSize * rasterScale);
                                 hasZoomAnchor = true;
                             }
                         } catch { hasZoomAnchor = false; }
@@ -4431,7 +4447,7 @@ namespace FamidashEditor
 
                 // Determine which tiles' centers are inside polygon and respect active layer toggles
                 var selected = new System.Collections.Generic.HashSet<int>();
-                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                double scale = GetMapRasterScale();
                 // Effective layers: if neither is active treat both as active
                 bool effectiveTiles = tilesLayerActive || (!tilesLayerActive && !spritesLayerActive);
                 bool effectiveSprites = spritesLayerActive || (!tilesLayerActive && !spritesLayerActive);
@@ -4474,7 +4490,7 @@ namespace FamidashEditor
                 // Populate arrays for move/tool compatibility
                 PopulateSelectionArraysFromSet();
                 UpdateSelectionVisuals(selX, selY, selW, selH);
-                try { _ = RenderMaskToCanvasAsync(SelectionOverlay!, selectionSet.ToArray(), (ZoomSlider!=null?ZoomSlider.Value:1.0), VisualTreeHelper.GetDpi(this)); } catch { }
+                try { _ = RenderMaskToCanvasAsync(SelectionOverlay!, selectionSet.ToArray(), GetMapRasterScale(), VisualTreeHelper.GetDpi(this)); } catch { }
             }
             catch { }
         }
@@ -4521,18 +4537,15 @@ namespace FamidashEditor
                 // Only proceed if zoom actually changed
                 if (Math.Abs(newScale - oldScale) < 0.001) return;
 
-                // Determine mouse position in viewport coordinates
+                // Determine the world point under the cursor before changing the
+                // common LayoutTransform. GetPosition(CanvasHost) is already local.
                 var mouseVp = e.GetPosition(MapScrollViewer);
-                double hp = (MapScrollViewer?.HorizontalOffset ?? 0);
-                double vp = (MapScrollViewer?.VerticalOffset ?? 0);
-
-                // Content coordinate under cursor before zoom
-                double contentX = hp + mouseVp.X;
-                double contentY = vp + mouseVp.Y;
-
-                // map world coordinate (tile-space) under cursor
-                double mapX = (contentX - mapViewportPadding) / (TileSize * oldScale);
-                double mapY = (contentY - mapViewportPadding) / (TileSize * oldScale);
+                Point local = CanvasHost != null
+                    ? e.GetPosition(CanvasHost)
+                    : new Point(mapViewportPadding, mapViewportPadding);
+                double rasterScale = GetMapRasterScale();
+                double mapX = (local.X - mapViewportPadding) / (TileSize * rasterScale);
+                double mapY = (local.Y - mapViewportPadding - gridRenderShiftY) / (TileSize * rasterScale);
 
                 // Record zoom anchor so CommitZoom can preserve the point under the cursor
                 try { zoomAnchorViewportX = mouseVp.X; zoomAnchorViewportY = mouseVp.Y; zoomAnchorMapX = mapX; zoomAnchorMapY = mapY; hasZoomAnchor = true; } catch { hasZoomAnchor = false; }
@@ -4542,17 +4555,21 @@ namespace FamidashEditor
                 if (ZoomSlider != null) ZoomSlider.Value = newScale;
                 isSnappingZoom = false;
 
-                // compute new content coordinate for same world point
-                double newContentX = mapViewportPadding + mapX * TileSize * newScale;
-                double newContentY = mapViewportPadding + mapY * TileSize * newScale;
+                // The root transform scales padding as well as map pixels.
+                double newFactor = newScale / rasterScale;
+                double newContentX = newFactor *
+                    (mapViewportPadding + mapX * TileSize * rasterScale);
+                double newContentY = newFactor *
+                    (mapViewportPadding + gridRenderShiftY + mapY * TileSize * rasterScale);
 
                 // compute new scroll offsets so the same content point appears under the cursor
                 double newH = newContentX - mouseVp.X;
                 double newV = newContentY - mouseVp.Y;
 
                 // clamp offsets to valid ranges
-                double maxH = Math.Max(0, (CanvasHost?.ActualWidth ?? 0) - SafeViewportWidth());
-                double maxV = Math.Max(0, (CanvasHost?.ActualHeight ?? 0) - SafeViewportHeight());
+                try { MapScrollViewer.UpdateLayout(); } catch { }
+                double maxH = Math.Max(0, MapScrollViewer.ScrollableWidth);
+                double maxV = Math.Max(0, MapScrollViewer.ScrollableHeight);
                 newH = Math.Max(0, Math.Min(maxH, newH));
                 newV = Math.Max(0, Math.Min(maxV, newV));
 
@@ -5011,17 +5028,24 @@ namespace FamidashEditor
             try
             {
                 if (MapScrollViewer == null) return;
-                double scale = ZoomSlider?.Value ?? 1.0;
-                double pad = mapViewportPadding;
-                double viewLeft = (MapScrollViewer?.HorizontalOffset ?? 0);
-                double viewTop = (MapScrollViewer?.VerticalOffset ?? 0);
-                double viewRight = viewLeft + SafeViewportWidth();
-                double viewBottom = viewTop + SafeViewportHeight();
+                double factor = GetMapZoomTransformScale();
+                if (factor <= 0) factor = 1.0;
+                double viewLeft = (MapScrollViewer.HorizontalOffset / factor);
+                double viewTop = (MapScrollViewer.VerticalOffset / factor);
+                double viewRight = viewLeft + SafeViewportWidth() / factor;
+                double viewBottom = viewTop + SafeViewportHeight() / factor;
 
-                int lx = (int)Math.Floor((viewLeft - pad) / (TileSize * scale));
-                int rx = (int)Math.Floor((viewRight - pad) / (TileSize * scale));
-                int ty = (int)Math.Floor((viewTop - pad) / (TileSize * scale));
-                int by = (int)Math.Floor((viewBottom - pad) / (TileSize * scale));
+                var dpi = VisualTreeHelper.GetDpi(this);
+                double rasterScale = GetMapRasterScale();
+                int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * rasterScale * dpi.DpiScaleX));
+                int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * rasterScale * dpi.DpiScaleY));
+                int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+                int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY) + gridRenderShiftYPx;
+
+                int lx = (int)Math.Floor((viewLeft * dpi.DpiScaleX - padPxX) / tilePixelW);
+                int rx = (int)Math.Floor((viewRight * dpi.DpiScaleX - padPxX) / tilePixelW);
+                int ty = (int)Math.Floor((viewTop * dpi.DpiScaleY - padPxY) / tilePixelH);
+                int by = (int)Math.Floor((viewBottom * dpi.DpiScaleY - padPxY) / tilePixelH);
 
                 minX = Math.Max(0, Math.Min(mapWidth - 1, lx));
                 maxX = Math.Max(0, Math.Min(mapWidth - 1, rx));
@@ -7733,6 +7757,21 @@ namespace FamidashEditor
                         }
                     }
 
+                    // Optional custom music library. The installed copy lives under Documents,
+                    // while the source path is retained so the dialog can refresh it easily.
+                    if (doc.RootElement.TryGetProperty("customMusicAlbumPath", out var customAlbum))
+                    {
+                        try { customMusicAlbumPath = customAlbum.GetString(); } catch { customMusicAlbumPath = null; }
+                    }
+                    if (doc.RootElement.TryGetProperty("customMusicSourceAlbumPath", out var customSource))
+                    {
+                        try { customMusicSourceAlbumPath = customSource.GetString(); } catch { customMusicSourceAlbumPath = null; }
+                    }
+                    if (doc.RootElement.TryGetProperty("customMusicPreviewFolder", out var customPreview))
+                    {
+                        try { customMusicPreviewFolder = customPreview.GetString(); } catch { customMusicPreviewFolder = null; }
+                    }
+
                     // optional mesen integration settings (NES only)
                     if (doc.RootElement.TryGetProperty("mesenPath", out var mp))
                     {
@@ -7797,6 +7836,9 @@ namespace FamidashEditor
                     playerColorEnabled = playerTintEnabled,
                     gridDarkness = gridDarkness,
                     famistudioPath = string.IsNullOrEmpty(famiStudioPath) ? null : famiStudioPath,
+                    customMusicAlbumPath = string.IsNullOrEmpty(customMusicAlbumPath) ? null : customMusicAlbumPath,
+                    customMusicSourceAlbumPath = string.IsNullOrEmpty(customMusicSourceAlbumPath) ? null : customMusicSourceAlbumPath,
+                    customMusicPreviewFolder = string.IsNullOrEmpty(customMusicPreviewFolder) ? null : customMusicPreviewFolder,
                     mesenPath = string.IsNullOrEmpty(mesenPath) ? null : mesenPath,
                     famidashRomPath = string.IsNullOrEmpty(famidashRomPath) ? null : famidashRomPath,
                     mesenRamAddresses = mesenRamAddresses,
@@ -11241,9 +11283,19 @@ namespace FamidashEditor
         private void TryLoadFamiAlbumParsedJson()
         {
             if (FamiTrackCombo == null) return;
+            mappingLoadedFromFile = false;
+
+            string? customMusicFolder = null;
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(customMusicAlbumPath) && File.Exists(customMusicAlbumPath))
+                    customMusicFolder = Path.GetDirectoryName(customMusicAlbumPath);
+            }
+            catch { }
 
             var jsonCandidates = new System.Collections.Generic.List<string>
             {
+                !string.IsNullOrWhiteSpace(customMusicFolder) ? System.IO.Path.Combine(customMusicFolder, MusicLibraryManager.ParsedNamesFileName) : string.Empty,
                 System.IO.Path.Combine(AppContext.BaseDirectory, "fami-album-parsed.json"),
                 System.IO.Path.Combine(Environment.CurrentDirectory, "fami-album-parsed.json")
             };
@@ -11283,6 +11335,7 @@ namespace FamidashEditor
                 string? txtPath = null;
                 var txtCandidates = new System.Collections.Generic.List<string>
                 {
+                    !string.IsNullOrWhiteSpace(customMusicFolder) ? System.IO.Path.Combine(customMusicFolder, "album.txt") : string.Empty,
                     System.IO.Path.Combine(AppContext.BaseDirectory, "the album.txt"),
                     System.IO.Path.Combine(Environment.CurrentDirectory, "the album.txt")
                 };
@@ -11310,6 +11363,7 @@ namespace FamidashEditor
                 string? fmsCandidate = null;
                 var fmsCandidates = new System.Collections.Generic.List<string>
                 {
+                    !string.IsNullOrWhiteSpace(customMusicAlbumPath) ? customMusicAlbumPath : string.Empty,
                     System.IO.Path.Combine(AppContext.BaseDirectory, "the album.fms"),
                     System.IO.Path.Combine(Environment.CurrentDirectory, "the album.fms")
                 };
@@ -11348,6 +11402,7 @@ namespace FamidashEditor
             try
             {
                 var mapCandidates = new[] {
+                    !string.IsNullOrWhiteSpace(customMusicFolder) ? Path.Combine(customMusicFolder, MusicLibraryManager.SongMapFileName) : string.Empty,
                     Path.Combine(AppContext.BaseDirectory, "fami-song-index-map.json"),
                     Path.Combine(Environment.CurrentDirectory, "fami-song-index-map.json"),
                     Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory) ?? AppContext.BaseDirectory, "native-windows", "fami-song-index-map.json"),
@@ -11387,6 +11442,8 @@ namespace FamidashEditor
 
             if (parsed.Count > 0)
             {
+                try { famiIntegration.ConfigurePlaybackFiles(MusicLibraryManager.LoadPlaybackMap(albumTxtPath)); } catch { }
+                var trackNamesByIndex = new System.Collections.Generic.Dictionary<int, string>();
                 for (int i = 0; i < parsed.Count; i++)
                 {
                     int tagIndex = i;
@@ -11396,9 +11453,11 @@ namespace FamidashEditor
                     }
                     catch { }
 
+                    trackNamesByIndex[tagIndex] = parsed[i];
                     var item = new System.Windows.Controls.ComboBoxItem() { Content = parsed[i], Tag = tagIndex };
                     FamiTrackCombo.Items.Add(item);
                 }
+                try { famiIntegration.ConfigureTrackNames(trackNamesByIndex); } catch { }
                 // Combo population complete - default to "Stereo Madness" if available
                 int defaultIndex = 0;
                 for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
@@ -11415,6 +11474,8 @@ namespace FamidashEditor
             }
             else
             {
+                try { famiIntegration.ConfigurePlaybackFiles(null); } catch { }
+                try { famiIntegration.ConfigureTrackNames(null); } catch { }
                 // no names found - leave empty but add placeholders so dropdown shows size
                 for (int i = 0; i < 8; i++) FamiTrackCombo.Items.Add(new System.Windows.Controls.ComboBoxItem() { Content = $"Song {i}", Tag = i });
                 if (FamiTrackCombo.Items.Count > 0) FamiTrackCombo.SelectedIndex = 0;
@@ -11434,11 +11495,17 @@ namespace FamidashEditor
             // Previously this was blocked; allow attempting playback and let the integration handle supported formats.
 
             int idx = -1;
+            string? selectedTrackName = null;
             if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Tag is int t)
             {
                 idx = t;
+                selectedTrackName = cbi.Content?.ToString();
             }
-            else if (FamiTrackCombo?.SelectedIndex >= 0) idx = FamiTrackCombo.SelectedIndex;
+            else if (FamiTrackCombo?.SelectedIndex >= 0)
+            {
+                idx = FamiTrackCombo.SelectedIndex;
+                selectedTrackName = FamiTrackCombo.SelectedItem?.ToString();
+            }
 
             if (idx < 0)
             {
@@ -11470,12 +11537,9 @@ namespace FamidashEditor
                                 var names = famiIntegration.EnumerateTracks(fpath);
                                 if (names != null && names.Count > 0)
                                 {
-                                    // If the combo has a selected item with a string, try to match by name
-                                    string? selectedName = null;
-                                    if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cb && cb.Content != null) selectedName = cb.Content.ToString();
-                                    if (!string.IsNullOrEmpty(selectedName))
+                                    if (!string.IsNullOrEmpty(selectedTrackName))
                                     {
-                                        int mapped = names.FindIndex(n => string.Equals(n, selectedName, StringComparison.OrdinalIgnoreCase));
+                                        int mapped = names.FindIndex(n => string.Equals(n, selectedTrackName, StringComparison.OrdinalIgnoreCase));
                                         if (mapped >= 0) idx = mapped;
                                     }
                                 }
@@ -11486,7 +11550,7 @@ namespace FamidashEditor
                         catch { }
                     }
 
-                    famiIntegration.PlayTrack(fpath, idx);
+                    famiIntegration.PlayTrack(fpath, idx, selectedTrackName);
                 }
                 catch (Exception ex)
                 {
@@ -13487,13 +13551,13 @@ namespace FamidashEditor
             EnsureLayerBitmaps(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelDisplayWidth, pixelDisplayHeight);
 
             // Update UI image sources and sizes
-            if (BackgroundImage != null && backgroundRtb != null)
+            if (BackgroundImage != null)
             {
                 BackgroundImage.Source = backgroundRtb;
                 BackgroundImage.Width = displayFullW; BackgroundImage.Height = displayFullH;
                 BackgroundImage.LayoutTransform = Transform.Identity; // Clear temporary zoom transform
             }
-            if (ParallaxImage != null && parallaxRtb != null)
+            if (ParallaxImage != null)
             {
                 ParallaxImage.Source = parallaxRtb;
                 ParallaxImage.Width = displayFullW; ParallaxImage.Height = displayFullH;
@@ -13502,7 +13566,7 @@ namespace FamidashEditor
                 ParallaxImage.Visibility = hideBackground
                     ? Visibility.Collapsed : Visibility.Visible;
             }
-            if (GroundImage != null && groundRtb != null)
+            if (GroundImage != null)
             {
                 GroundImage.Source = groundRtb;
                 GroundImage.Width = displayFullW; GroundImage.Height = displayFullH;
@@ -13528,7 +13592,7 @@ namespace FamidashEditor
                 PortalsImage.Width = displayFullW; PortalsImage.Height = displayFullH;
                 PortalsImage.LayoutTransform = Transform.Identity; // Clear temporary zoom transform
             }
-            if (GridImage != null && gridRtb != null)
+            if (GridImage != null)
             {
                 GridImage.Source = gridRtb;
                 GridImage.Width = displayFullW; GridImage.Height = displayFullH;
@@ -13542,6 +13606,10 @@ namespace FamidashEditor
                 CanvasHost.Width = displayFullW; CanvasHost.Height = displayFullH;
                 CanvasHost.LayoutTransform = Transform.Identity; // Clear temporary zoom transform
             }
+            // A freshly rendered map already matches the requested display scale.
+            // Clear any transform that belonged to the previous raster scale.
+            if (MapContentRoot != null)
+                MapContentRoot.LayoutTransform = Transform.Identity;
             try { UpdateIncompatibleOverlay(); } catch { }
             try { UpdatePlayerPathOverlay(); } catch { }
             try { UpdateSpawnScrollOverlay(); } catch { }
@@ -13583,7 +13651,7 @@ namespace FamidashEditor
                     cameraYOverlayMarker = null;
                 }
 
-                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                double scale = GetMapRasterScale();
                 double pad = mapViewportPadding;
                 const int NES_H_TILES = 15;
                 const int TILE_PX = 16;
@@ -13721,7 +13789,7 @@ namespace FamidashEditor
                     try { CanvasHost.Children.Remove(mPoly); } catch { }
                 mesenPathPolylines.Clear();
 
-                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                double scale = GetMapRasterScale();
                 double pad = mapViewportPadding;
 
                 // Draw attempted (backtrack) paths — semi-transparent orange-red, above committed paths
@@ -14303,7 +14371,7 @@ namespace FamidashEditor
                         playerDeathMarkerX = worldX_px;
                         playerDeathMarkerY = worldY_px;
 
-                        double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                        double scale = GetMapRasterScale();
                         double pad = mapViewportPadding;
                         // Convert world pixel -> canvas coordinates (re-use path overlay transform)
                         double dx = pad + worldX_px * scale;
@@ -14347,7 +14415,7 @@ namespace FamidashEditor
                         // If no position given, just clear
                         if (!worldX_px.HasValue || !worldY_px.HasValue) return;
 
-                        double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                        double scale = GetMapRasterScale();
                         double pad = mapViewportPadding;
                         
                         // Store exact top-left position (this is where player spawns)
@@ -14527,34 +14595,68 @@ namespace FamidashEditor
                 // synchronous full portal pass here rendered every portal twice.
                 if (!synchronousInitialLayerBuild)
                     RebuildAllSpritesBitmap(scale, pad);
+
+                // Map-sized WPF bitmaps allocate primarily outside the managed
+                // heap, so replacement alone does not give the GC enough pressure
+                // to release their native double buffers. Debounce one collection
+                // until resize/zoom activity and stale render tasks have settled.
+                ScheduleNativeLayerCleanup();
             }
+        }
+
+        private void ScheduleNativeLayerCleanup()
+        {
+            int version = Interlocked.Increment(ref nativeLayerCleanupVersion);
+            _ = ReleaseReplacedNativeLayersAsync(version);
+        }
+
+        private async Task ReleaseReplacedNativeLayersAsync(int version)
+        {
+            await Task.Delay(1200);
+            if (version != Volatile.Read(ref nativeLayerCleanupVersion)) return;
+
+            // Run the finalizer wait away from the dispatcher. This is intentionally
+            // rare and debounced; it releases unreachable MIL bitmap handles that
+            // otherwise remain committed indefinitely because their managed wrappers
+            // are tiny compared with their native pixel buffers.
+            await Task.Run(() =>
+            {
+                GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced,
+                    blocking: true, compacting: false);
+                GC.WaitForPendingFinalizers();
+                GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced,
+                    blocking: true, compacting: false);
+            });
         }
 
         private void BuildBackgroundBitmap(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight, DpiScale dpi)
         {
-            var dv = new DrawingVisual();
-            using (var dc = dv.RenderOpen())
+            double renderW = pixelPaddedWidth / dpi.DpiScaleX;
+            double renderH = pixelPaddedHeight / dpi.DpiScaleY;
+            backgroundRtb = CreateFrozenMapDrawing(renderW, renderH, dc =>
             {
-                // Draw only the base map background here; parallax and ground are rendered into
-                // their own RenderTargetBitmaps so they can be translated independently.
+                // Draw only the base map background here; parallax and ground
+                // remain independent so parallax translation still works.
                 dc.DrawRectangle(mapBackground, null, new Rect(pad, pad, fullW, fullH));
-            }
-            try
+            });
+        }
+
+        private static DrawingImage CreateFrozenMapDrawing(
+            double width, double height, Action<DrawingContext> draw)
+        {
+            var group = new DrawingGroup();
+            using (DrawingContext dc = group.Open())
             {
-                backgroundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-                backgroundRtb.Render(dv);
+                // Establish exact full-layer bounds so Image.Stretch does not
+                // expand the non-transparent drawing to fill the level.
+                dc.DrawRectangle(Brushes.Transparent, null,
+                    new Rect(0, 0, Math.Max(1.0, width), Math.Max(1.0, height)));
+                draw(dc);
             }
-            catch (System.Runtime.InteropServices.COMException)
-            {
-                // Render thread failure (possibly GPU driver). Force software rendering and retry once.
-                App.EnableSoftwareRendering();
-                try
-                {
-                    backgroundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-                    backgroundRtb.Render(dv);
-                }
-                catch { backgroundRtb = null; }
-            }
+            if (group.CanFreeze) group.Freeze();
+            var image = new DrawingImage(group);
+            if (image.CanFreeze) image.Freeze();
+            return image;
         }
 
         // Create or retrieve a cached tinted BitmapSource for parallax/ground
@@ -14564,7 +14666,10 @@ namespace FamidashEditor
             try
             {
                 uint argb = ((uint)tint.A << 24) | ((uint)tint.R << 16) | ((uint)tint.G << 8) | tint.B;
-                long key = (((long)scaleKey) << 32) | argb;
+                // Tinting preserves source dimensions and is independent of zoom.
+                // Include source identity, not scale, to avoid one native bitmap
+                // per color per zoom level while remaining safe after image swaps.
+                long key = ((long)(uint)RuntimeHelpers.GetHashCode(src) << 32) | argb;
                 var cache = useRgbReplace ? parallaxTintCache : groundTintCache;
                 if (cache.TryGetValue(key, out var existing)) return existing;
 
@@ -14580,6 +14685,8 @@ namespace FamidashEditor
 
                 if (arr != null && arr.Length > 0 && arr[0] is BitmapSource bs)
                 {
+                    // Only the currently displayed source/tint is useful.
+                    cache.Clear();
                     cache[key] = bs;
                     return bs;
                 }
@@ -14595,14 +14702,14 @@ namespace FamidashEditor
             // Skip rendering entirely if hideBackground is enabled
             if (hideBackground)
             {
-                parallaxRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                parallaxRtb = null;
                 return;
             }
 
             // If we don't have any bitmap at all, create an empty RTB and bail out.
             if (parallaxBitmap == null)
             {
-                parallaxRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                parallaxRtb = null;
                 return;
             }
 
@@ -14619,12 +14726,10 @@ namespace FamidashEditor
             }
 
             // Use ImageBrush for efficient tiling
-            var dv = new DrawingVisual();
-            using (var dc = dv.RenderOpen())
+            double renderW = pixelPaddedWidth / dpi.DpiScaleX;
+            double renderH = pixelPaddedHeight / dpi.DpiScaleY;
+            parallaxRtb = CreateFrozenMapDrawing(renderW, renderH, dc =>
             {
-                double renderW = pixelPaddedWidth / dpi.DpiScaleX;
-                double renderH = pixelPaddedHeight / dpi.DpiScaleY;
-
                 // Calculate tile size in DIU at current scale
                 double tileDiuW = (sourceImage.PixelWidth / dpi.DpiScaleX) * scale;
                 double tileDiuH = (sourceImage.PixelHeight / dpi.DpiScaleY) * scale;
@@ -14642,9 +14747,6 @@ namespace FamidashEditor
                     Stretch = Stretch.Fill
                 };
                 brush.Transform = new TranslateTransform(startX, startY);
-
-                // Use nearest-neighbor scaling to avoid blending edges when scaling
-                RenderOptions.SetBitmapScalingMode(dv, BitmapScalingMode.NearestNeighbor);
 
                 // Calculate ground area to avoid overlap
                 double groundHeight = 0.0;
@@ -14664,73 +14766,7 @@ namespace FamidashEditor
                 {
                     dc.DrawRectangle(brush, null, new Rect(0, 0, renderW, renderH));
                 }
-            }
-            
-            try
-            {
-                parallaxRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-                parallaxRtb.Render(dv);
-            }
-            catch (System.Runtime.InteropServices.COMException)
-            {
-                // If GPU render thread failed, force software rendering and retry once.
-                App.EnableSoftwareRendering();
-                try
-                {
-                    parallaxRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-                    parallaxRtb.Render(dv);
-                }
-                catch { parallaxRtb = null; }
-            }
-
-            // Recompute render sizes and ground height here so they're available outside
-            // the drawing using() scope for the fallback transparency check.
-            double fbRenderW = pixelPaddedWidth / dpi.DpiScaleX;
-            double fbRenderH = pixelPaddedHeight / dpi.DpiScaleY;
-            double computedGroundHeight = 0.0;
-            try { if (groundBitmap != null && groundImages != null && groundImages.Length > 0) computedGroundHeight = (groundBitmap.PixelHeight / dpi.DpiScaleY) * scale; } catch { }
-            double computedGroundStartY = mapHeight * TileSize * scale + pad;
-
-            // If the tiled brush produced an all-transparent render (can happen with strange bitmap formats
-            // or brush/ViewPort math), detect that and fall back to drawing the full source image stretched
-            // across the parallax area so the user can see the image. This is a safe visual fallback only.
-            try
-            {
-                if (parallaxRtb != null)
-                {
-                    int pw = parallaxRtb.PixelWidth;
-                    int ph = parallaxRtb.PixelHeight;
-                    var dpi2 = dpi;
-                    // compute top area pixel height (area above ground)
-                    int topAreaPx = Math.Max(1, Math.Min(ph, (int)Math.Round((computedGroundHeight > 0 ? computedGroundStartY : fbRenderH) * dpi2.DpiScaleY)));
-                    int sx = Math.Max(0, Math.Min(pw - 1, pw / 2));
-                    // sample a few Y positions in the parallax top area
-                    var buf = new byte[4];
-                    bool allTransparent = true;
-                    for (int i = 1; i <= 3; i++)
-                    {
-                        int sy = Math.Max(0, Math.Min(ph - 1, (topAreaPx * i) / 4));
-                        try { parallaxRtb.CopyPixels(new Int32Rect(sx, sy, 1, 1), buf, 4, 0); } catch { buf[3] = 0; }
-                        byte a = buf[3];
-                        if (a != 0) { allTransparent = false; break; }
-                    }
-
-                    if (allTransparent)
-                    {
-                            // Draw the full source image into the parallax area as a fallback
-                        var dv2 = new DrawingVisual();
-                        using (var dc2 = dv2.RenderOpen())
-                        {
-                                double topH = (computedGroundHeight > 0) ? Math.Max(0.0, computedGroundStartY) : fbRenderH;
-                                dc2.DrawImage(sourceImage, new Rect(0, 0, fbRenderW, topH));
-                        }
-                        var fb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi2.PixelsPerInchX, dpi2.PixelsPerInchY, PixelFormats.Pbgra32);
-                        fb.Render(dv2);
-                        parallaxRtb = fb;
-                    }
-                }
-            }
-            catch { }
+            });
         }
 
         private void BuildGroundBitmap(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight, DpiScale dpi)
@@ -14738,13 +14774,13 @@ namespace FamidashEditor
             // Skip rendering entirely if hideGround is enabled
             if (hideGround)
             {
-                groundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                groundRtb = null;
                 return;
             }
 
             if (groundBitmap == null || groundImages == null || groundImages.Length == 0)
             {
-                groundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                groundRtb = null;
                 return;
             }
             
@@ -14758,9 +14794,11 @@ namespace FamidashEditor
                 if (maybe != null) sourceImage = maybe;
             }
             
-            // Use ImageBrush for efficient tiling (horizontal only)
-            var dv = new DrawingVisual();
-            using (var dc = dv.RenderOpen())
+            // Use ImageBrush for efficient horizontal tiling while retaining the
+            // operation as vector drawing data rather than a map-sized surface.
+            double renderW = pixelPaddedWidth / dpi.DpiScaleX;
+            double renderH = pixelPaddedHeight / dpi.DpiScaleY;
+            groundRtb = CreateFrozenMapDrawing(renderW, renderH, dc =>
             {
                 // Ground starts below the map
                 double groundY = mapHeight * TileSize * scale + pad;
@@ -14781,24 +14819,7 @@ namespace FamidashEditor
 
                 // Draw a rectangle the width of the canvas at the ground vertical position
                 dc.DrawRectangle(brush, null, new Rect(0, groundY, fillWidth, groundHeightDiu));
-            }
-            
-            try
-            {
-                groundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-                groundRtb.Render(dv);
-            }
-            catch (System.Runtime.InteropServices.COMException)
-            {
-                // GPU render thread failure; force software rendering and retry once.
-                App.EnableSoftwareRendering();
-                try
-                {
-                    groundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-                    groundRtb.Render(dv);
-                }
-                catch { groundRtb = null; }
-            }
+            });
         }
 
         // Deferred async rebuild of parallax and ground bitmaps for large maps
@@ -15102,9 +15123,33 @@ namespace FamidashEditor
             }
         }
 
+        // Mouse positions obtained with GetPosition(CanvasHost) are expressed in
+        // CanvasHost's own (pre-LayoutTransform) coordinate space.  All editor
+        // overlays and hit tests must therefore use the scale of the raster that
+        // CanvasHost is aligned with, not the scale currently displayed by WPF.
+        private double GetMapRasterScale()
+        {
+            // cachedScale is the scale physically represented by the layer
+            // bitmaps. This is also true during the temporary transform used by
+            // non-fast zoom, before its delayed high-resolution rebuild commits.
+            if (cachedScale > 0 && double.IsFinite(cachedScale))
+                return cachedScale;
+            return ZoomSlider?.Value ?? 1.0;
+        }
+
+        private double GetMapZoomTransformScale()
+        {
+            double rasterScale = GetMapRasterScale();
+            double displayScale = ZoomSlider?.Value ?? rasterScale;
+            if (rasterScale <= 0 || !double.IsFinite(displayScale)) return 1.0;
+            return displayScale / rasterScale;
+        }
+
         private double GetBitmapUpdateScale(double requestedScale)
         {
-            if (ShouldUseTransformOnlyZoom() && cachedScale > 0)
+            // Incremental writes target the existing WriteableBitmap, whose
+            // geometry is always cachedScale regardless of the display zoom.
+            if (cachedScale > 0 && double.IsFinite(cachedScale))
                 return cachedScale;
             return requestedScale;
         }
@@ -15113,30 +15158,28 @@ namespace FamidashEditor
         {
             if (ZoomSlider == null) return;
             double newScale = ZoomSlider.Value;
-            
-            // Calculate scale factor relative to cached scale
-            if (cachedScale > 0 && Math.Abs(cachedScale - newScale) > 1e-6)
+
+            // Scale the common content root once. Applying separate layout
+            // transforms to every layer lets WPF round their bounds independently,
+            // which can shear a tile row or separate overlays from the raster.
+            if (cachedScale > 0)
             {
                 double scaleFactor = newScale / cachedScale;
-                var scaleTransform = new ScaleTransform(scaleFactor, scaleFactor);
-                
-                // Apply temporary scale transform to all image layers
-                if (BackgroundImage != null) BackgroundImage.LayoutTransform = scaleTransform;
-                if (ParallaxImage != null)
-                {
-                    // Keep zoom scaling separate from the continuously updated
-                    // parallax translation. ScrollChanged owns RenderTransform and
-                    // must not be able to discard the temporary zoom scale.
-                    ParallaxImage.LayoutTransform = scaleTransform;
-                    if (parallaxTransform != null)
-                        ParallaxImage.RenderTransform = parallaxTransform;
-                }
-                if (GroundImage != null) GroundImage.LayoutTransform = scaleTransform;
-                if (TilesImage != null) TilesImage.LayoutTransform = scaleTransform;
-                if (SpritesImage != null) SpritesImage.LayoutTransform = scaleTransform;
-                if (PortalsImage != null) PortalsImage.LayoutTransform = scaleTransform;
-                if (GridImage != null) GridImage.LayoutTransform = scaleTransform;
-                if (CanvasHost != null) CanvasHost.LayoutTransform = scaleTransform;
+                Transform transform = Math.Abs(scaleFactor - 1.0) <= 1e-6
+                    ? Transform.Identity
+                    : new ScaleTransform(scaleFactor, scaleFactor);
+                if (MapContentRoot != null) MapContentRoot.LayoutTransform = transform;
+
+                // Clear transforms left by older per-layer zoom handling. The
+                // parallax translation remains a RenderTransform and is untouched.
+                if (BackgroundImage != null) BackgroundImage.LayoutTransform = Transform.Identity;
+                if (ParallaxImage != null) ParallaxImage.LayoutTransform = Transform.Identity;
+                if (GroundImage != null) GroundImage.LayoutTransform = Transform.Identity;
+                if (TilesImage != null) TilesImage.LayoutTransform = Transform.Identity;
+                if (SpritesImage != null) SpritesImage.LayoutTransform = Transform.Identity;
+                if (PortalsImage != null) PortalsImage.LayoutTransform = Transform.Identity;
+                if (GridImage != null) GridImage.LayoutTransform = Transform.Identity;
+                if (CanvasHost != null) CanvasHost.LayoutTransform = Transform.Identity;
             }
         }
 
@@ -15150,6 +15193,27 @@ namespace FamidashEditor
             // (cachedScale must stay at the actual bitmap render scale for hover calculations)
             if (ShouldUseTransformOnlyZoom())
             {
+                UpdateQuickZoomTransform();
+                if (hasZoomAnchor && MapScrollViewer != null)
+                {
+                    try
+                    {
+                        double rasterScale = GetMapRasterScale();
+                        double factor = GetMapZoomTransformScale();
+                        double contentX = factor *
+                            (mapViewportPadding + zoomAnchorMapX * TileSize * rasterScale);
+                        double contentY = factor *
+                            (mapViewportPadding + gridRenderShiftY + zoomAnchorMapY * TileSize * rasterScale);
+                        MapScrollViewer.UpdateLayout();
+                        double newH = Math.Clamp(contentX - zoomAnchorViewportX,
+                            0, Math.Max(0, MapScrollViewer.ScrollableWidth));
+                        double newV = Math.Clamp(contentY - zoomAnchorViewportY,
+                            0, Math.Max(0, MapScrollViewer.ScrollableHeight));
+                        MapScrollViewer.ScrollToHorizontalOffset(newH);
+                        MapScrollViewer.ScrollToVerticalOffset(newV);
+                    }
+                    catch { }
+                }
                 hasZoomAnchor = false;
                 return;
             }
@@ -15157,6 +15221,7 @@ namespace FamidashEditor
             // Clear any temporary transforms applied during preview
             try
             {
+                if (MapContentRoot != null) MapContentRoot.LayoutTransform = Transform.Identity;
                 if (BackgroundImage != null) BackgroundImage.LayoutTransform = Transform.Identity;
                 if (ParallaxImage != null)
                 {
@@ -15184,11 +15249,11 @@ namespace FamidashEditor
                     double newScale = ZoomSlider?.Value ?? 1.0;
                     double pad = mapViewportPadding;
                     double newContentX = pad + zoomAnchorMapX * TileSize * newScale;
-                    double newContentY = pad + zoomAnchorMapY * TileSize * newScale;
+                    double newContentY = pad + gridRenderShiftY + zoomAnchorMapY * TileSize * newScale;
                     double newH = newContentX - zoomAnchorViewportX;
                     double newV = newContentY - zoomAnchorViewportY;
-                    double maxH = Math.Max(0, (CanvasHost?.ActualWidth ?? 0) - SafeViewportWidth());
-                    double maxV = Math.Max(0, (CanvasHost?.ActualHeight ?? 0) - SafeViewportHeight());
+                    double maxH = Math.Max(0, MapScrollViewer.ScrollableWidth);
+                    double maxV = Math.Max(0, MapScrollViewer.ScrollableHeight);
                     newH = Math.Max(0, Math.Min(maxH, newH));
                     newV = Math.Max(0, Math.Min(maxV, newV));
                     MapScrollViewer?.ScrollToHorizontalOffset(newH);
@@ -15211,7 +15276,7 @@ namespace FamidashEditor
                 if (GridImage != null)
                 {
                     var dpi = VisualTreeHelper.GetDpi(this);
-                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    double scale = GetMapRasterScale();
                     double pad = mapViewportPadding;
                     // Compute tile pixel heights as BuildGridBitmap does
                     int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
@@ -15270,8 +15335,8 @@ namespace FamidashEditor
                 double newH = hPix / dpi.DpiScaleX;
                 double newV = vPix / dpi.DpiScaleY;
                 // Clamp to valid ranges
-                    double maxH = Math.Max(0, (CanvasHost?.ActualWidth ?? 0) - SafeViewportWidth());
-                double maxV = Math.Max(0, (CanvasHost?.ActualHeight ?? 0) - SafeViewportHeight());
+                double maxH = Math.Max(0, MapScrollViewer.ScrollableWidth);
+                double maxV = Math.Max(0, MapScrollViewer.ScrollableHeight);
                 newH = Math.Max(0, Math.Min(maxH, newH));
                 newV = Math.Max(0, Math.Min(maxV, newV));
                 MapScrollViewer?.ScrollToHorizontalOffset(newH);
@@ -15288,7 +15353,7 @@ namespace FamidashEditor
             if (MapScrollViewer == null) return;
             // Compute the padded full height (map + ground + parallax padding) using current zoom
             double scale = ZoomSlider?.Value ?? 1.0;
-            double pad = mapViewportPadding;
+            double pad = mapViewportPadding * GetMapZoomTransformScale();
             double fullH = mapHeight * TileSize * scale;
             
             // Calculate ground height from the actual ground bitmap, not from tile rows
@@ -15314,8 +15379,9 @@ namespace FamidashEditor
 
         private void BuildGridBitmap(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight, DpiScale dpi)
         {
-            var dv = new DrawingVisual();
-            using (var dc = dv.RenderOpen())
+            double renderW = pixelPaddedWidth / dpi.DpiScaleX;
+            double renderH = pixelPaddedHeight / dpi.DpiScaleY;
+            gridRtb = CreateFrozenMapDrawing(renderW, renderH, dc =>
             {
                 // Draw grid using integer device pixels to keep alignment stable
                 // across zoom/DPI changes. The old implementation drew one
@@ -15353,9 +15419,7 @@ namespace FamidashEditor
                     dc.DrawLine(pen, new Point(left, py),
                         new Point(right, py));
                 }
-            }
-            gridRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-            gridRtb.Render(dv);
+            });
         }
 
         // Rebuild the entire tiles writeable bitmap from the tiles[] array
@@ -15529,15 +15593,29 @@ namespace FamidashEditor
         {
             if (tileImages == null) return;
             int scaleKey = (int)Math.Round(scale * 100.0);
+            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+
+            // Only one map raster and one zoom are current at a time. Keeping
+            // every previously visited scale retains all lazily rendered tile
+            // buffers and can grow sharply during a long editing session.
+            if (scaledTileCaches.Count > 1 ||
+                (scaledTileCaches.Count == 1 && !scaledTileCaches.ContainsKey(scaleKey)))
+                scaledTileCaches.Clear();
+
             if (scaledTileCaches.TryGetValue(scaleKey, out var existing))
             {
-                // existing cache is fine
-                return;
+                // The cache key historically omitted monitor DPI. Reusing those
+                // buffers after a DPI change gives the copy loop the wrong stride,
+                // visibly slicing or skewing tiles. Validate the physical geometry.
+                if (existing.TileW == tilePixelW && existing.TileH == tilePixelH &&
+                    Math.Abs(existing.Dpi.DpiScaleX - dpi.DpiScaleX) <= 1e-6 &&
+                    Math.Abs(existing.Dpi.DpiScaleY - dpi.DpiScaleY) <= 1e-6)
+                    return;
+                scaledTileCaches.Remove(scaleKey);
             }
             try
             {
-                int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
-                int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
                 int stride = tilePixelW * 4;
                 // Allocate cache for 512 tiles: 0-255 for regular tiles, 256-511 for sprites
                 int count = 512;
@@ -17651,7 +17729,7 @@ namespace FamidashEditor
             {
                 try
                 {
-                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    double scale = GetMapRasterScale();
                     double pad = mapViewportPadding;
                     
                     // Convert canvas -> world pixels, centered on click (player is 16x16)
@@ -17710,7 +17788,7 @@ namespace FamidashEditor
                     selectionIsLarge = true;
                     pendingHoverIndicesRef = info.Indices;
                     UpdateSelectionVisuals(selX, selY, selW, selH, previewMode: true);
-                    try { _ = RenderMaskToCanvasAsync(SelectionOverlay!, pendingHoverIndicesRef, (ZoomSlider!=null?ZoomSlider.Value:1.0), VisualTreeHelper.GetDpi(this)); } catch { }
+                    try { _ = RenderMaskToCanvasAsync(SelectionOverlay!, pendingHoverIndicesRef, GetMapRasterScale(), VisualTreeHelper.GetDpi(this)); } catch { }
                 }
                 else
                 {
@@ -17814,9 +17892,9 @@ namespace FamidashEditor
                     if (!selectionSet.Contains(clickIdx) && spritesLayerActive)
                     {
                         // Click is outside selection - check if it's on an offset sprite's visual area
-                        double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-                        int clickNativeX = (int)Math.Round((pos.X - mapViewportPadding) / scale);
-                        int clickNativeY = (int)Math.Round((pos.Y - mapViewportPadding) / scale);
+                        double scale = GetMapRasterScale();
+                        int clickNativeX = (int)Math.Floor((pos.X - mapViewportPadding) / scale);
+                        int clickNativeY = (int)Math.Floor((pos.Y - mapViewportPadding - gridRenderShiftY) / scale);
                         
                         // Check all tiles in selection for sprites whose visual footprint includes the click
                         bool foundInSelection = false;
@@ -17878,9 +17956,9 @@ namespace FamidashEditor
                 // If sprites layer is active and no sprite at exact tile, check nearby tiles for offset sprites
                 if (spritesLayerActive && spriteVal == -1)
                 {
-                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-                    int clickNativeX = (int)Math.Round((pos.X - mapViewportPadding) / scale);
-                    int clickNativeY = (int)Math.Round((pos.Y - mapViewportPadding) / scale);
+                    double scale = GetMapRasterScale();
+                    int clickNativeX = (int)Math.Floor((pos.X - mapViewportPadding) / scale);
+                    int clickNativeY = (int)Math.Floor((pos.Y - mapViewportPadding - gridRenderShiftY) / scale);
                     
                     // Check adjacent tiles for sprites with offsets that overlap the click position
                     for (int dy = -1; dy <= 1; dy++)
@@ -18067,14 +18145,16 @@ namespace FamidashEditor
         private bool IsPointInsideMap(Point pos)
         {
             var dpi = VisualTreeHelper.GetDpi(this);
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-            double pad = mapViewportPadding;
-            double mapW = mapWidth * TileSize * scale;
-            double mapH = mapHeight * TileSize * scale;
-            // pos is in CanvasHost DIU coordinates
-            if (pos.X < pad || pos.Y < pad) return false;
-            if (pos.X > pad + mapW || pos.Y > pad + mapH) return false;
-            return true;
+            double scale = GetMapRasterScale();
+            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+            int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+            int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY) + gridRenderShiftYPx;
+            double px = pos.X * dpi.DpiScaleX;
+            double py = pos.Y * dpi.DpiScaleY;
+            return px >= padPxX && py >= padPxY &&
+                px < padPxX + mapWidth * tilePixelW &&
+                py < padPxY + mapHeight * tilePixelH;
         }
 
         private void CanvasHost_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -18270,7 +18350,7 @@ namespace FamidashEditor
                 if (!previewMode && OffsetGhostContainer != null && OffsetTooltipContainer != null)
                 {
                     var dpi = VisualTreeHelper.GetDpi(this);
-                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    double scale = GetMapRasterScale();
                     int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
                     int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
                     int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
@@ -18496,7 +18576,7 @@ namespace FamidashEditor
                 if (PlaceTool != null && PlaceTool.IsChecked == true && spritesLayerActive && selectedSprite >= 0 && spriteImages != null && GhostImage != null)
                 {
                     var dpi = VisualTreeHelper.GetDpi(this);
-                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    double scale = GetMapRasterScale();
                     int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
                     int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
                     int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
@@ -18538,7 +18618,7 @@ namespace FamidashEditor
                 else if (PlaceTool != null && PlaceTool.IsChecked == true && DrawTileButton != null && DrawTileButton.IsChecked == true && selectedTile >= 0 && tileImages != null && GhostImage != null)
                 {
                     var dpi = VisualTreeHelper.GetDpi(this);
-                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    double scale = GetMapRasterScale();
                     int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
                     int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
                     int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
@@ -18933,7 +19013,7 @@ namespace FamidashEditor
 
                         // Compute display corners for placing the resize anchor point
                         var dpiLocal = VisualTreeHelper.GetDpi(this);
-                        double scaleLocal = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                        double scaleLocal = GetMapRasterScale();
                         int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scaleLocal * dpiLocal.DpiScaleX));
                         int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scaleLocal * dpiLocal.DpiScaleY));
                         int padPxX = (int)Math.Round(mapViewportPadding * dpiLocal.DpiScaleX);
@@ -19001,10 +19081,9 @@ namespace FamidashEditor
                         var pos = e.GetPosition(CanvasHost);
                         try
                         {
-                            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-                            double pad = mapViewportPadding;
-                            int tx = Math.Max(0, Math.Min(mapWidth - 1, (int)((pos.X - pad) / (TileSize * scale))));
-                            int ty = Math.Max(0, Math.Min(mapHeight - 1, (int)((pos.Y - pad) / (TileSize * scale))));
+                            var pickedTileCoord = ViewportPointToTile(pos);
+                            int tx = pickedTileCoord.x;
+                            int ty = pickedTileCoord.y;
                             int idx = ty * mapWidth + tx;
                             bool pickedTile = false;
                             bool pickedSprite = false;
@@ -19219,7 +19298,7 @@ namespace FamidashEditor
                 isPainting = true;
                 lastPaintX = -1; lastPaintY = -1;
                 // Prepare scaled tile cache for the current zoom/DPI to avoid per-tile scaling during drag
-                try { EnsureScaledTileCache((ZoomSlider!=null?ZoomSlider.Value:1.0), VisualTreeHelper.GetDpi(this)); } catch { }
+                try { EnsureScaledTileCache(GetMapRasterScale(), VisualTreeHelper.GetDpi(this)); } catch { }
                 // begin composite undo action for this drag/session
                 if (!suppressUndoRecording) currentCompositeAction = new TileChangeAction();
                 CanvasHost.CaptureMouse();
@@ -19342,7 +19421,7 @@ namespace FamidashEditor
             // Update visuals for affected tiles
             try
             {
-                double updateScale = ShouldUseTransformOnlyZoom() ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
+                double updateScale = GetMapRasterScale();
                 foreach (var i in visited)
                 {
                     int tx = i % mapWidth; int ty = i / mapWidth;
@@ -19367,10 +19446,9 @@ namespace FamidashEditor
 
         private void ToggleSelectionAt(Point pos)
         {
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-            double pad = mapViewportPadding;
-            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)((pos.X - pad) / (TileSize * scale))));
-            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)((pos.Y - pad) / (TileSize * scale))));
+            var tile = ViewportPointToTile(pos);
+            int x = tile.x;
+            int y = tile.y;
             int idx = y * mapWidth + x;
             // Only toggle selection for valid (non-empty) tiles or sprites in active layers
             bool hasTile = tilesLayerActive && tiles[idx] != -1;
@@ -19420,10 +19498,9 @@ namespace FamidashEditor
         private void StartMagicWandAt(Point pos)
         {
             if (CanvasHost == null) return;
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-            double pad = mapViewportPadding;
-            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)((pos.X - pad) / (TileSize * scale))));
-            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)((pos.Y - pad) / (TileSize * scale))));
+            var tile = ViewportPointToTile(pos);
+            int x = tile.x;
+            int y = tile.y;
             int startIdx = y * mapWidth + x;
             
             // Use the appropriate layer based on which is active
@@ -19561,7 +19638,7 @@ namespace FamidashEditor
                 }
             }
             
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double scale = GetMapRasterScale();
             var dpi = VisualTreeHelper.GetDpi(this);
             
             int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
@@ -19709,7 +19786,7 @@ namespace FamidashEditor
         private void UpdateDragMoveTo(Point pos)
         {
             if (!isDraggingSelection || GhostImage == null) return;
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double scale = GetMapRasterScale();
             var dpi = VisualTreeHelper.GetDpi(this);
             
             // Calculate tile size in logical pixels (matching how tiles are actually positioned)
@@ -19886,7 +19963,7 @@ namespace FamidashEditor
             if (CanvasHost != null && CanvasHost.IsMouseCaptured) CanvasHost.ReleaseMouseCapture();
             if (GhostImage == null) return;
             
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double scale = GetMapRasterScale();
             double pad = mapViewportPadding;
             
             // If this was just a click (not a drag) outside the current selection, deselect
@@ -19960,7 +20037,7 @@ namespace FamidashEditor
         {
             if (SelectionOverlay == null) return;
             SelectionOverlay.Children.Clear();
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double scale = GetMapRasterScale();
             double pad = mapViewportPadding;
             var dpi = VisualTreeHelper.GetDpi(this);
             // Use the same integer-pixel math as BuildGridBitmap so overlays align exactly
@@ -20076,7 +20153,7 @@ namespace FamidashEditor
         {
             if (!isResizingSelection || resizeOrigTiles == null) return;
             var dpi = VisualTreeHelper.GetDpi(this);
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double scale = GetMapRasterScale();
 
             // Compute display anchor (top-left of selection) in canvas coords
             int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
@@ -20160,7 +20237,7 @@ namespace FamidashEditor
             try { if (CanvasHost != null && CanvasHost.IsMouseCaptured) CanvasHost.ReleaseMouseCapture(); } catch { }
 
             var dpi = VisualTreeHelper.GetDpi(this);
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double scale = GetMapRasterScale();
             double origDisplayW = resizeOrigW * TileSize * scale;
             double origDisplayH = resizeOrigH * TileSize * scale;
             // Compute dx/dy relative to the anchor corner (matches preview behavior)
@@ -20741,7 +20818,7 @@ namespace FamidashEditor
                 #pragma warning restore CS8602
                 SelectionOverlay.Children.Clear();
                 var dpi = VisualTreeHelper.GetDpi(this);
-                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                double scale = GetMapRasterScale();
                 int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
                 int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
                 int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
@@ -21323,7 +21400,7 @@ namespace FamidashEditor
             }
             
             // compute final selection bounds from the drag preview
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double scale = GetMapRasterScale();
             // Use the current preview (rectangle or ellipse) to determine bounds
             if (SelectionOverlay == null || SelectionOverlay.Children.Count == 0) return;
             var previewElem = SelectionOverlay.Children[0] as FrameworkElement;
@@ -22292,11 +22369,9 @@ namespace FamidashEditor
 
         private void UpdateCoords(Point p)
         {
-            // For fast zoom: use cachedScale since bitmaps are at that scale (transforms handle visual zoom)
-            double scale = ShouldUseTransformOnlyZoom() ? cachedScale : ((ZoomSlider != null) ? ZoomSlider.Value : 1.0);
+            double scale = GetMapRasterScale();
             double pad = mapViewportPadding;
-            // Determine whether pointer is inside the map area (accounting for padding)
-            bool inBounds = p.X >= pad && p.Y >= pad && p.X < pad + mapWidth * TileSize * scale && p.Y < pad + mapHeight * TileSize * scale;
+            bool inBounds = IsPointInsideMap(p);
             int x = -1, y = -1;
             if (inBounds)
             {
@@ -22332,11 +22407,13 @@ namespace FamidashEditor
                         // Compute left/top/size in device pixels and round to integer pixels
                         int leftPx = padPxX + x * tilePixelW;
                         int topPx = padPxY + y * tilePixelH + gridRenderShiftYPx;
-                        int sizePx = tilePixelH;
+                        int widthPx = tilePixelW;
+                        int heightPx = tilePixelH;
                         // Convert back to DIU after rounding (ensures pixel-aligned edges)
                         double left = (double)leftPx / dpi.DpiScaleX;
                         double top = (double)topPx / dpi.DpiScaleY;
-                        double size = (double)sizePx / dpi.DpiScaleY;
+                        double width = (double)widthPx / dpi.DpiScaleX;
+                        double height = (double)heightPx / dpi.DpiScaleY;
                         // Hide the Rectangle hover (legacy) and use the Border hover which draws border inside
                         try { if (HoverRect != null) HoverRect.Visibility = Visibility.Collapsed; } catch { }
                         if (HoverBorder != null)
@@ -22344,8 +22421,8 @@ namespace FamidashEditor
                             double strokeDiu = 1.0 / dpi.DpiScaleX;
                             double outerLeft = left - strokeDiu;
                             double outerTop = top - strokeDiu;
-                            double outerWidth = size + (2.0 * strokeDiu);
-                            double outerHeight = size + (2.0 * strokeDiu);
+                            double outerWidth = width + (2.0 * strokeDiu);
+                            double outerHeight = height + (2.0 * strokeDiu);
                             try
                             {
                                 HoverBorder.BorderThickness = new Thickness(strokeDiu);
@@ -22439,21 +22516,7 @@ namespace FamidashEditor
         {
             if (MapScrollViewer == null) return (-1, -1);
             var dpi = VisualTreeHelper.GetDpi(this);
-            // For fast zoom: use cachedScale since that's the actual bitmap scale (CanvasHost is transformed)
-            double scale = ShouldUseTransformOnlyZoom() ? cachedScale : ((ZoomSlider != null) ? ZoomSlider.Value : 1.0);
-            
-            // When fast zoom is active, CanvasHost has a LayoutTransform of (ZoomSlider.Value / cachedScale).
-            // e.GetPosition(CanvasHost) returns post-transform coordinates, so we need to reverse the transform
-            // to get back to bitmap coordinates.
-            if (ShouldUseTransformOnlyZoom() && ZoomSlider != null && cachedScale > 0)
-            {
-                double transformScale = ZoomSlider.Value / cachedScale;
-                if (Math.Abs(transformScale - 1.0) > 1e-6)
-                {
-                    vp.X /= transformScale;
-                    vp.Y /= transformScale;
-                }
-            }
+            double scale = GetMapRasterScale();
             
             int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
             int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
@@ -22465,14 +22528,17 @@ namespace FamidashEditor
             // (callers pass CanvasHost positions via e.GetPosition(CanvasHost)).
             double contentDiuX = vp.X;
             double contentDiuY = vp.Y;
-            // Convert to device pixels and round to nearest device pixel so we match the grid rendering which uses integer pixels
-            double contentPxX = Math.Round(contentDiuX * dpi.DpiScaleX);
-            double contentPxY = Math.Round(contentDiuY * dpi.DpiScaleY);
+            // GetPosition(CanvasHost) already accounts for LayoutTransform and
+            // returns local coordinates. Do not reverse the zoom again. Preserve
+            // the fractional device position so the half pixel before a boundary
+            // still belongs to the tile that is visibly under the pointer.
+            double contentPxX = contentDiuX * dpi.DpiScaleX;
+            double contentPxY = contentDiuY * dpi.DpiScaleY;
             // Account for any integer-pixel grid Y shift applied during CommitZoom
             int shiftY = gridRenderShiftYPx;
             // Compute tile indices using post-rounding device-pixel math then floor to integer tile index.
-            int tx = (int)Math.Floor((contentPxX - padPxX) / (double)tilePixelW + 1e-9);
-            int ty = (int)Math.Floor((contentPxY - padPxY - shiftY) / (double)tilePixelH + 1e-9);
+            int tx = (int)Math.Floor((contentPxX - padPxX) / tilePixelW);
+            int ty = (int)Math.Floor((contentPxY - padPxY - shiftY) / tilePixelH);
             if (tx < 0) tx = 0; if (tx >= mapWidth) tx = mapWidth - 1;
             if (ty < 0) ty = 0; if (ty >= mapHeight) ty = mapHeight - 1;
             return (tx, ty);
@@ -22611,35 +22677,25 @@ namespace FamidashEditor
                     System.Diagnostics.Debug.WriteLine($"[PINCH] pinchDirectionDetected={pinchDirectionDetected} invertPinchGesture={invertPinchGesture} ratio={ratio}");
                     var dpi = VisualTreeHelper.GetDpi(this);
                     var mouseVp = Mouse.GetPosition(MapScrollViewer);
-                    double hp = (MapScrollViewer?.HorizontalOffset ?? 0);
-                    double vp = (MapScrollViewer?.VerticalOffset ?? 0);
-
-                    // Tile pixel sizes and padding in device pixels (match rendering code)
-                    int tilePixelW_old = Math.Max(1, (int)Math.Ceiling(TileSize * oldScale * dpi.DpiScaleX));
-                    int tilePixelH_old = Math.Max(1, (int)Math.Ceiling(TileSize * oldScale * dpi.DpiScaleY));
-                    int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
-                    int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
-
-                    // Content position under cursor in device pixels
-                    double contentPxX = (hp + mouseVp.X) * dpi.DpiScaleX;
-                    double contentPxY = (vp + mouseVp.Y) * dpi.DpiScaleY;
-
-                    // Map coordinates in tile-space (fractional) based on old tile pixels
-                    double mapX = (contentPxX - padPxX) / (double)tilePixelW_old;
-                    double mapY = (contentPxY - padPxY) / (double)tilePixelH_old;
+                    Point local = CanvasHost != null
+                        ? Mouse.GetPosition(CanvasHost)
+                        : new Point(mapViewportPadding, mapViewportPadding);
+                    double rasterScale = GetMapRasterScale();
+                    double mapX = (local.X - mapViewportPadding) / (TileSize * rasterScale);
+                    double mapY = (local.Y - mapViewportPadding - gridRenderShiftY) / (TileSize * rasterScale);
+                    double contentPxX = local.X * GetMapZoomTransformScale() * dpi.DpiScaleX;
+                    double contentPxY = local.Y * GetMapZoomTransformScale() * dpi.DpiScaleY;
 
                     // Record zoom anchor (viewport and map coords) so CommitZoom can preserve the point under cursor
                     try { zoomAnchorViewportX = mouseVp.X; zoomAnchorViewportY = mouseVp.Y; zoomAnchorMapX = mapX; zoomAnchorMapY = mapY; hasZoomAnchor = true; } catch { hasZoomAnchor = false; }
 
-                    // New tile pixel sizes for newZoom
-                    int tilePixelW_new = Math.Max(1, (int)Math.Ceiling(TileSize * newZoom * dpi.DpiScaleX));
-                    int tilePixelH_new = Math.Max(1, (int)Math.Ceiling(TileSize * newZoom * dpi.DpiScaleY));
-
-                    // Compute new content position in device pixels and round to integer pixels
-                    double newContentPxX_d = padPxX + mapX * tilePixelW_new;
-                    double newContentPxY_d = padPxY + mapY * tilePixelH_new;
-                    int newContentPxX = (int)Math.Round(newContentPxX_d);
-                    int newContentPxY = (int)Math.Round(newContentPxY_d);
+                    double newFactor = newZoom / rasterScale;
+                    double newContentX = newFactor *
+                        (mapViewportPadding + mapX * TileSize * rasterScale);
+                    double newContentY = newFactor *
+                        (mapViewportPadding + gridRenderShiftY + mapY * TileSize * rasterScale);
+                    int newContentPxX = (int)Math.Round(newContentX * dpi.DpiScaleX);
+                    int newContentPxY = (int)Math.Round(newContentY * dpi.DpiScaleY);
 
                     // Emit debug info to Output window and brief UI status to help reproduction
                     try
@@ -22702,17 +22758,19 @@ namespace FamidashEditor
 
                     // Record zoom anchor so CommitZoom can preserve the point under the cursor
                     try { zoomAnchorViewportX = mouseVp.X; zoomAnchorViewportY = mouseVp.Y; zoomAnchorMapX = mapX; zoomAnchorMapY = mapY; hasZoomAnchor = true; } catch { hasZoomAnchor = false; }
-                    // Apply new zoom value
+                    // Apply new zoom value without letting ValueChanged replace the
+                    // pre-zoom anchor captured above.
+                    isSnappingZoom = true;
                     if (ZoomSlider != null) ZoomSlider.Value = newZoom;
+                    isSnappingZoom = false;
 
-                    // Convert new content pixel position back to DIU and compute scroll offsets so cursor remains over same world point
-                    double newContentX = (double)newContentPxX / dpi.DpiScaleX;
-                    double newContentY = (double)newContentPxY / dpi.DpiScaleY;
+                    // Compute scroll offsets so the same world point remains under the cursor.
                     double newH = newContentX - mouseVp.X;
                     double newV = newContentY - mouseVp.Y;
 
-                    double maxH = Math.Max(0, (CanvasHost?.ActualWidth ?? 0) - SafeViewportWidth());
-                    double maxV = Math.Max(0, (CanvasHost?.ActualHeight ?? 0) - SafeViewportHeight());
+                    try { MapScrollViewer?.UpdateLayout(); } catch { }
+                    double maxH = Math.Max(0, MapScrollViewer?.ScrollableWidth ?? 0);
+                    double maxV = Math.Max(0, MapScrollViewer?.ScrollableHeight ?? 0);
                     newH = Math.Max(0, Math.Min(maxH, newH));
                     newV = Math.Max(0, Math.Min(maxV, newV));
 
@@ -22728,42 +22786,6 @@ namespace FamidashEditor
                     try { UpdateParallaxTransform(); } catch { }
                     try { UpdateCoords(Mouse.GetPosition(CanvasHost)); } catch { }
 
-                    // Additionally, explicitly align the hover overlay to the computed tile
-                    try
-                    {
-                        // Compute tile indices using the post-zoom integer device-pixel content position
-                        int tx = (int)Math.Floor((newContentPxX - padPxX) / (double)tilePixelW_new + 1e-9);
-                        int ty = (int)Math.Floor((newContentPxY - padPxY) / (double)tilePixelH_new + 1e-9);
-                        if (tx < 0) tx = 0; if (tx >= mapWidth) tx = mapWidth - 1;
-                        if (ty < 0) ty = 0; if (ty >= mapHeight) ty = mapHeight - 1;
-                        lastHoverX = tx; lastHoverY = ty;
-                        if (HoverBorder != null)
-                        {
-                            // compute hover position in device pixels using new tile pixel sizes
-                            int leftPx = padPxX + tx * tilePixelW_new;
-                            int topPx = padPxY + ty * tilePixelH_new + gridRenderShiftYPx;
-                            int sizePx = tilePixelH_new;
-                            double left = (double)leftPx / dpi.DpiScaleX;
-                            double top = (double)topPx / dpi.DpiScaleY;
-                            double size = (double)sizePx / dpi.DpiScaleY;
-                            double strokeDiu = 1.0 / dpi.DpiScaleX;
-                            double outerLeft = left - strokeDiu;
-                            double outerTop = top - strokeDiu;
-                            double outerWidth = size + (2.0 * strokeDiu);
-                            double outerHeight = size + (2.0 * strokeDiu);
-                            try
-                            {
-                                HoverBorder.BorderThickness = new Thickness(strokeDiu);
-                                HoverBorder.Width = outerWidth;
-                                HoverBorder.Height = outerHeight;
-                                Canvas.SetLeft(HoverBorder, outerLeft);
-                                Canvas.SetTop(HoverBorder, outerTop);
-                                HoverBorder.Visibility = Visibility.Visible;
-                            }
-                            catch { }
-                        }
-                    }
-                    catch { }
                 }
                 catch
                 {
@@ -23225,6 +23247,7 @@ namespace FamidashEditor
                 if (settingsWin.ShowDialog() != true)
                     return;
                 double jumpTimingBias = settingsWin.JumpTimingBias;
+                bool useFastSearch = settingsWin.UseFastSearch;
                 bool preferCoins = settingsWin.PreferCoins;
                 bool drawPathLine = settingsWin.DrawPathLine;
                 bool showPathfinderLive = settingsWin.ShowPathfinderLive;
@@ -23332,6 +23355,7 @@ namespace FamidashEditor
                         engine.LevelName = pathfinderLevelName;
                         engine.EnableLogging = enablePathfinderLogging;
                         engine.JumpTimingBias = jumpTimingBias;
+                        engine.UseFastSearch = useFastSearch;
                         engine.PreferCoins = preferCoins;
                         engine.ForcePlatformer = forcePlatformer;
                         engine.UseBFS = preferCoins || forcePlatformer; // platformer requires directional BFS
@@ -23406,7 +23430,7 @@ namespace FamidashEditor
 
                                             if (pathSnapshot == null || pathSnapshot.Count == 0) return;
 
-                                            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                                            double scale = GetMapRasterScale();
                                             double pad = mapViewportPadding;
 
                                             // Mode-aware styling for denser decision showcase.
@@ -23744,12 +23768,12 @@ namespace FamidashEditor
                     return;
                 }
                 int xPx = engine.CurrentX_px;
-                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-                double pad = mapViewportPadding;
-                double canvasX = pad + xPx * scale;
+                double rasterScale = GetMapRasterScale();
+                double factor = GetMapZoomTransformScale();
+                double canvasX = factor * (mapViewportPadding + xPx * rasterScale);
                 double viewportW = SafeViewportWidth();
                 double newH = Math.Max(0, canvasX - viewportW / 2.0);
-                double maxH = Math.Max(0, (CanvasHost?.ActualWidth ?? 0) - viewportW);
+                double maxH = Math.Max(0, MapScrollViewer.ScrollableWidth);
                 if (newH > maxH) newH = maxH;
                 MapScrollViewer.ScrollToHorizontalOffset(newH);
             }

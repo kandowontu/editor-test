@@ -6,9 +6,11 @@ using System.Text.RegularExpressions;
 using FamidashEditor;
 
 // Quick console harness to run PathfinderEngine on a TMX file.
-// Usage: dotnet run -- <path-to-tmx> [jumpTimingBias] [--coins]
+// Usage: dotnet run -- <path-to-tmx> [jumpTimingBias] [--coins] [--no-fast|--fast-only]
 //   jumpTimingBias: 0.0=earliest, 0.25=early, 0.5=middle, 0.75=late, 1.0=latest
 //   --coins: enable coin collection mode (pathfinder seeks coins)
+//   --no-fast: skip the bounded exact-state beam and run exhaustive BFS directly
+//   --fast-only: run only the bounded tier (useful for search-width diagnostics)
 //   startingSpeed and maxFallSpeed are read from lvlset_HUGE_metadata.json5 automatically
 //
 // Sprite offsets are loaded from (in priority order):
@@ -18,6 +20,8 @@ using FamidashEditor;
 // Parse --coins flag (can appear anywhere in args)
 bool preferCoins = args.Any(a => a.Equals("--coins", StringComparison.OrdinalIgnoreCase));
 bool useBfs = args.Any(a => a.Equals("--bfs", StringComparison.OrdinalIgnoreCase));
+bool useFastSearch = !args.Any(a => a.Equals("--no-fast", StringComparison.OrdinalIgnoreCase));
+bool fastSearchOnly = args.Any(a => a.Equals("--fast-only", StringComparison.OrdinalIgnoreCase));
 string? probeArg = args.FirstOrDefault(a => a.StartsWith("--probe", StringComparison.OrdinalIgnoreCase));
 bool useProbe = probeArg != null;
 string? tasInputFile = null;
@@ -343,6 +347,8 @@ var engine = new PathfinderEngine(
     nesSpriteRecords);
 engine.LevelName = tmxPath;
 engine.JumpTimingBias = jumpTimingBias;
+engine.UseFastSearch = useFastSearch;
+engine.FastSearchOnly = fastSearchOnly;
 engine.PreferCoins = preferCoins;
 engine.ForcePlatformer = forcePlatformer;
 engine.UseBFS = useBfs || preferCoins || forcePlatformer;

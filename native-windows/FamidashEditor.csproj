@@ -370,31 +370,11 @@
     <EmbeddedResource Include="..\ball.png" />
     <EmbeddedResource Include="..\ball2.png" />
     <EmbeddedResource Include="..\ufo.png" />
-    <!-- Tileset block variations - moved to src/renderer for embedding -->
-    <EmbeddedResource Include="..\src\renderer\BlocksaSpikesaSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\src\renderer\BlocksaSpikesaSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\src\renderer\BlocksaSpikesbSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\src\renderer\BlocksaSpikesbSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\src\renderer\BlocksaSpikescSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\src\renderer\BlocksaSpikescSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\src\renderer\BlocksbSpikesaSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\src\renderer\BlocksbSpikesaSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\src\renderer\BlocksbSpikesbSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\src\renderer\BlocksbSpikesbSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\src\renderer\BlocksbSpikescSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\src\renderer\BlocksbSpikescSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\src\renderer\BlockscSpikesaSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\src\renderer\BlockscSpikesaSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\src\renderer\BlockscSpikesbSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\src\renderer\BlockscSpikesbSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\src\renderer\BlockscSpikescSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\src\renderer\BlockscSpikescSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\src\renderer\BlocksdSpikesaSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\src\renderer\BlocksdSpikesaSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\src\renderer\BlocksdSpikesbSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\src\renderer\BlocksdSpikesbSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\src\renderer\BlocksdSpikescSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\src\renderer\BlocksdSpikescSawsaSlopesnone.png" />
+    <!-- Authoritative alternate tilesets. Give these a stable namespace so the
+         runtime can distinguish them from unrelated embedded PNG resources. -->
+    <EmbeddedResource Include="..\tilesets\*.png">
+      <LogicalName>Tilesets.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
   <!-- If present, copy pre-parsed FamiStudio album JSON and probe results into the build output
        so the runtime (launched from bin) can find them without additional configuration. -->

@@ -161,6 +161,7 @@
                     <Separator />
                     <MenuItem Header="Mesen (NES)">
                             <MenuItem x:Name="MenuConfigureFamidashRom" Header="Configure Famidash ROM..." />
+                            <MenuItem x:Name="MenuMesenMusicLibrary" Header="Custom Music Library..." />
                             <Separator />
                             <MenuItem x:Name="MenuRunFamidashMesen" Header="Run Famidash In Mesen" />
                             <MenuItem x:Name="MenuCaptureRamMesen" Header="Capture NES RAM (Headless)" />
@@ -190,8 +191,8 @@
                     </MenuItem>
                     <MenuItem x:Name="MenuColorPlayerTint" Header="Player Color..." />
                     <MenuItem Header="FamiStudio">
+                        <MenuItem x:Name="MenuScanFamiStudioTracks" Header="Custom Music Library..." />
                         <MenuItem x:Name="MenuConfigureFamiStudio" Header="Configure FamiStudio..." />
-                            <MenuItem x:Name="MenuScanFamiStudioTracks" Header="Load User FMS..." />
                     </MenuItem>
                     <MenuItem Header="Level Options">
                         <MenuItem x:Name="MenuColorBackgroundTint" Header="Background Tint..." />
@@ -405,15 +406,15 @@
 
         <ScrollViewer x:Name="MapScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" 
                       IsManipulationEnabled="True">
-            <Grid x:Name="MapContentRoot">
+            <Grid x:Name="MapContentRoot" RenderOptions.BitmapScalingMode="NearestNeighbor">
                 <!-- Background base, Parallax, Ground, Tiles layer, Sprites layer, Grid overlay -->
-                <Image x:Name="BackgroundImage" Panel.ZIndex="0" />
-                <Image x:Name="ParallaxImage" Panel.ZIndex="1" />
-                <Image x:Name="GroundImage" Panel.ZIndex="2" />
-                <Image x:Name="TilesImage" Panel.ZIndex="3" />
-                <Image x:Name="PortalsImage" Panel.ZIndex="4" />
-                <Image x:Name="SpritesImage" Panel.ZIndex="5" />
-                <Image x:Name="GridImage" Panel.ZIndex="6" />
+                <Image x:Name="BackgroundImage" Panel.ZIndex="0" Stretch="Fill" RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                <Image x:Name="ParallaxImage" Panel.ZIndex="1" Stretch="Fill" RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                <Image x:Name="GroundImage" Panel.ZIndex="2" Stretch="Fill" RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                <Image x:Name="TilesImage" Panel.ZIndex="3" Stretch="Fill" RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                <Image x:Name="PortalsImage" Panel.ZIndex="4" Stretch="Fill" RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                <Image x:Name="SpritesImage" Panel.ZIndex="5" Stretch="Fill" RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                <Image x:Name="GridImage" Panel.ZIndex="6" Stretch="Fill" RenderOptions.BitmapScalingMode="NearestNeighbor" />
                 <Canvas x:Name="CanvasHost" Background="Transparent" Panel.ZIndex="7">
                     <!-- Hover rectangle: shown while mouse is over a tile -->
                     <Rectangle x:Name="HoverRect" Fill="#28FFFF00" Stroke="Yellow" StrokeThickness="1" Visibility="Collapsed" IsHitTestVisible="False" SnapsToDevicePixels="True" />

@@ -4,7 +4,7 @@ and output a JSON file containing parsed song names to be consumed
 by the editor at startup so it doesn't need to parse the big text file.
 
 Usage:
-  .\parse-famistudio-album.ps1 -Input "C:\Editor Test\the album.txt" -Output "native-windows\fami-album-parsed.json"
+  .\parse-famistudio-album.ps1 -InputPath "C:\Music\album.txt" -OutputPath "native-windows\fami-album-parsed.json"
 #>
 param(
     [string]$InputPath = "the album.txt",
@@ -44,15 +44,6 @@ for ($i = 0; $i -lt $lines.Count; $i++) {
 }
 
 # If we didn't find any Song blocks (older exports), fall back to looking for Song token markers like 'Song:' or 'Song='
-if ($result.Count -eq 0) {
-    $matches = [regex]::Matches((Get-Content $Input -Raw), 'Song\s*[:=]\s*"?([A-Za-z0-9 _-]{1,120})"?', 'IgnoreCase')
-    foreach ($m in $matches) {
-        $v = $m.Groups[1].Value.Trim()
-        if ($v -and -not ($result.Contains($v))) { $result.Add($v) }
-    }
-}
-
-# Fallback: if none found, try to extract some tokens that look like songs
 if ($result.Count -eq 0) {
     $matches = [regex]::Matches((Get-Content $InputPath -Raw), 'Song\s*[:=]\s*"?([A-Za-z0-9 _-]{1,120})"?', 'IgnoreCase')
     foreach ($m in $matches) {

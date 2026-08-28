@@ -22,6 +22,12 @@ namespace FamidashEditor
         public bool PreferCoins { get; private set; } = true;
 
         /// <summary>
+		/// Try a bounded exact-state beam before the exhaustive BFS. A failed or
+		/// incomplete attempt always falls through to the full search.
+        /// </summary>
+        public bool UseFastSearch { get; private set; } = true;
+
+        /// <summary>
         /// True if the path line should be drawn on the map when calculation completes.
         /// </summary>
         public bool DrawPathLine { get; private set; } = true;
@@ -86,6 +92,7 @@ namespace FamidashEditor
             else if (OptLatest.IsChecked == true) JumpTimingBias = 1.0;
 
             Confirmed = true;
+            UseFastSearch = (ChkFastSearch.IsChecked == true);
             PreferCoins = (ChkPreferCoins.IsChecked == true);
             DrawPathLine = (ChkDrawPathLine.IsChecked == true);
             ShowPathfinderLive = (ChkShowLive.IsChecked == true);

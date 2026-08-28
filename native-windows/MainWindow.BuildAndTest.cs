@@ -128,6 +128,10 @@ namespace FamidashEditor
                 string simRoot = await Task.Run(() => LocalRuntimeFolders.EnsureSimFamidashFolder());
                 SimFamidashPaths simPaths = GetSimFamidashPaths(simRoot);
 
+                // Keep the release-local Mesen source in sync with the selected music library.
+                // The metadata decides the destination module filename (album.fms, the album.fms, etc.).
+                StageConfiguredMusicAlbumForBuild(simPaths);
+
                 // --- A) Copy TMX ---
                 Directory.CreateDirectory(simPaths.LevelsFolder);
                 string destTmx = Path.Combine(simPaths.LevelsFolder, Path.GetFileName(tmxPath));

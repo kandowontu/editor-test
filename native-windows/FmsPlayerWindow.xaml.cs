@@ -25,17 +25,6 @@ namespace FamidashEditor
             BtnStop.Click += BtnStop_Click;
 
             UpdateUiState();
-
-            // Auto-load a known album file on startup if present
-            try
-            {
-                var auto = @"C:\Editor Test\the album.fms";
-                if (File.Exists(auto))
-                {
-                    LoadFms(auto);
-                }
-            }
-            catch { }
         }
 
         private void UpdateUiState()
@@ -91,17 +80,6 @@ namespace FamidashEditor
                 {
                         if (!fami.IsLoaded)
                         {
-                            // First try a known repo location (useful when running from VS/debug folder)
-                            try
-                            {
-                                var known = @"C:\Editor Test\native-windows\libs\famistudio";
-                                if (Directory.Exists(known))
-                                {
-                                    fami.LoadFromFolder(known);
-                                }
-                            }
-                            catch { }
-
                             // Try common candidate relative to the app base
                             string candidate = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "libs", "famistudio");
                             if (Directory.Exists(candidate))
@@ -155,6 +133,16 @@ namespace FamidashEditor
 
                                 dir = dir.Parent;
                             }
+
+                            if (!loaded)
+                            {
+                                try
+                                {
+                                    string installed = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "FamiStudio");
+                                    if (Directory.Exists(installed)) fami.LoadFromFolder(installed);
+                                }
+                                catch { }
+                            }
                         }
                     }
 
@@ -194,13 +182,14 @@ namespace FamidashEditor
             if (currentFmsPath == null) return;
             int trackIndex = ComboTracks.SelectedIndex;
             if (trackIndex < 0) trackIndex = 0;
+            string? trackName = ComboTracks.SelectedItem?.ToString();
 
             TxtStatus.Text = "Playing...";
             UpdateUiState();
 
             try
             {
-                await Task.Run(() => fami.PlayTrack(currentFmsPath, trackIndex));
+                await Task.Run(() => fami.PlayTrack(currentFmsPath, trackIndex, trackName));
             }
             catch (Exception ex)
             {

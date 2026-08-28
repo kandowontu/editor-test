@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -8,6 +9,7 @@ using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace FamidashEditor;
@@ -84,6 +86,64 @@ public sealed class PathfinderReplayFrame
 
 public class PathfinderEngine
 {
+	/// <summary>
+	/// A tiny exact-length pool for the fixed NES runtime arrays copied by every
+	/// search branch. ArrayPool may return a larger array, while several parity
+	/// loops intentionally use Length; this pool therefore guarantees that the
+	/// observable array length remains exactly 16 or 3.
+	/// </summary>
+	private sealed class ExactArrayPool<T>
+	{
+		private readonly ConcurrentBag<T[]> _items = new();
+		private readonly int _length;
+		private readonly int _maxRetained;
+		private int _retained;
+
+		public ExactArrayPool(int length, int maxRetained)
+		{
+			_length = length;
+			_maxRetained = maxRetained;
+		}
+
+		public T[] Rent(bool clear)
+		{
+			if (!_items.TryTake(out T[]? array))
+				array = new T[_length];
+			else
+				Interlocked.Decrement(ref _retained);
+			if (clear)
+				Array.Clear(array, 0, array.Length);
+			return array;
+		}
+
+		public T[] RentCopy(T[] source)
+		{
+			T[] copy = Rent(clear: false);
+			Array.Copy(source, 0, copy, 0, _length);
+			return copy;
+		}
+
+		public void Return(T[]? array)
+		{
+			if (array == null || array.Length != _length)
+				return;
+			if (Interlocked.Increment(ref _retained) <= _maxRetained)
+			{
+				_items.Add(array);
+				return;
+			}
+			Interlocked.Decrement(ref _retained);
+		}
+	}
+
+	// A coin BFS state owns four int[16], two bool[16], and two int[3] arrays.
+	// Retain enough returned bundles to feed the next 120k-state generation;
+	// otherwise later frames resume allocating hundreds of thousands of tiny
+	// arrays. Every child still owns an independent mutable copy.
+	private static readonly ExactArrayPool<int> s_nesInt16Pool = new(16, 1_200_000);
+	private static readonly ExactArrayPool<bool> s_nesBool16Pool = new(16, 600_000);
+	private static readonly ExactArrayPool<int> s_coinInt3Pool = new(3, 600_000);
+
 	private class BacktrackCheckpoint
 	{
 		public SimState State;
@@ -165,8 +225,15 @@ public class PathfinderEngine
 
 		public int TargetXScrollStop_fixed;
 
-		// Search provenance only; deliberately excluded from state hashing.
+		// Search provenance only. Platformer BFS includes a coarse form of this in
+		// its search key so bounded pruning cannot erase a committed retreat route;
+		// it is not part of NES physics/runtime identity.
 		public sbyte SearchDirectionUsed;
+
+		// Consecutive platformer movement in SearchDirectionUsed. This is also
+		// search provenance, used only to keep committed retreat routes alive when
+		// the bounded frontier is grouped into coarse spatial buckets.
+		public byte SearchDirectionRun;
 
 		public int Y_fixed;
 
@@ -480,15 +547,15 @@ public class PathfinderEngine
 			result.ProcessedSprites = ProcessedSprites.Clone();
 			if (NesSlots != null)
 			{
-				result.NesSlots = (int[])NesSlots.Clone();
-				result.NesSlotDead = (bool[])NesSlotDead.Clone();
-				result.NesSlotActive = (bool[])NesSlotActive.Clone();
-				result.NesSlotWorldY = (int[])NesSlotWorldY.Clone();
-				result.NesSlotRealX = (int[])NesSlotRealX.Clone();
-				result.NesSlotRealY = (int[])NesSlotRealY.Clone();
+				result.NesSlots = s_nesInt16Pool.RentCopy(NesSlots);
+				result.NesSlotDead = s_nesBool16Pool.RentCopy(NesSlotDead);
+				result.NesSlotActive = s_nesBool16Pool.RentCopy(NesSlotActive);
+				result.NesSlotWorldY = s_nesInt16Pool.RentCopy(NesSlotWorldY);
+				result.NesSlotRealX = s_nesInt16Pool.RentCopy(NesSlotRealX);
+				result.NesSlotRealY = s_nesInt16Pool.RentCopy(NesSlotRealY);
 			}
-			if (CoinTimer != null) result.CoinTimer = (int[])CoinTimer.Clone();
-			if (CoinSpeed != null) result.CoinSpeed = (int[])CoinSpeed.Clone();
+			if (CoinTimer != null) result.CoinTimer = s_coinInt3Pool.RentCopy(CoinTimer);
+			if (CoinSpeed != null) result.CoinSpeed = s_coinInt3Pool.RentCopy(CoinSpeed);
 			return result;
 		}
 
@@ -509,11 +576,36 @@ public class PathfinderEngine
 		public void ReturnAllSpriteResources()
 		{
 			ProcessedSprites.Return();
+			if (NesSlots != null)
+			{
+				s_nesInt16Pool.Return(NesSlots);
+				s_nesBool16Pool.Return(NesSlotDead);
+				s_nesBool16Pool.Return(NesSlotActive);
+				s_nesInt16Pool.Return(NesSlotWorldY);
+				s_nesInt16Pool.Return(NesSlotRealX);
+				s_nesInt16Pool.Return(NesSlotRealY);
+				NesSlots = null!;
+				NesSlotDead = null!;
+				NesSlotActive = null!;
+				NesSlotWorldY = null!;
+				NesSlotRealX = null!;
+				NesSlotRealY = null!;
+			}
+			if (CoinTimer != null)
+			{
+				s_coinInt3Pool.Return(CoinTimer);
+				CoinTimer = null!;
+			}
+			if (CoinSpeed != null)
+			{
+				s_coinInt3Pool.Return(CoinSpeed);
+				CoinSpeed = null!;
+			}
 			if (RainbowShadows != null)
 			{
 				for (int i = 0; i < RainbowShadows.Length; i++)
 				{
-					RainbowShadows[i].ProcessedSprites.Return();
+					RainbowShadows[i].ReturnAllSpriteResources();
 				}
 				RainbowShadows = null;
 			}
@@ -530,6 +622,7 @@ public class PathfinderEngine
 		int TargetCameraYFixed,
 		int ScrollYSubpx,
 		int NesSprDataPtr,
+		int SearchRoute,
 		long RuntimeHash);
 
 	private readonly record struct BfsTransitionPortal(
@@ -1150,6 +1243,17 @@ public class PathfinderEngine
 	public bool UseBFS { get; set; }
 
 	/// <summary>
+	/// Run a narrow exact-state beam for a short time before exhaustive BFS. Only
+	/// a canonically replayed completion is accepted; every failure falls through
+	/// to the full search, so enabling this cannot remove a BFS-reachable path.
+	/// </summary>
+	public bool UseFastSearch { get; set; } = true;
+
+	// Standalone-runner diagnostic: stop after the bounded exact pass instead of
+	// starting exhaustive BFS. The editor never enables this.
+	public bool FastSearchOnly { get; set; }
+
+	/// <summary>
 	/// Mirrors the NES force_platformer level flag. Platformer is not a new
 	/// game mode: it replaces automatic X movement with left/neutral/right
 	/// input while retaining the active cube/ship/etc. vertical mechanics.
@@ -1221,6 +1325,7 @@ public class PathfinderEngine
 		s.CurrXScrollStop_fixed = 0x5000;
 		s.TargetXScrollStop_fixed = 0x5000;
 		s.SearchDirectionUsed = 0;
+		s.SearchDirectionRun = 0;
 	}
 
 	private void ProcessPlatformerXScroll(ref SimState s)
@@ -1251,6 +1356,11 @@ public class PathfinderEngine
 	{
 		lethal = false;
 		direction = direction < 0 ? (sbyte)-1 : direction > 0 ? (sbyte)1 : (sbyte)0;
+		s.SearchDirectionRun = direction != 0
+			? (byte)(direction == s.SearchDirectionUsed
+				? Math.Min(31, s.SearchDirectionRun + 1)
+				: 1)
+			: (byte)0;
 		s.SearchDirectionUsed = direction;
 
 		int hitboxW = (s.GameMode == 6 || s.GameMode == 10)
@@ -2787,14 +2897,14 @@ public class PathfinderEngine
 
 	private void InitNesSlots(ref SimState s)
 	{
-		s.NesSlots = new int[16];
-		s.NesSlotDead = new bool[16];
-		s.NesSlotActive = new bool[16];
-		s.NesSlotWorldY = new int[16];
-		s.NesSlotRealX = new int[16];
-		s.NesSlotRealY = new int[16];
-		s.CoinTimer = new int[3];
-		s.CoinSpeed = new int[3];
+		s.NesSlots = s_nesInt16Pool.Rent(clear: true);
+		s.NesSlotDead = s_nesBool16Pool.Rent(clear: true);
+		s.NesSlotActive = s_nesBool16Pool.Rent(clear: true);
+		s.NesSlotWorldY = s_nesInt16Pool.Rent(clear: true);
+		s.NesSlotRealX = s_nesInt16Pool.Rent(clear: true);
+		s.NesSlotRealY = s_nesInt16Pool.Rent(clear: true);
+		s.CoinTimer = s_coinInt3Pool.Rent(clear: true);
+		s.CoinSpeed = s_coinInt3Pool.Rent(clear: true);
 		s.CoinAnimating = false;
 		for (int i = 0; i < 16; i++) s.NesSlots[i] = -1;
 		s.NesSprDataPtr = 0;
@@ -2986,6 +3096,60 @@ public class PathfinderEngine
 		Stopwatch stopwatch = Stopwatch.StartNew();
 		double jumpTimingBias = JumpTimingBias;
 		_autoForgivenCoins.Clear();
+
+		// First run a very narrow beam through the exact BFS transition engine. This
+		// often finds an easy route without paying for the full frontier. It is safe
+		// to prune here because every incomplete result falls through to the original
+		// exhaustive BFS with its normal frontier and route-recovery behavior.
+		bool canUseFastSearch = UseFastSearch &&
+			(DebugBfsPrefixInputs == null || DebugBfsPrefixInputs.Count == 0);
+		if (canUseFastSearch)
+		{
+			int fastBudgetMs = GetFastSearchBudgetMs();
+			int fastFrontierCap = GetFastSearchFrontierCap();
+			long fastDeadline = Stopwatch.GetTimestamp() + Math.Max(1L,
+				(long)(Stopwatch.Frequency * (fastBudgetMs / 1000.0)));
+			_log.WriteLine($"[FAST] Parallel exact-state beam, budget={fastBudgetMs}ms " +
+				$"frontier={fastFrontierCap}");
+			RunBFS(startX_px, startY_px, startSpeedUiIndex, startGameMode,
+				startGravFlipped, startMini, fastFrontierCap, fastDeadline);
+
+			bool collectedEveryCoin = !PreferCoins || allCoins.Count == 0 ||
+				FinalCollectedCoinIndices?.Count == allCoins.Count;
+			if (Success && collectedEveryCoin && Inputs.Count > 0)
+			{
+				stopwatch.Stop();
+				_log.WriteLine("[FAST] Canonical replay completed; full BFS not required");
+				return;
+			}
+			else if (Success && !collectedEveryCoin)
+			{
+				_log.WriteLine($"[FAST] Completed with " +
+					$"{FinalCollectedCoinIndices?.Count ?? 0}/{allCoins.Count} coins; " +
+					"starting BFS for the full coin objective");
+			}
+			else
+			{
+				_log.WriteLine("[FAST] No complete beam replay within budget; starting full BFS");
+			}
+			if (FastSearchOnly)
+			{
+				stopwatch.Stop();
+				if (!collectedEveryCoin)
+				{
+					Success = false;
+					ResultMessage = $"Fast exact search collected " +
+						$"{FinalCollectedCoinIndices?.Count ?? 0}/{allCoins.Count} coins";
+				}
+				return;
+			}
+
+			// Never expose a partial bounded result as the BFS result.
+			Success = false;
+			FinalCollectedCoinIndices = null;
+			ReplayFrames.Clear();
+			_autoForgivenCoins.Clear();
+		}
 		RunBFS(startX_px, startY_px, startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
 		if (Success || UseBFS)
 		{
@@ -3540,6 +3704,26 @@ public class PathfinderEngine
 			flag = input;
 		}
 		return num;
+	}
+
+	private static int GetFastSearchBudgetMs()
+	{
+		if (int.TryParse(Environment.GetEnvironmentVariable(
+			"FAMIDASH_FAST_SEARCH_MS"), out int configured))
+		{
+			return Math.Clamp(configured, 250, 60000);
+		}
+		return 15000;
+	}
+
+	private static int GetFastSearchFrontierCap()
+	{
+		if (int.TryParse(Environment.GetEnvironmentVariable(
+			"FAMIDASH_FAST_FRONTIER"), out int configured))
+		{
+			return Math.Clamp(configured, 4, 32768);
+		}
+		return 256;
 	}
 
 	private void RunSingleAttempt(int startX_px, int startY_px, int startSpeedUiIndex, int startGameMode, bool startGravFlipped, bool startMini)
@@ -4402,6 +4586,7 @@ public class PathfinderEngine
 
 	private BfsDedupKey BuildBfsDedupKey(ref SimState s)
 	{
+		int searchRoute = ForcePlatformer ? BfsPlatformerDirectionClass(in s) : 0;
 		return new BfsDedupKey(
 			BfsQuantizeKey(ref s),
 			s.X_fixed,
@@ -4412,6 +4597,7 @@ public class PathfinderEngine
 			s.TargetCameraY_fixed,
 			s.ScrollYSubpx,
 			s.NesSprDataPtr,
+			searchRoute,
 			BfsRuntimeHash(ref s));
 	}
 
@@ -5707,7 +5893,26 @@ public class PathfinderEngine
 		if (!ForcePlatformer)
 			return yBucket;
 		int xBucket = (s.X_fixed >> 8) / 32;
-		return (xBucket << 16) ^ (yBucket & 0xFFFF);
+		// A left branch needs several consecutive frames to leave its current
+		// 32-pixel X bucket. If direction is omitted, the higher-scoring right or
+		// neutral state wins this bucket every frame and the left run never forms.
+		// Direction and a logarithmic commitment class are search provenance only.
+		// The commitment class prevents a state that just tapped left from replacing
+		// every state that has walked left for many frames but remains in the same
+		// coarse X/Y bucket.
+		int directionClass = BfsPlatformerDirectionClass(in s);
+		return (xBucket << 20) ^ ((yBucket & 0xFFFF) << 4) ^ directionClass;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static int BfsPlatformerDirectionClass(in SimState s)
+	{
+		int commitmentClass = s.SearchDirectionRun >= 16 ? 4
+			: s.SearchDirectionRun >= 8 ? 3
+			: s.SearchDirectionRun >= 4 ? 2
+			: s.SearchDirectionRun >= 2 ? 1
+			: 0;
+		return (s.SearchDirectionUsed + 1) * 5 + commitmentClass;
 	}
 
 	private static (int Mode, int ScreenY, int VelY, int Motion,
@@ -5811,7 +6016,9 @@ public class PathfinderEngine
 			$"exitMode={state.RainbowExitTargetModePlusOne}";
 	}
 
-	private void RunBFS(int startX_px, int startY_px, int startSpeedUiIndex, int startGameMode, bool startGravFlipped, bool startMini)
+	private void RunBFS(int startX_px, int startY_px, int startSpeedUiIndex,
+		int startGameMode, bool startGravFlipped, bool startMini,
+		int? frontierCapOverride = null, long deadlineTimestamp = 0)
 	{
 		const int BaseCoinFrontierCap = 120000;
 		int coinFrontierCap = int.TryParse(
@@ -5822,7 +6029,7 @@ public class PathfinderEngine
 		int platformerFrontierCap = int.TryParse(
 			Environment.GetEnvironmentVariable("FAMIDASH_PLATFORMER_BFS_CAP"),
 			out int platformerDiagnosticCap)
-			? Math.Max(BasePlatformerFrontierCap, platformerDiagnosticCap)
+			? Math.Clamp(platformerDiagnosticCap, 64, 131072)
 			: BasePlatformerFrontierCap;
 		bool routeDiagnostics = Environment.GetEnvironmentVariable(
 			"FAMIDASH_ROUTE_DIAG") == "1";
@@ -5833,6 +6040,10 @@ public class PathfinderEngine
 				sprite.AnchorX_px <= 11000).ProcessKey
 			: -1;
 		Stopwatch stopwatch = Stopwatch.StartNew();
+		long fastDeadlineExtensionTicks = deadlineTimestamp != 0
+			? Math.Max(1L, deadlineTimestamp - Stopwatch.GetTimestamp())
+			: 0L;
+		bool fastDeadlineExtended = false;
 		BfsRouteArchive? routeArchive = null;
 		bool routeBacktrackAttempted = false;
 		if (Verbose)
@@ -5840,7 +6051,14 @@ public class PathfinderEngine
 			int reportedFrontierCap = ForcePlatformer
 				? platformerFrontierCap
 				: (PreferCoins ? coinFrontierCap : int.MaxValue);
-			_log.WriteLine($"[BFS] Starting exhaustive BFS exploration (frontier cap={reportedFrontierCap})");
+			if (frontierCapOverride.HasValue)
+				reportedFrontierCap = Math.Min(reportedFrontierCap,
+					frontierCapOverride.Value);
+			string searchKind = frontierCapOverride.HasValue
+				? "fast parallel beam"
+				: "exhaustive BFS";
+			_log.WriteLine($"[BFS] Starting {searchKind} exploration " +
+				$"(frontier cap={reportedFrontierCap})");
 		}
 		if (Verbose)
 		{
@@ -5918,6 +6136,15 @@ public class PathfinderEngine
 			// different records to a slot.  Keep those phases in the dedup key so the
 			// BFS cannot discard a valid branch merely because player Y/velocity match.
 			Dictionary<BfsDedupKey, int> dictionary = new Dictionary<BfsDedupKey, int>(num11);
+			// Auto-scroll makes a state from an earlier frame unreachable again, but a
+			// platformer can idle or walk out and back indefinitely. Remember every
+			// exact state that was actually selected for expansion. Reaching that same
+			// complete state later cannot expose a new action: all six actions were
+			// already expanded when it was first selected. This removes loops without
+			// merging different positions, sprite histories, camera phases, or physics.
+			HashSet<BfsDedupKey>? platformerVisited = ForcePlatformer
+				? new HashSet<BfsDedupKey>(num11)
+				: null;
 			int bfsStartFrame = 0;
 			int lastRainbowOutcomeCount = -1;
 			if (DebugBfsPrefixInputs is { Count: > 0 } prefixInputs)
@@ -5940,8 +6167,38 @@ public class PathfinderEngine
 				num3 = s.X_fixed >> 8;
 				num10 = num3;
 			}
+			if (platformerVisited != null)
+			{
+				SimState initialVisitedState = frontier[0];
+				platformerVisited.Add(BuildBfsDedupKey(ref initialVisitedState));
+			}
 			for (int frame = bfsStartFrame; frame < 28800; frame++)
 			{
+				if (deadlineTimestamp != 0)
+				{
+					long deadlineNow = Stopwatch.GetTimestamp();
+					if (deadlineNow >= deadlineTimestamp)
+					{
+						int deadlineProgress = num2 > 0 ? num3 * 100 / num2 : 0;
+						// Live preview and diagnostic callbacks are useful but consume part of
+						// the same wall-clock budget as search. If a bounded run is demonstrably
+						// progressing through the latter half of a level, grant one additional
+						// interval rather than discarding a nearly complete route (Fingerdash).
+						if (!fastDeadlineExtended && deadlineProgress >= 60)
+						{
+							fastDeadlineExtended = true;
+							deadlineTimestamp = deadlineNow + fastDeadlineExtensionTicks;
+							_log.WriteLine($"[FAST] Extending progressing beam at frame {frame}, " +
+								$"X={num3}px, progress={deadlineProgress}%, frontier={frontier.Count}");
+						}
+						else
+						{
+							_log.WriteLine($"[FAST] Beam deadline reached at frame {frame}, " +
+								$"X={num3}px, progress={deadlineProgress}%, frontier={frontier.Count}");
+							break;
+						}
+					}
+				}
 				if (frontier.Count <= 0)
 				{
 					break;
@@ -5960,7 +6217,11 @@ public class PathfinderEngine
 				int num13 = ((num2 > 0) ? (num3 * 100 / num2) : 0);
 				if (num13 != num4 && Progress != null)
 				{
-					Progress.Report(num13);
+					// A failed bounded pass restarts the exhaustive progress at zero.
+					// Keep that short speculative phase quiet rather than making the UI
+					// appear to move backwards.
+					if (!frontierCapOverride.HasValue)
+						Progress.Report(num13);
 					num4 = num13;
 				}
 				int actionCount = ForcePlatformer ? 6 : 2;
@@ -5972,7 +6233,7 @@ public class PathfinderEngine
 					rAlive = new bool[num14];
 					rEnd = new bool[num14];
 				}
-				Parallel.For(0, expandCount, delegate(int k)
+				Action<int> expandCandidate = delegate(int k)
 				{
 					int action = k % actionCount;
 					int index6 = k / actionCount;
@@ -6043,7 +6304,18 @@ public class PathfinderEngine
 					rState[k] = s8;
 					rAlive[k] = flag14;
 					rEnd[k] = endLevel3;
-				});
+				};
+				// Task scheduling costs more than the simulation for a narrow beam.
+				// Keep small frontiers on this worker; large BFS layers still fan out.
+				if (expandCount < 256)
+				{
+					for (int k = 0; k < expandCount; k++)
+						expandCandidate(k);
+				}
+				else
+				{
+					Parallel.For(0, expandCount, expandCandidate);
+				}
 				list3.Clear();
 				list4.Clear();
 				list5.Clear();
@@ -6086,7 +6358,7 @@ public class PathfinderEngine
 				int[] partWinParent = new int[workerCount];
 				bool[] partWinInput = new bool[workerCount];
 				SimState[] partWinState = new SimState[workerCount];
-				Parallel.For(0, workerCount, delegate(int wi)
+				Action<int> processPartition = delegate(int wi)
 				{
 					int num152 = wi * expandCount / workerCount;
 					int num153 = (wi + 1) * expandCount / workerCount;
@@ -6150,12 +6422,18 @@ public class PathfinderEngine
 								(num162 == num158 &&
 								 timingScore < bestWorkerTimingScore))
 							{
+								if (flag11)
+									simState12.ReturnAllSpriteResources();
 								flag11 = true;
 								num158 = num162;
 								bestWorkerTimingScore = timingScore;
 								num159 = num161;
 								flag12 = flag13;
 								simState12 = s6;
+							}
+							else
+							{
+								s6.ReturnAllSpriteResources();
 							}
 						}
 						else if (!rAlive[num160])
@@ -6241,7 +6519,11 @@ public class PathfinderEngine
 					partWinParent[wi] = num159;
 					partWinInput[wi] = flag12;
 					partWinState[wi] = simState12;
-				});
+				};
+				if (workerCount == 1)
+					processPartition(0);
+				else
+					Parallel.For(0, workerCount, processPartition);
 				int num19 = 0;
 				for (int i = 0; i < workerCount; i++)
 				{
@@ -6253,6 +6535,8 @@ public class PathfinderEngine
 							(num20 == num7 &&
 							 timingScore < bestWinningTimingScore))
 						{
+							if (num5 >= 0)
+								simState2.ReturnAllSpriteResources();
 							num5 = frame;
 							num6 = partWinParent[i];
 							item = partWinInput[i];
@@ -6260,6 +6544,10 @@ public class PathfinderEngine
 							bestWinningTimingScore = timingScore;
 							simState2 = partWinState[i];
 							_log.WriteLine($"[BFS] Level complete at frame {frame}! coins={num20} X\ufffd{simState2.X_fixed >> 8}px");
+						}
+						else
+						{
+							partWinState[i].ReturnAllSpriteResources();
 						}
 					}
 					List<SimState> list7 = partCandState[i];
@@ -6678,6 +6966,8 @@ public class PathfinderEngine
 				{
 					SimState s3 = list3[num62];
 					BfsDedupKey key = BuildBfsDedupKey(ref s3);
+					if (platformerVisited != null && platformerVisited.Contains(key))
+						continue;
 					if (!dictionary.TryGetValue(key, out var value3) ||
 						candScore[num62] < candScore[value3] ||
 						(candScore[num62] == candScore[value3] &&
@@ -6874,6 +7164,8 @@ public class PathfinderEngine
 					? rainbowFrontierCap
 					: (ForcePlatformer ? platformerFrontierCap
 						: (PreferCoins ? coinFrontierCap : int.MaxValue));
+				if (frontierCapOverride.HasValue)
+					num75 = Math.Min(num75, frontierCapOverride.Value);
 				int selectedCapacity = Math.Min(dictionary.Count, num75);
 				List<SimState> list16 = new List<SimState>(selectedCapacity);
 				List<int> list17 = new List<int>(selectedCapacity);
@@ -7080,9 +7372,9 @@ public class PathfinderEngine
 					// forward score because X cannot retreat. Platformer rooms are different:
 					// a wall can require moving back several columns and climbing a route whose
 					// local score is temporarily worse. Fill the platformer diversity half in
-					// rounds across every occupied 32x16-pixel segment. This keeps neutral/left
-					// descendants alive in old segments instead of spending all diversity slots
-					// on thousands of phases immediately adjacent to the furthest wall.
+					// rounds across the full occupied 32x16-pixel span. This keeps neutral/left
+					// descendants alive without spending every diversity slot at either the
+					// earliest segment or the furthest wall.
 					if (ForcePlatformer)
 					{
 						HashSet<int> alreadySelected = new();
@@ -7110,18 +7402,26 @@ public class PathfinderEngine
 						int platformerDiversityLimit = Math.Min(list3.Count,
 							num75 + seededTransitionCandidates.Count +
 							seededSizeModeCandidates.Count);
-						int segmentRound = 0;
-						bool addedInRound;
-						do
+						List<List<int>> orderedSegmentBuckets =
+							segmentCandidates.Values.ToList();
+						for (int segmentRound = 0;
+							list16.Count < platformerDiversityLimit;
+							segmentRound++)
 						{
-							addedInRound = false;
-							foreach (List<int> bucket in segmentCandidates.Values)
+							List<List<int>> eligibleBuckets = orderedSegmentBuckets
+								.Where(bucket => segmentRound < bucket.Count)
+								.ToList();
+							if (eligibleBuckets.Count == 0)
+								break;
+							int slotsRemaining = platformerDiversityLimit - list16.Count;
+							int bucketsToTake = Math.Min(slotsRemaining, eligibleBuckets.Count);
+							for (int sample = 0; sample < bucketsToTake; sample++)
 							{
-								if (list16.Count >= platformerDiversityLimit)
-									break;
-								if (segmentRound >= bucket.Count)
-									continue;
-
+								// Midpoint sampling is deterministic and covers the entire sorted
+								// spatial range even when there are more buckets than slots.
+								int bucketPosition = (int)(((long)(sample * 2 + 1) *
+									eligibleBuckets.Count) / (bucketsToTake * 2L));
+								List<int> bucket = eligibleBuckets[bucketPosition];
 								int candidateIndex = bucket[segmentRound];
 								SimState segmentState = list3[candidateIndex];
 								list16.Add(segmentState);
@@ -7138,11 +7438,8 @@ public class PathfinderEngine
 								dictionary3.TryGetValue(segmentClass, out int segmentClassCount);
 								dictionary3[segmentClass] = segmentClassCount + 1;
 								if (segmentState.GravFlipped) num82++; else num81++;
-								addedInRound = true;
 							}
-							segmentRound++;
 						}
-						while (addedInRound && list16.Count < platformerDiversityLimit);
 					}
 					flag6 = Math.Min(num81, num82) < list16.Count / 20;
 					int diversityLimit = Math.Min(list3.Count,
@@ -7207,6 +7504,91 @@ public class PathfinderEngine
 								flag7 = value8 + 1 < list16.Count / 10;
 							}
 						}
+					}
+				}
+				// A narrow fast beam can prefer a safe trajectory until it is too late
+				// to reach an upcoming coin. Temporarily widen only the approach segment,
+				// retaining phase-distinct candidates without enlarging the rest of the
+				// level. Keep a stable 256-state total around coins. The ordinary beam
+				// contributes broadly useful survivors and the remainder is reserved for
+				// coin phases; allowing the combined set to grow beyond that changed later
+				// phase competition and regressed Base After Base.
+				const int FastCoinApproachHorizonPx = 2048;
+				int fastCoinReserve = frontierCapOverride.HasValue && PreferCoins
+					? Math.Max(0, 256 - frontierCapOverride.Value)
+					: 0;
+				int fastCoinSeedsAdded = 0;
+				if (fastCoinReserve > 0 && list15.Count > num76)
+				{
+					HashSet<SpriteSet> alreadySelected = new(list16.Select(
+						state => state.ProcessedSprites));
+					var phaseBest = new Dictionary<(int Coin, int Mode, int ScreenY,
+						int VelY, int Motion, int XPhase, int Route),
+						(int Index, int Distance)>();
+					for (int candidatePos = num76; candidatePos < list15.Count; candidatePos++)
+					{
+						int candidateIndex = list15[candidatePos];
+						SimState candidate = list3[candidateIndex];
+						if (alreadySelected.Contains(candidate.ProcessedSprites))
+							continue;
+						int playerX = candidate.X_fixed >> 8;
+						SpriteEntry? targetCoin = null;
+						int targetDx = int.MaxValue;
+						foreach (SpriteEntry coin in allCoins)
+						{
+							if (candidate.ProcessedSprites.Contains(coin.Index))
+								continue;
+							int dx = coin.HitLeft - playerX;
+							if (dx < -16 || dx > FastCoinApproachHorizonPx || dx >= targetDx)
+								continue;
+							targetCoin = coin;
+							targetDx = dx;
+						}
+						if (targetCoin == null)
+							continue;
+						SpriteEntry selectedCoin = targetCoin.Value;
+
+						int modePhase = (candidate.GameMode << 2) |
+							(candidate.GravFlipped ? 2 : 0) | (candidate.Mini ? 1 : 0);
+						int screenY = SharedPhysics.NesPlayerScreenY_px(
+							candidate.Y_fixed, candidate.CameraY_fixed) >> 2;
+						int velocityPhase = (candidate.VelY_fixed + 32768) >> 5;
+						int motionPhase = (candidate.OnGround ? 2 : 0) |
+							(candidate.PrevInputHeld ? 1 : 0);
+						int routePhase = ForcePlatformer
+							? BfsPlatformerDirectionClass(in candidate)
+							: 0;
+						var phaseKey = (selectedCoin.Index, modePhase, screenY,
+							velocityPhase, motionPhase, playerX & 0x0F, routePhase);
+						int targetY = (selectedCoin.HitTop + selectedCoin.HitBottom) / 2;
+						int distance = Math.Abs((candidate.Y_fixed >> 8) + 8 - targetY);
+						if (!phaseBest.TryGetValue(phaseKey, out var prior) ||
+							distance < prior.Distance)
+						{
+							phaseBest[phaseKey] = (candidateIndex, distance);
+						}
+					}
+
+					foreach (var phase in phaseBest.Values
+						.OrderBy(value => value.Distance)
+						.ThenBy(value => candScore[value.Index]))
+					{
+						if (fastCoinSeedsAdded >= fastCoinReserve)
+							break;
+						int seedIndex = phase.Index;
+						SimState seed = list3[seedIndex];
+						if (!alreadySelected.Add(seed.ProcessedSprites))
+							continue;
+						list16.Add(seed);
+						list17.Add(list4[seedIndex]);
+						list18.Add(list5[seedIndex]);
+						recoverySelectedIndexes?.Add(seedIndex);
+						fastCoinSeedsAdded++;
+					}
+					if (Verbose && fastCoinSeedsAdded > 0 && frame % 20 == 0)
+					{
+						_log.WriteLine($"[FAST_COIN_SELECT] f={frame} added={fastCoinSeedsAdded} " +
+							$"base={num75} phases={phaseBest.Count}");
 					}
 				}
 				// The recovery pass has already paid to restore a separate corridor and
@@ -7549,6 +7931,14 @@ public class PathfinderEngine
 						_log.WriteLine($"[GF_SELECT] f={frame} dedupGF={num88} selectedGF={num87} totalNext={list16.Count}");
 					}
 				}
+				if (platformerVisited != null)
+				{
+					foreach (SimState selectedPlatformerState in list16)
+					{
+						SimState visitedState = selectedPlatformerState;
+						platformerVisited.Add(BuildBfsDedupKey(ref visitedState));
+					}
+				}
 				if (list16.Count != list3.Count)
 				{
 					HashSet<SpriteSet> hashSet = new HashSet<SpriteSet>(list16.Count);
@@ -7583,6 +7973,35 @@ public class PathfinderEngine
 					item14.ReturnAllSpriteResources();
 				}
 				frontier = list16;
+				if (routeDiagnostics && ForcePlatformer && frame % 100 == 0)
+				{
+					int leftCount = 0;
+					int neutralCount = 0;
+					int rightCount = 0;
+					int committedLeft = 0;
+					int minPlatformerX = int.MaxValue;
+					int maxPlatformerX = int.MinValue;
+					foreach (SimState platformerState in frontier)
+					{
+						int platformerX = platformerState.X_fixed >> 8;
+						minPlatformerX = Math.Min(minPlatformerX, platformerX);
+						maxPlatformerX = Math.Max(maxPlatformerX, platformerX);
+						if (platformerState.SearchDirectionUsed < 0)
+						{
+							leftCount++;
+							if (platformerState.SearchDirectionRun >= 8)
+								committedLeft++;
+						}
+						else if (platformerState.SearchDirectionUsed > 0)
+							rightCount++;
+						else
+							neutralCount++;
+					}
+					Console.Error.WriteLine($"[PLATFORMER_FRONTIER] f={frame} " +
+						$"states={frontier.Count} left={leftCount} left8={committedLeft} " +
+						$"neutral={neutralCount} right={rightCount} " +
+						$"x={minPlatformerX}..{maxPlatformerX}");
+				}
 				bool flag10 = frontier.Count > 0 && frontier[0].DualActive;
 				if (frame % 100 == 0 || frontier.Count < 100 || (frame >= 700 && frame <= 810) || flag10 ||
 					(frame >= 2000 && frame <= 2070) || (frame >= 3550 && frame <= 3850))
@@ -7903,7 +8322,14 @@ public class PathfinderEngine
 						int num142 = s4.X_fixed >> 8;
 						int num143 = s4.Y_fixed >> 8;
 						list21.Add((num142 + hitboxW / 2, num143 + 8));
-						if (!StepFrame(ref s4, input: false, out var endLevel) || endLevel)
+						// Project each platformer branch in the direction it is actually
+						// exploring. The old convenience overload always forced right, which
+						// made live search appear to have no left-moving branches.
+						sbyte projectedDirection = ForcePlatformer
+							? simState11.SearchDirectionUsed
+							: (sbyte)0;
+						if (!StepFrame(ref s4, input: false, projectedDirection,
+							out var endLevel) || endLevel)
 						{
 							break;
 						}
@@ -7954,27 +8380,41 @@ public class PathfinderEngine
 				list23.Add(item);
 				winningDirections.Add(simState2.SearchDirectionUsed);
 				_log.WriteLine($"[BFS] Replaying winning path ({list23.Count} frames)...");
-				ReplayBfsPath(list23, winningDirections, startX_px, startY_px,
+				bool canonicalReplayCompleted = ReplayBfsPath(list23, winningDirections, startX_px, startY_px,
 					startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
 				int count2 = allCoins.Count;
-				if (!ForcePlatformer && PreferCoins && count2 > 0 && FinalCollectedCoinIndices != null && FinalCollectedCoinIndices.Count < count2)
+				// Coin splicing is intentionally reserved for the exhaustive pass. It can
+				// explore well beyond the fast pass's deadline and defeat its bounded cost.
+				if (!frontierCapOverride.HasValue && canonicalReplayCompleted && !ForcePlatformer &&
+					PreferCoins && count2 > 0 && FinalCollectedCoinIndices != null &&
+					FinalCollectedCoinIndices.Count < count2)
 				{
 					List<bool>? list24 = TryCoinBeamSplice(list23, startX_px, startY_px, startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
 					if (list24 != null)
 					{
 						list23 = list24;
-						ReplayBfsPath(list23, startX_px, startY_px, startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
+						canonicalReplayCompleted = ReplayBfsPath(list23, startX_px, startY_px, startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
 					}
 				}
 				double totalSeconds = stopwatch.Elapsed.TotalSeconds;
-				string text3 = $"Completed in {list23.Count} frames ({PathPoints.Count} path points)";
-				if (PreferCoins && count2 > 0)
+				if (!canonicalReplayCompleted)
 				{
-					text3 += $" [{FinalCollectedCoinIndices?.Count ?? num7}/{count2} coins]";
+					ResultMessage = $"BFS candidate failed its canonical replay [{totalSeconds:F1}s BFS]";
+					Success = false;
+					_log.WriteLine("[BFS] " + ResultMessage);
 				}
-				text3 = (ResultMessage = text3 + $" [{totalSeconds:F1}s BFS]");
-				Success = true;
-				_log.WriteLine("[BFS] " + text3);
+				else
+				{
+					string text3 = $"Completed in {list23.Count} frames ({PathPoints.Count} path points)";
+					if (PreferCoins && count2 > 0)
+					{
+						text3 += $" [{FinalCollectedCoinIndices?.Count ?? num7}/{count2} coins]";
+					}
+					string searchLabel = frontierCapOverride.HasValue ? "fast exact" : "BFS";
+					text3 = (ResultMessage = text3 + $" [{totalSeconds:F1}s {searchLabel}]");
+					Success = true;
+					_log.WriteLine("[BFS] " + text3);
+				}
 			}
 			else
 			{
@@ -8010,6 +8450,10 @@ public class PathfinderEngine
 				_log.WriteLine("[BFS] " + ResultMessage);
 				_log.WriteLine($"[BFS_DIAG] Step1 fires={_step1FireCount}, Step2 fires={_step2FireCount}");
 			}
+			foreach (SimState state in frontier)
+				state.ReturnAllSpriteResources();
+			if (num5 >= 0)
+				simState2.ReturnAllSpriteResources();
 		}
 		catch (Exception ex)
 		{
@@ -8141,14 +8585,14 @@ public class PathfinderEngine
 		};
 	}
 
-	private void ReplayBfsPath(List<bool> inputSequence, int startX_px, int startY_px,
+	private bool ReplayBfsPath(List<bool> inputSequence, int startX_px, int startY_px,
 		int startSpeedUiIndex, int startGameMode, bool startGravFlipped, bool startMini)
 	{
-		ReplayBfsPath(inputSequence, null, startX_px, startY_px,
+		return ReplayBfsPath(inputSequence, null, startX_px, startY_px,
 			startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
 	}
 
-	private void ReplayBfsPath(List<bool> inputSequence,
+	private bool ReplayBfsPath(List<bool> inputSequence,
 		IReadOnlyList<sbyte>? horizontalSequence, int startX_px, int startY_px,
 		int startSpeedUiIndex, int startGameMode, bool startGravFlipped, bool startMini)
 	{
@@ -8192,6 +8636,7 @@ public class PathfinderEngine
 		_speculativeDepth = 0;
 		_frameCounter = 0;
 		TraceFrameOpen();
+		bool replayCompleted = false;
 		for (int i = 0; i < inputSequence.Count; i++)
 		{
 			_frameCounter = i;
@@ -8222,6 +8667,8 @@ public class PathfinderEngine
 			_prevDualActiveForPath = s.DualActive;
 			ReplayFrames.Add(CaptureReplayFrame(i, flag, direction, in s, flag2,
 				endLevel, replayCollectedCoins));
+			if (endLevel)
+				replayCompleted = flag2;
 			if (endLevel || !flag2)
 			{
 				break;
@@ -8247,6 +8694,8 @@ public class PathfinderEngine
 		}
 		ExtractSkippedPads(in s);
 		TraceFrameClose();
+		s.ReturnAllSpriteResources();
+		return replayCompleted;
 	}
 
 	private List<bool>? TryCoinBeamSplice(List<bool> originalInputs, int startX_px, int startY_px, int startSpeedUiIndex, int startGameMode, bool startGravFlipped, bool startMini)
@@ -8703,7 +9152,11 @@ public class PathfinderEngine
 		_backtrackActive = true;
 		int gameMode = state.GameMode;
 		bool flag = _missedCoinIdx >= 0 && _lastDeathReason == "MISSED_COIN";
-		while (_backtrackCheckpoints.Count > 0 && _backtrackAttempts < (flag ? 1500 : 500) && _totalBacktrackAttempts < 5000 && (_backtrackTimer == null || _backtrackTimer.Elapsed.TotalSeconds < (double)(flag ? 120 : 60)))
+		while (_backtrackCheckpoints.Count > 0 &&
+			_backtrackAttempts < (flag ? 1500 : 500) &&
+			_totalBacktrackAttempts < 5000 &&
+			(_backtrackTimer == null ||
+			 _backtrackTimer.Elapsed.TotalSeconds < (double)(flag ? 120 : 60)))
 		{
 			int num = _backtrackCheckpoints.Count - 1;
 			BacktrackCheckpoint backtrackCheckpoint = _backtrackCheckpoints[num];

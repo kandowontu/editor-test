@@ -28,9 +28,14 @@
 		<TextBlock Grid.Row="2" x:Name="BiasLabel" Text="Use neutral timing across every game mode"
 				   FontSize="11" Foreground="#999999" HorizontalAlignment="Left" Margin="0,6,0,0" TextWrapping="Wrap"/>
 
-        <CheckBox x:Name="ChkPreferCoins" Grid.Row="3" Content="Prefer coins" Foreground="White" FontSize="12" Margin="0,8,0,0"
-                  IsChecked="True"
-                  ToolTip="Try to collect coins (0x07, 0x1A, 0x1B) along the path"/>
+        <StackPanel Grid.Row="3" Orientation="Vertical" Margin="0,8,0,0">
+            <CheckBox x:Name="ChkFastSearch" Content="Fast exact search first" Foreground="White" FontSize="12" Margin="0,3"
+                      IsChecked="True"
+                      ToolTip="Try a bounded exact-state beam first. If it cannot prove a complete replay quickly, exhaustive BFS starts automatically."/>
+            <CheckBox x:Name="ChkPreferCoins" Content="Prefer coins" Foreground="White" FontSize="12" Margin="0,3"
+                      IsChecked="True"
+                      ToolTip="Try to collect coins (0x07, 0x1A, 0x1B) along the path"/>
+        </StackPanel>
 
         <StackPanel Grid.Row="4" Orientation="Vertical" Margin="0,8,0,0">
             <CheckBox x:Name="ChkDrawPathLine" Content="Draw path line when complete" Foreground="White" FontSize="12" Margin="0,3"

@@ -31,12 +31,49 @@ namespace FamidashEditor
         private string? currentPlayingPath;
         private string? lastFmsPath = null;
         private int lastTrackIndex = -1;
+        private string? lastTrackName = null;
+        private readonly Dictionary<int, string> configuredPlaybackFiles = new Dictionary<int, string>();
+        private readonly Dictionary<int, string> configuredTrackNames = new Dictionary<int, string>();
+        private string? resolvedAlbumTrackListKey;
+        private Dictionary<string, int> resolvedAlbumTrackIndices = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         // Playback rate multiplier (1.0 == normal). When possible, audio output will be resampled to match.
         private double playbackRate = 1.0;
         public string? StatusMessage { get; private set; }
         public bool IsLoaded => alc != null;
         public bool IsPlaying => output != null && output.PlaybackState == PlaybackState.Playing;
         public bool IsPaused => output != null && output.PlaybackState == PlaybackState.Paused;
+
+        public void ConfigurePlaybackFiles(IReadOnlyDictionary<int, string>? files)
+        {
+            lock (playLock)
+            {
+                configuredPlaybackFiles.Clear();
+                if (files == null) return;
+                foreach (var pair in files)
+                {
+                    if (pair.Key < 0 || string.IsNullOrWhiteSpace(pair.Value) || !File.Exists(pair.Value)) continue;
+                    configuredPlaybackFiles[pair.Key] = Path.GetFullPath(pair.Value);
+                }
+            }
+        }
+
+        public void ConfigureTrackNames(IReadOnlyDictionary<int, string>? names)
+        {
+            lock (playLock)
+            {
+                configuredTrackNames.Clear();
+                resolvedAlbumTrackListKey = null;
+                resolvedAlbumTrackIndices.Clear();
+                if (names == null) return;
+                foreach (var pair in names)
+                {
+                    if (pair.Key < 0 || string.IsNullOrWhiteSpace(pair.Value)) continue;
+                    configuredTrackNames[pair.Key] = pair.Value.Trim();
+                }
+                // Configured JSON names are useful labels, but are not marked as verified.
+                // A changed FMS may have shifted every subsequent numeric index.
+            }
+        }
 
         // Resume playback if currently paused. No-op otherwise.
         public void Resume()
@@ -315,16 +352,9 @@ namespace FamidashEditor
         public List<string> ProbeTracksViaCli(string fmsPath, int maxTracks = 32)
         {
             var list = new List<string>();
-            if (famiFolder == null)
+            if (!CanRunCli())
             {
-                StatusMessage = "FamiStudio folder not configured";
-                return list;
-            }
-
-            string exe = Path.Combine(famiFolder, "FamiStudio.exe");
-            if (!File.Exists(exe))
-            {
-                StatusMessage = "FamiStudio.exe not found in bundled folder";
+                StatusMessage = "FamiStudio command-line tools are not configured";
                 return list;
             }
 
@@ -336,19 +366,8 @@ namespace FamidashEditor
                 string tmp = Path.Combine(Path.GetTempPath(), $"fms_probe_{Guid.NewGuid()}.wav");
                 try
                 {
-                    var args = $"\"{fmsPath}\" wav-export \"{tmp}\" -export-songs:{i} -wav-export-rate:48000";
-                    var psi = new ProcessStartInfo(exe, args)
+                    if (RunCli(fmsPath, "wav-export", tmp, 10_000, out _, out _, $"-export-songs:{i}", "-wav-export-rate:48000"))
                     {
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true
-                    };
-
-                    using (var p = Process.Start(psi))
-                    {
-                        if (p == null) continue;
-                        p.WaitForExit(3000);
                         if (File.Exists(tmp) && new FileInfo(tmp).Length > 100)
                         {
                             // Check exported wav duration to avoid picking up short samples. Require at least 0.5s length.
@@ -385,6 +404,11 @@ namespace FamidashEditor
                             continue;
                         }
                     }
+                    else
+                    {
+                        consecutiveMisses++;
+                        if (consecutiveMisses >= 12) break;
+                    }
                 }
                 catch
                 {
@@ -395,6 +419,51 @@ namespace FamidashEditor
 
             StatusMessage = $"CLI probe found {list.Count} tracks";
             return list;
+        }
+
+        public List<string> ExportTrackList(string fmsPath, string outputTextPath)
+        {
+            if (string.IsNullOrWhiteSpace(fmsPath) || !File.Exists(fmsPath))
+                throw new FileNotFoundException("FamiStudio album not found.", fmsPath);
+
+            Directory.CreateDirectory(Path.GetDirectoryName(outputTextPath) ?? Environment.CurrentDirectory);
+            try { if (File.Exists(outputTextPath)) File.Delete(outputTextPath); } catch { }
+
+            if (!RunCli(fmsPath, "famistudio-txt-export", outputTextPath, 180_000, out string stdout, out string stderr))
+            {
+                string details = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+                throw new InvalidOperationException("FamiStudio could not export the album song list." +
+                    (string.IsNullOrWhiteSpace(details) ? "" : "\n\n" + LastNonEmptyLines(details, 8)));
+            }
+
+            var names = ParseFamiStudioTextExport(outputTextPath);
+            if (names.Count == 0)
+                throw new InvalidOperationException("FamiStudio exported the project, but no Song entries were found.");
+
+            StatusMessage = $"Exported {names.Count} tracks";
+            return names;
+        }
+
+        public bool ExportTrackPreviewToMp3(string fmsPath, int trackIndex, string outputPath, out string error)
+        {
+            error = string.Empty;
+            if (trackIndex < 0)
+            {
+                error = "Track index must be zero or greater.";
+                return false;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? Environment.CurrentDirectory);
+            try { if (File.Exists(outputPath)) File.Delete(outputPath); } catch { }
+            bool ok = RunCli(fmsPath, "mp3-export", outputPath, 180_000, out string stdout, out string stderr,
+                $"-export-songs:{trackIndex}", "-mp3-export-rate:48000", "-mp3-export-bitrate:192", "-mp3-export-loop:1");
+            if (!ok || !File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
+            {
+                error = LastNonEmptyLines(string.IsNullOrWhiteSpace(stderr) ? stdout : stderr, 8);
+                if (string.IsNullOrWhiteSpace(error)) error = "FamiStudio produced no MP3 file.";
+                return false;
+            }
+            return true;
         }
 
         public List<string> TryParseFmsSongNames(string fmsPath)
@@ -433,17 +502,47 @@ namespace FamidashEditor
 
         public void PlayTrack(string fmsPath, int trackIndex)
         {
+            PlayTrack(fmsPath, trackIndex, null);
+        }
+
+        public void PlayTrack(string fmsPath, int trackIndex, string? trackName)
+        {
             lock (playLock)
             {
+                string? expectedTrackName = string.IsNullOrWhiteSpace(trackName) ? null : trackName.Trim();
+                if (string.IsNullOrWhiteSpace(expectedTrackName) && configuredTrackNames.TryGetValue(trackIndex, out string? configuredName))
+                    expectedTrackName = configuredName;
+                trackIndex = ResolveCurrentTrackIndex(fmsPath, trackIndex, expectedTrackName);
+
                 // Remember requested track so we can restart if playback rate changes.
                 lastFmsPath = fmsPath;
                 lastTrackIndex = trackIndex;
+                lastTrackName = expectedTrackName;
                 Stop();
 
                 // If we have a cached mp3 or wav for this track, play it immediately.
                 try
                 {
-                    var existing = FindExistingCachedMusic(fmsPath, trackIndex);
+                    string? configured = null;
+                    if (configuredPlaybackFiles.TryGetValue(trackIndex, out string? indexedPreview) &&
+                        File.Exists(indexedPreview) && FileNameMatchesTrack(indexedPreview, expectedTrackName))
+                    {
+                        configured = indexedPreview;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(expectedTrackName))
+                    {
+                        configured = configuredPlaybackFiles.Values.FirstOrDefault(path =>
+                            File.Exists(path) && FileNameMatchesTrack(path, expectedTrackName));
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(configured))
+                    {
+                        PlayWav(configured);
+                        StatusMessage = "Playing library preview";
+                        return;
+                    }
+
+                    var existing = FindExistingCachedMusic(fmsPath, trackIndex, expectedTrackName);
                     if (!string.IsNullOrEmpty(existing) && File.Exists(existing))
                     {
                         PlayWav(existing);
@@ -454,38 +553,20 @@ namespace FamidashEditor
                 catch { }
 
                 // No cache present. Use FamiStudio CLI to export a WAV, convert to cached MP3 (or WAV fallback), then play.
-                if (famiFolder == null)
+                if (!CanRunCli())
                 {
                     StatusMessage = "FamiStudio not configured";
                     throw new InvalidOperationException("FamiStudio folder not configured");
                 }
 
-                string exe = Path.Combine(famiFolder, "FamiStudio.exe");
-                if (!File.Exists(exe))
-                {
-                    StatusMessage = "FamiStudio.exe not found in bundled folder";
-                    throw new FileNotFoundException("FamiStudio.exe not found", exe);
-                }
-
                 string tmpWav = Path.Combine(Path.GetTempPath(), $"fms_play_{Guid.NewGuid()}.wav");
-                var args = $"\"{fmsPath}\" wav-export \"{tmpWav}\" -export-songs:{trackIndex} -wav-export-rate:48000";
-                var psi2 = new ProcessStartInfo(exe, args)
-                {
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
-
-                using (var p = Process.Start(psi2))
-                {
-                    if (p == null) throw new Exception("Failed to start FamiStudio CLI");
-                    p.WaitForExit(60000);
-                }
+                if (!RunCli(fmsPath, "wav-export", tmpWav, 180_000, out string stdout, out string stderr,
+                    $"-export-songs:{trackIndex}", "-wav-export-rate:48000"))
+                    throw new Exception("FamiStudio audio export failed.\n" + LastNonEmptyLines(string.IsNullOrWhiteSpace(stderr) ? stdout : stderr, 8));
 
                 if (!File.Exists(tmpWav)) throw new Exception("Export failed or produced no WAV");
 
-                var cachedTarget = GetCachedMusicPath(fmsPath, trackIndex);
+                var cachedTarget = GetCachedMusicPath(fmsPath, trackIndex, expectedTrackName);
                 var outPath = ConvertWavToCached(tmpWav, cachedTarget);
                 if (!string.IsNullOrEmpty(outPath) && File.Exists(outPath))
                 {
@@ -670,34 +751,45 @@ namespace FamidashEditor
             }
         }
 
-        private string GetCachedMusicPath(string fmsPath, int trackIndex)
+        private string GetCachedMusicPath(string fmsPath, int trackIndex, string? trackName)
         {
             try
             {
                 if (string.IsNullOrEmpty(fmsPath)) return null!;
                 using var sha = SHA1.Create();
-                var key = (fmsPath + "|" + trackIndex.ToString());
+                string version = "missing";
+                try
+                {
+                    var info = new FileInfo(fmsPath);
+                    if (info.Exists) version = info.Length + "|" + info.LastWriteTimeUtc.Ticks;
+                }
+                catch { }
+                var key = (Path.GetFullPath(fmsPath) + "|" + version + "|" + trackIndex.ToString());
                 var bytes = System.Text.Encoding.UTF8.GetBytes(key);
                 var hash = sha.ComputeHash(bytes);
                 var hex = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-                var fname = $"track_{hex}_{trackIndex}.mp3";
+                string safeName = SafeTrackFileName(string.IsNullOrWhiteSpace(trackName) ? $"Song {trackIndex}" : trackName);
+                var fname = $"cached {trackIndex:D3} - {safeName} - {hex.Substring(0, 16)}.mp3";
                 return Path.Combine(GetMusicCacheDir(), fname);
             }
             catch
             {
-                return Path.Combine(Path.GetTempPath(), $"track_{trackIndex}.mp3");
+                string safeName = SafeTrackFileName(string.IsNullOrWhiteSpace(trackName) ? $"Song {trackIndex}" : trackName);
+                return Path.Combine(Path.GetTempPath(), $"cached {trackIndex:D3} - {safeName} - 000000000000.mp3");
             }
         }
 
         // If a cached file exists for this track (either MP3 or WAV), return its path; otherwise return null.
-        private string? FindExistingCachedMusic(string fmsPath, int trackIndex)
+        private string? FindExistingCachedMusic(string fmsPath, int trackIndex, string? trackName)
         {
             try
             {
-                var mp3 = GetCachedMusicPath(fmsPath, trackIndex);
-                if (File.Exists(mp3)) return mp3;
+                // A cache without a known song name is unsafe after insertions/reordering.
+                if (string.IsNullOrWhiteSpace(trackName)) return null;
+                var mp3 = GetCachedMusicPath(fmsPath, trackIndex, trackName);
+                if (File.Exists(mp3) && FileNameMatchesTrack(mp3, trackName)) return mp3;
                 var wav = Path.ChangeExtension(mp3, ".wav");
-                if (File.Exists(wav)) return wav;
+                if (File.Exists(wav) && FileNameMatchesTrack(wav, trackName)) return wav;
                 return null;
             }
             catch { return null; }
@@ -706,23 +798,13 @@ namespace FamidashEditor
         // Ensure a cached MP3 exists for the given track. Returns path to playable file (mp3 or wav fallback).
         private string EnsureCachedMusic(string fmsPath, int trackIndex)
         {
-            var cached = GetCachedMusicPath(fmsPath, trackIndex);
-            if (File.Exists(cached)) return cached;
+            configuredTrackNames.TryGetValue(trackIndex, out string? trackName);
+            var cached = GetCachedMusicPath(fmsPath, trackIndex, trackName);
+            if (File.Exists(cached) && FileNameMatchesTrack(cached, trackName)) return cached;
             // Not cached - attempt to export via CLI and then convert to mp3
-            if (famiFolder == null) return string.Empty;
-            string exe = Path.Combine(famiFolder, "FamiStudio.exe");
-            if (!File.Exists(exe)) return string.Empty;
+            if (!CanRunCli()) return string.Empty;
             string tmpWav = Path.Combine(Path.GetTempPath(), $"fms_export_{Guid.NewGuid()}.wav");
-            var args = $"\"{fmsPath}\" wav-export \"{tmpWav}\" -export-songs:{trackIndex} -wav-export-rate:48000";
-            var psi = new ProcessStartInfo(exe, args)
-            {
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-
-            try { using (var p = Process.Start(psi)) { if (p != null) p.WaitForExit(15000); } } catch { }
+            try { RunCli(fmsPath, "wav-export", tmpWav, 180_000, out _, out _, $"-export-songs:{trackIndex}", "-wav-export-rate:48000"); } catch { }
             if (!File.Exists(tmpWav)) return string.Empty;
             var outPath = ConvertWavToCached(tmpWav, cached);
             return outPath ?? string.Empty;
@@ -762,6 +844,188 @@ namespace FamidashEditor
                 catch { return string.Empty; }
             }
             catch { return string.Empty; }
+        }
+
+        private bool CanRunCli()
+        {
+            if (string.IsNullOrWhiteSpace(famiFolder) || !Directory.Exists(famiFolder)) return false;
+            return File.Exists(Path.Combine(famiFolder, "FamiStudio.dll")) ||
+                   File.Exists(Path.Combine(famiFolder, "FamiStudio.exe"));
+        }
+
+        private int ResolveCurrentTrackIndex(string albumPath, int fallbackIndex, string? expectedTrackName)
+        {
+            if (string.IsNullOrWhiteSpace(expectedTrackName)) return fallbackIndex;
+            if (string.IsNullOrWhiteSpace(albumPath) || !File.Exists(albumPath))
+                throw new FileNotFoundException("Music album not found.", albumPath);
+
+            string versionKey = GetAlbumVersionKey(albumPath);
+            if (!string.Equals(resolvedAlbumTrackListKey, versionKey, StringComparison.Ordinal))
+            {
+                List<string> names;
+                if (Path.GetExtension(albumPath).Equals(".txt", StringComparison.OrdinalIgnoreCase))
+                {
+                    names = ParseFamiStudioTextExport(albumPath);
+                }
+                else
+                {
+                    string? adjacentExport = FindFreshAdjacentTextExport(albumPath);
+                    if (!string.IsNullOrWhiteSpace(adjacentExport))
+                    {
+                        names = ParseFamiStudioTextExport(adjacentExport);
+                    }
+                    else
+                    {
+                        string temporaryExport = Path.Combine(Path.GetTempPath(), $"famistudio_tracks_{Guid.NewGuid():N}.txt");
+                        try { names = ExportTrackList(albumPath, temporaryExport); }
+                        finally { try { if (File.Exists(temporaryExport)) File.Delete(temporaryExport); } catch { } }
+                    }
+                }
+
+                if (names.Count == 0)
+                    throw new InvalidOperationException("Could not verify the current FamiStudio song ordering.");
+
+                var verified = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < names.Count; i++)
+                {
+                    if (!verified.ContainsKey(names[i])) verified[names[i]] = i;
+                }
+                resolvedAlbumTrackIndices = verified;
+                resolvedAlbumTrackListKey = versionKey;
+            }
+
+            if (resolvedAlbumTrackIndices.TryGetValue(expectedTrackName, out int exactIndex)) return exactIndex;
+
+            string normalizedExpected = NormalizeTrackName(expectedTrackName);
+            var normalizedMatches = resolvedAlbumTrackIndices
+                .Where(pair => string.Equals(NormalizeTrackName(pair.Key), normalizedExpected, StringComparison.Ordinal))
+                .Select(pair => pair.Value)
+                .Distinct()
+                .Take(2)
+                .ToList();
+            if (normalizedMatches.Count == 1) return normalizedMatches[0];
+
+            throw new InvalidOperationException($"Song '{expectedTrackName}' was not found uniquely in the current FamiStudio album. Refresh the Custom Music Library.");
+        }
+
+        private static string GetAlbumVersionKey(string albumPath)
+        {
+            var info = new FileInfo(albumPath);
+            return Path.GetFullPath(albumPath) + "|" + info.Length + "|" + info.LastWriteTimeUtc.Ticks;
+        }
+
+        private static string? FindFreshAdjacentTextExport(string albumPath)
+        {
+            try
+            {
+                var album = new FileInfo(albumPath);
+                string folder = album.DirectoryName ?? string.Empty;
+                string[] candidates =
+                {
+                    Path.Combine(folder, "album.txt"),
+                    Path.ChangeExtension(albumPath, ".txt")
+                };
+                return candidates
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .FirstOrDefault(path => File.Exists(path) && File.GetLastWriteTimeUtc(path) >= album.LastWriteTimeUtc);
+            }
+            catch { return null; }
+        }
+
+        private ProcessStartInfo CreateCliStartInfo(string inputPath, string command, string outputPath, params string[] options)
+        {
+            if (string.IsNullOrWhiteSpace(famiFolder))
+                throw new InvalidOperationException("FamiStudio folder not configured.");
+
+            string dll = Path.Combine(famiFolder, "FamiStudio.dll");
+            string exe = Path.Combine(famiFolder, "FamiStudio.exe");
+            ProcessStartInfo psi;
+            if (File.Exists(dll))
+            {
+                // The Windows GUI launcher may detach without executing CLI work. The DLL is
+                // FamiStudio's documented command-line entry point and returns a useful exit code.
+                psi = new ProcessStartInfo("dotnet");
+                psi.ArgumentList.Add(dll);
+            }
+            else if (File.Exists(exe))
+            {
+                psi = new ProcessStartInfo(exe);
+            }
+            else
+            {
+                throw new FileNotFoundException("FamiStudio.dll/FamiStudio.exe not found in the configured folder.", famiFolder);
+            }
+
+            psi.ArgumentList.Add(inputPath);
+            psi.ArgumentList.Add(command);
+            psi.ArgumentList.Add(outputPath);
+            foreach (string option in options) psi.ArgumentList.Add(option);
+            psi.CreateNoWindow = true;
+            psi.UseShellExecute = false;
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+            return psi;
+        }
+
+        private bool RunCli(string inputPath, string command, string outputPath, int timeoutMs,
+            out string stdout, out string stderr, params string[] options)
+        {
+            stdout = string.Empty;
+            stderr = string.Empty;
+            try
+            {
+                var psi = CreateCliStartInfo(inputPath, command, outputPath, options);
+                using var process = Process.Start(psi);
+                if (process == null) return false;
+                var stdoutTask = process.StandardOutput.ReadToEndAsync();
+                var stderrTask = process.StandardError.ReadToEndAsync();
+                if (!process.WaitForExit(Math.Max(1_000, timeoutMs)))
+                {
+                    try { process.Kill(entireProcessTree: true); } catch { }
+                    stdout = stdoutTask.GetAwaiter().GetResult();
+                    stderr = stderrTask.GetAwaiter().GetResult();
+                    if (string.IsNullOrWhiteSpace(stderr)) stderr = "FamiStudio command timed out.";
+                    return false;
+                }
+                stdout = stdoutTask.GetAwaiter().GetResult();
+                stderr = stderrTask.GetAwaiter().GetResult();
+                return process.ExitCode == 0 && File.Exists(outputPath);
+            }
+            catch (Exception ex)
+            {
+                stderr = ex.Message;
+                return false;
+            }
+        }
+
+        private static string LastNonEmptyLines(string? text, int count)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+            return string.Join("\n", text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).TakeLast(Math.Max(1, count)));
+        }
+
+        private static bool FileNameMatchesTrack(string path, string? expectedTrackName)
+        {
+            if (string.IsNullOrWhiteSpace(expectedTrackName)) return false;
+            string stem = Path.GetFileNameWithoutExtension(path) ?? string.Empty;
+            stem = Regex.Replace(stem, @"^cached\s+\d+\s*-\s*", string.Empty, RegexOptions.IgnoreCase);
+            stem = Regex.Replace(stem, @"^\d+\s*-\s*", string.Empty, RegexOptions.IgnoreCase);
+            stem = Regex.Replace(stem, @"\s*-\s*[0-9a-f]{12,40}$", string.Empty, RegexOptions.IgnoreCase);
+            return string.Equals(NormalizeTrackName(stem), NormalizeTrackName(SafeTrackFileName(expectedTrackName)), StringComparison.Ordinal);
+        }
+
+        private static string NormalizeTrackName(string? value) => new string((value ?? string.Empty)
+            .Normalize(System.Text.NormalizationForm.FormD)
+            .Where(char.IsLetterOrDigit)
+            .Select(char.ToLowerInvariant)
+            .ToArray());
+
+        private static string SafeTrackFileName(string value)
+        {
+            char[] invalid = Path.GetInvalidFileNameChars();
+            string safe = new string((value ?? "Song").Where(c => !invalid.Contains(c)).ToArray()).Trim();
+            if (safe.Length > 80) safe = safe.Substring(0, 80).Trim();
+            return string.IsNullOrWhiteSpace(safe) ? "Song" : safe;
         }
 
         // Request a playback rate multiplier (e.g. 2.0 for 2x).
@@ -883,7 +1147,8 @@ namespace FamidashEditor
                         try
                         {
                             // Fire-and-forget restart so UI doesn't block.
-                            _ = System.Threading.Tasks.Task.Run(() => PlayTrack(lastFmsPath!, lastTrackIndex));
+                            string? restartName = lastTrackName;
+                            _ = System.Threading.Tasks.Task.Run(() => PlayTrack(lastFmsPath!, lastTrackIndex, restartName));
                         }
                         catch { }
                     }
